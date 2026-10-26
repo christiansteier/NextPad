@@ -4,6 +4,7 @@ mod config;
 mod docs;
 mod ideas;
 mod ids;
+mod look;
 mod lti;
 mod migrate;
 mod net;
@@ -32,6 +33,8 @@ pub struct AppState {
     pub lti: lti::LtiState,
     /// Live-Meldungen der Ideensammlungen
     pub ideas: ideas::Hub,
+    /// Erscheinungsbild aus der Verwaltungsseite
+    pub look: look::Looks,
 }
 
 #[tokio::main]
@@ -62,7 +65,8 @@ async fn main() -> anyhow::Result<()> {
     let _ = web::BASE_PATH.set(config.base_path.clone());
     std::fs::create_dir_all(&config.data_dir)?;
     let store = Arc::new(store::Store::open(&config::db_path(&config.data_dir))?);
-    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), ideas: Default::default() });
+    let look = std::sync::RwLock::new(look::load(&store));
+    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), ideas: Default::default(), look });
     if args.get(1).map(String::as_str) == Some("compact") {
         // einmal zusammenführen (Frist aus NEXTPAD_HISTORY_DAYS)
         state.store.compact(ids::now_ms() - state.config.history_days * 86_400_000);
@@ -121,9 +125,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/static/apple-touch-icon.png", get(web::static_touch_icon))
         .route("/static/quicksand.ttf", get(web::static_quicksand))
         .route("/static/theme-hsd.css", get(web::static_theme_hsd))
-        .route("/theme/logo.png", get(web::theme_logo))
+        .route("/theme/logo.png", get(look::logo_file))
         .route("/theme/font.ttf", get(web::theme_font))
-        .route("/theme/background.jpg", get(web::theme_background))
+        .route("/theme/background.jpg", get(look::background_file))
+        .route("/admin/erscheinungsbild", get(look::page).post(look::save).layer(axum::extract::DefaultBodyLimit::max(9 << 20)))
+        .route("/admin/erscheinungsbild/vorgabe", axum::routing::post(look::reset))
+        .route("/static/admin.js", get(look::static_js))
         .route("/status", get(web::status))
         .fallback(web::not_found)
         .layer(tower_http::trace::TraceLayer::new_for_http())

@@ -20,6 +20,7 @@ site_name=$(ynh_app_setting_get --key=site_name)
 footer_links=$(ynh_app_setting_get --key=footer_links)
 background_credit=$(ynh_app_setting_get --key=background_credit)
 background_credit_url=$(ynh_app_setting_get --key=background_credit_url)
+admins=$(ynh_app_setting_get --key=admins)
 nextpad_write_config
 
 ynh_systemctl --service="$app" --action="start" --wait_until="lauscht auf" --log_path="systemd"

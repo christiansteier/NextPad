@@ -260,3 +260,37 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
 .doc h2 { margin-top: var(--space-6); }
 .doc p, .doc li { max-width: 70ch; }
 .notice { border-left: 4px solid var(--color-text-primary); background: var(--color-surface); padding: var(--space-4) var(--space-5); margin: var(--space-5) 0; }
+
+/* Ohne Logo der Einrichtung: Zeichen und Name als Verweis zur Startseite */
+.product-link { padding-left: 0; border-left: 0; text-decoration: none; color: inherit; min-height: var(--target-min); }
+
+/* Verwaltung Erscheinungsbild */
+.kicker { margin: 0 0 var(--space-1); font-size: var(--text-small); font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .06em; }
+.admin-form fieldset { margin: 0 0 var(--space-6); padding: var(--space-4) var(--space-5) var(--space-5); border: 1px solid var(--color-border); background: var(--color-surface); }
+.admin-form legend { padding: 0 var(--space-2); font-weight: 700; font-size: 1.125rem; }
+.admin-form .field-label { display: block; margin: var(--space-4) 0 var(--space-1); font-weight: 700; }
+.admin-form input[type=text], .admin-form input[type=url] {
+  width: 100%; min-height: var(--target-min); padding: 0 var(--space-3); font: inherit; color: var(--color-text-primary);
+  background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius-control);
+}
+.admin-form input[type=file] { font: inherit; max-width: 100%; }
+.admin-form .hint { margin: var(--space-1) 0 0; }
+.admin-form h3 { margin: var(--space-5) 0 var(--space-2); font-size: 1rem; }
+.choices { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-5); margin-top: var(--space-3); }
+.choice { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--target-min); }
+.choice input { width: 20px; height: 20px; margin: 0; accent-color: var(--color-action); }
+.color-row { display: flex; gap: var(--space-2); max-width: 20em; }
+.color-row input[type=color] { flex: none; width: var(--target-min); height: var(--target-min); padding: 2px; background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius-control); cursor: pointer; }
+.color-field .hint { max-width: 40em; }
+.shades { margin-top: var(--space-2); padding-left: var(--space-4); border-left: 3px solid var(--color-border); }
+.swatches { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13em, 1fr)); gap: var(--space-3); }
+.swatches li { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-small); }
+.swatch { flex: none; width: 40px; height: 40px; border: 1px solid var(--color-border-control); }
+.preview-logo { display: block; max-height: 64px; max-width: 100%; margin-top: var(--space-2); padding: var(--space-2); background: #fff; border: 1px solid var(--color-border); }
+.preview-bg { display: block; width: 100%; max-width: 480px; aspect-ratio: 16 / 9; object-fit: cover; margin-top: var(--space-2); border: 1px solid var(--color-border); }
+.notice { margin: var(--space-4) 0; padding: var(--space-3) var(--space-4); border-left: 4px solid var(--color-border-control); background: var(--color-surface); }
+.notice p, .notice ul { margin: 0; } .notice ul { padding-left: 1.2em; margin-top: var(--space-1); }
+.notice.ok { border-left-color: var(--line-green); }
+.notice.warn { border-left-color: var(--line-blue); }
+.notice.error { border-left-color: var(--color-error); }
+.reset-form { margin: 0 0 var(--space-6); }

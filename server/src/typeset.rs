@@ -66,6 +66,10 @@ fn file_id(path: &str) -> FileId {
 pub struct Options<'a> {
     pub hsd: bool,
     pub theme_dir: Option<&'a std::path::Path>,
+    /// Logo der Einrichtung mit Bildart (aus look::logo), Akzentfarbe und Produktname
+    pub logo: Option<(Vec<u8>, &'static str)>,
+    pub accent: &'a str,
+    pub product: &'a str,
     /// Kopfzeile rechts, z. B. „NextPad · Stand 24.10.2026“
     pub header: &'a str,
     /// Fußzeile links (Pad-Name)
@@ -74,10 +78,10 @@ pub struct Options<'a> {
 }
 
 /// Vorlage: HSD (Logo, rote Linie, Arial, HSD Sans nur für Ebene 1 ab 20 pt) oder neutral.
-fn template(o: &Options, logo: bool, body: &str) -> String {
+fn template(o: &Options, logo: Option<&str>, body: &str) -> String {
     use crate::render::typst_str as q;
-    let head_left = if o.hsd && logo { "image(\"/logo.png\", height: 11mm)".to_string() } else { "text(size: 13pt, weight: \"bold\")[NextPad]".to_string() };
-    let accent = if o.hsd { "rgb(\"#e60028\")" } else { "luma(160)" };
+    let head_left = match logo { Some(path) if o.hsd => format!("image({}, height: 11mm)", q(path)), _ => format!("text(size: 13pt, weight: \"bold\")[#{}]", q(o.product)) };
+    let accent = if o.hsd { format!("rgb({})", q(o.accent)) } else { "luma(160)".to_string() };
     let h1 = if o.hsd { "#show heading.where(level: 1): set text(font: (\"HSD Sans\", \"Arial\", \"Liberation Sans\"), weight: \"regular\", size: 22pt)" } else { "#show heading.where(level: 1): set text(size: 20pt)" };
     format!(r#"#set document(title: {title}, author: "NextPad")
 #set page(paper: "a4", margin: (top: 34mm, bottom: 24mm, left: 25mm, right: 22mm),
@@ -105,9 +109,11 @@ fn template(o: &Options, logo: bool, body: &str) -> String {
 /// Setzt den Pad-Inhalt (Typst-Markup aus render::to_typst) als PDF.
 pub fn pdf(o: &Options, body: &str) -> anyhow::Result<Vec<u8>> {
     let fonts = fonts(o.theme_dir);
-    let logo = if o.hsd { o.theme_dir.and_then(|d| std::fs::read(d.join("logo.png")).ok()).map(|b| (file_id("/logo.png"), Bytes::new(b))) } else { None };
+    // WebP setzt Typst nicht sicher; dann der Produktname statt des Logos
+    let path = o.logo.as_ref().and_then(|(_, t)| match *t { "image/png" => Some("/logo.png"), "image/jpeg" => Some("/logo.jpg"), "image/svg+xml" => Some("/logo.svg"), _ => None }).filter(|_| o.hsd);
+    let logo = path.and_then(|p| o.logo.as_ref().map(|(b, _)| (file_id(p), Bytes::new(b.clone()))));
     let main = file_id("/main.typ");
-    let text = template(o, logo.is_some(), body);
+    let text = template(o, path, body);
     let world = Doc { main, source: Source::new(main, text), logo, fonts };
     let warned = typst::compile::<typst_layout::PagedDocument>(&world);
     let doc = warned.output.map_err(|errs| anyhow::anyhow!("Satz: {}", errs.iter().map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")))?;
@@ -123,9 +129,15 @@ mod tests {
     use super::*;
     #[test]
     fn satz_mit_sonderzeichen() {
-        let o = Options { hsd: true, theme_dir: None, header: "NextPad · Stand 24.10.2026", footer: "Pad \"x\" #1", title: "Test" };
+        let o = Options { hsd: true, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "NextPad · Stand 24.10.2026", footer: "Pad \"x\" #1", title: "Test" };
         let body = format!("#heading(level: 1)[#{}]\n\n#{} #strong[#{}]\n\n- #{}\n", crate::render::typst_str("Überschrift #1 *x*"), crate::render::typst_str("Text mit \\ und \" und $ und ] und <a>"), crate::render::typst_str("fett"), crate::render::typst_str("Punkt"));
         let p = pdf(&o, &body).expect("PDF");
         assert!(p.starts_with(b"%PDF"));
+    }
+    #[test]
+    fn satz_mit_svg_logo_und_akzent() {
+        let svg = include_bytes!("../static/logo.svg").to_vec();
+        let o = Options { hsd: true, theme_dir: None, logo: Some((svg, "image/svg+xml")), accent: "#007a96", product: "Pads", header: "Kopf", footer: "Fuß", title: "Test" };
+        assert!(pdf(&o, "Text").expect("PDF").starts_with(b"%PDF"));
     }
 }

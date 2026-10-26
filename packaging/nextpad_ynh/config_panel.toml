@@ -29,6 +29,12 @@ name = "NextPad"
         type = "select"
         choices = ["colibris", "hsd"]
 
+        [main.appearance.admins]
+        ask.de = "Admins für das Erscheinungsbild"
+        help.de = "Mailadressen aus Moodle, mit Komma getrennt. Moodle-Administration ist immer Admin. Logo, Farben und Startbild stellen Admins unter /admin/erscheinungsbild ein."
+        type = "string"
+        optional = true
+
         [main.appearance.site_name]
         ask.de = "Betreiber in der Fußzeile"
         type = "string"

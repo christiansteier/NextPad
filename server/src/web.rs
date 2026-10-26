@@ -174,7 +174,7 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         "owner": owner,
         "expires": expires,
         "theme": state.config.theme,
-        "logo": if theme_hsd(&state) && has_logo(&state) { serde_json::Value::String(format!("{}/theme/logo.png", state.config.base_path)) } else { serde_json::Value::Null },
+        "logo": if theme_hsd(&state) && has_logo(&state) { serde_json::Value::String(theme_url(&state, "logo.png")) } else { serde_json::Value::Null },
     });
     let base = &state.config.base_path;
     if state.store.is_ideas(&access.pad.id) {
@@ -206,11 +206,12 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     let icons = icon_links();
     let body = format!(
         r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad</title>
-<link rel="stylesheet" href="{base}/static/editor.css?v={v}">{theme_link}</head>
+<link rel="stylesheet" href="{base}/static/editor.css?v={v}">{theme_link}{look}</head>
 <body class="{body_class}"><div id="app"><div id="toolbar" role="toolbar" aria-label="Formatierung"></div><div id="editorcontainerbox"><div id="editor"></div></div><div id="statusbar"></div></div>
 <script type="application/json" id="nextpad-config">{cfg}</script>
 <script src="{base}/static/editor.js?v={v}"></script></body></html>"#,
         v = bundle_version(),
+        look = look_css(&state),
         cfg = cfg.to_string().replace("</", "<\\/")
     );
     let mut resp = Html(body).into_response();
@@ -533,15 +534,25 @@ fn theme_file(state: &AppState, name: &str) -> Option<Vec<u8>> {
     let dir = state.config.theme_dir.as_ref()?;
     std::fs::read(dir.join(name)).ok()
 }
-pub fn has_logo(state: &AppState) -> bool { state.config.theme_dir.as_ref().map(|d| d.join("logo.png").is_file()).unwrap_or(false) }
-/// Logo und Hausschrift aus NEXTPAD_THEME_DIR (nicht im Repo, Marke der Hochschule).
-pub async fn theme_logo(State(state): State<Arc<AppState>>) -> Response {
-    match theme_file(&state, "logo.png") { Some(b) => ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], b).into_response(), None => StatusCode::NOT_FOUND.into_response() }
+/// Logo, Startbild und Hausschrift: Vorgabe aus NEXTPAD_THEME_DIR (nicht im Repo, Marke der Hochschule),
+/// Logo und Startbild auch über die Verwaltungsseite (look.rs).
+pub fn has_logo(state: &AppState) -> bool { crate::look::has_logo(state) }
+fn has_background(state: &AppState) -> bool { crate::look::has_background(state) }
+/// Adresse eines Theme-Bilds mit Stand, damit ein neues Bild sofort erscheint.
+pub fn theme_url(state: &AppState, file: &str) -> String { format!("{}/theme/{file}?v={}", state.config.base_path, crate::look::get(state).version) }
+/// Stilangaben aus dem Erscheinungsbild, nur im Design hsd.
+pub fn look_css(state: &AppState) -> String { if theme_hsd(state) { crate::look::get(state).css() } else { String::new() } }
+/// Admin: über Moodle angemeldet mit Admin-Recht.
+pub fn login_admin(state: &AppState, headers: &HeaderMap) -> Option<crate::store::Author> {
+    let now_s = ids::now_ms() / 1000;
+    cookie_values(headers, &state.config.login_cookie).into_iter()
+        .find(|t| state.store.login_is_admin(t, now_s).unwrap_or(false))
+        .and_then(|t| state.store.author_by_login(&t, now_s).ok().flatten())
 }
-pub async fn theme_background(State(state): State<Arc<AppState>>) -> Response {
-    match theme_file(&state, "background.jpg") { Some(b) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "public, max-age=86400")], b).into_response(), None => StatusCode::NOT_FOUND.into_response() }
+/// Einfache Seite im Rahmen der Startseite.
+pub fn start_page(state: &AppState, title: &str, content: &str, scripts: &str) -> Response {
+    start_headers(state, Html(hsd_page(state, title, "", "", content, scripts)).into_response())
 }
-fn has_background(state: &AppState) -> bool { state.config.theme_dir.as_ref().map(|d| d.join("background.jpg").is_file()).unwrap_or(false) }
 pub async fn theme_font(State(state): State<Arc<AppState>>) -> Response {
     match theme_file(&state, "font.ttf") { Some(b) => ([(header::CONTENT_TYPE, "font/ttf"), (header::CACHE_CONTROL, "public, max-age=86400")], b).into_response(), None => StatusCode::NOT_FOUND.into_response() }
 }
@@ -553,7 +564,7 @@ pub fn icon_links() -> String {
     let base = BASE_PATH.get().map(String::as_str).unwrap_or("");
     format!(r#"<link rel="icon" href="{base}/static/logo.svg" type="image/svg+xml"><link rel="icon" href="{base}/static/favicon-32.png" sizes="32x32" type="image/png"><link rel="apple-touch-icon" href="{base}/static/apple-touch-icon.png">"#)
 }
-/// Das Zeichen inline, schmückend neben dem Schriftzug.
+/// Das Zeichen inline, schmückend neben dem Schriftzug; nur wenn das Theme kein eigenes Logo mitbringt.
 pub fn logo_mark(class: &str) -> String {
     LOGO_SVG.trim().replacen("<svg ", &format!(r#"<svg class="{class}" aria-hidden="true" focusable="false" "#), 1)
 }
@@ -585,7 +596,8 @@ fn account_block(state: &AppState, headers: &HeaderMap, theme: &str) -> String {
     if let Some(a) = login_author(state, headers) {
         let img = a.avatar.as_deref().map(|u| format!(r#"<img class="avatar" src="{}" alt="" width="40" height="40">"#, html_escape::encode_double_quoted_attribute(u))).unwrap_or_default();
         if theme == "hsd" {
-            return format!(r#"<section class="account-line" aria-label="Anmeldung"><div class="account-row">{img}<p class="who">Über Moodle angemeldet als <strong>{}</strong></p><form method="post" action="{base}/logout"><button type="submit" class="btn btn-secondary btn-block">Abmelden</button></form></div></section>"#, html_escape::encode_text(&a.name));
+            let admin = if login_admin(state, headers).is_some() { format!(r#"<a class="btn btn-secondary btn-block" href="{base}/admin/erscheinungsbild">Erscheinungsbild</a>"#) } else { String::new() };
+            return format!(r#"<section class="account-line" aria-label="Anmeldung"><div class="account-row">{img}<p class="who">Über Moodle angemeldet als <strong>{}</strong></p>{admin}<form method="post" action="{base}/logout"><button type="submit" class="btn btn-secondary btn-block">Abmelden</button></form></div></section>"#, html_escape::encode_text(&a.name));
         }
         return format!(r#"<section class="panel account card" aria-labelledby="h-konto"><h2 id="h-konto">Angemeldet</h2><div class="me">{img}<div class="who"><strong>{}</strong><span>über Moodle angemeldet, Name und Bild erscheinen in Pads</span></div><form method="post" action="{base}/logout"><button type="submit" class="btn-link link">Abmelden</button></form></div></section>"#, html_escape::encode_text(&a.name));
     }
@@ -645,17 +657,24 @@ fn hsd_page(state: &AppState, title: &str, body_class: &str, style_attr: &str, c
 
 fn hsd_page_with(state: &AppState, title: &str, head: &str, body_class: &str, style_attr: &str, content: &str, scripts: &str) -> String {
     let base = &state.config.base_path;
-    let logo = if has_logo(state) { format!(r#"<img class="logo" src="{base}/theme/logo.png" alt="Hochschule Düsseldorf">"#) } else { r#"<span class="wordmark">HSD</span>"#.to_string() };
+    let look = crate::look::get(state);
+    let (product, tagline, inst) = (html_escape::encode_text(look.product()), html_escape::encode_text(look.tagline()), html_escape::encode_double_quoted_attribute(look.institution()));
+    // mit Logo der Einrichtung: Logo als Startseiten-Verweis, Produktname daneben; ohne: NextPad-Zeichen und Name als Verweis
+    let brand = if has_logo(state) {
+        format!(r#"<a class="brand" href="{base}/" aria-label="{product} Startseite, {inst}"><img class="logo" src="{src}" alt="{inst}"></a><div class="product"><strong>{product}</strong><span>{tagline}</span></div>"#, src = theme_url(state, "logo.png"))
+    } else {
+        format!(r#"<a class="product product-link" href="{base}/">{mark}<strong>{product}</strong><span>{tagline}</span></a>"#, mark = logo_mark("brand-mark"))
+    };
     let links = footer_links(state);
     let site = site_suffix(state);
     let icons = icon_links();
     format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
-<link rel="stylesheet" href="{base}/static/start.css?v={v}"><style>@font-face{{font-family:"HSD Sans";src:url("{base}/theme/font.ttf") format("truetype");font-weight:400;font-display:swap}}</style>{head}</head>
+<link rel="stylesheet" href="{base}/static/start.css?v={v}"><style>@font-face{{font-family:"HSD Sans";src:url("{base}/theme/font.ttf") format("truetype");font-weight:400;font-display:swap}}</style>{css}{head}</head>
 <body class="{body_class}"{style_attr}><a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
-<header class="site-header"><a class="brand" href="{base}/" aria-label="NextPad Startseite, Hochschule Düsseldorf">{logo}</a><div class="product">{mark}<strong>NextPad</strong><span>Gemeinsam schreiben an der HSD</span></div><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
+<header class="site-header">{brand}<nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
 {content}
 <footer class="site-footer">{links}<span class="site">NextPad{site}</span></footer>
-{scripts}</body></html>"##, v = start_version(), mark = logo_mark("brand-mark"))
+{scripts}</body></html>"##, v = start_version(), css = look.css())
 }
 
 /// Inhaltskennung von start.css/start.js für versionierte Adressen.
@@ -674,14 +693,14 @@ fn start_page_hsd(state: &AppState, headers: &HeaderMap) -> Response {
     let base = &state.config.base_path;
     let account = account_block(state, headers, "hsd");
     let bg = has_background(state);
-    let credit = match (bg, &state.config.background_credit) {
-        (true, Some(c)) => {
-            let c = html_escape::encode_text(c);
-            match &state.config.background_credit_url { Some(u) => format!(r#"<p class="credit"><a href="{}">{c}</a></p>"#, html_escape::encode_double_quoted_attribute(u)), None => format!(r#"<p class="credit"><span>{c}</span></p>"#) }
+    let credit = match (bg, crate::look::credit(state)) {
+        (true, Some((c, url))) => {
+            let c = html_escape::encode_text(&c);
+            match &url { Some(u) => format!(r#"<p class="credit"><a href="{}">{c}</a></p>"#, html_escape::encode_double_quoted_attribute(u)), None => format!(r#"<p class="credit"><span>{c}</span></p>"#) }
         }
         _ => String::new(),
     };
-    let style_attr = if bg { format!(r#" style="--bg-image:url('{base}/theme/background.jpg')""#) } else { String::new() };
+    let style_attr = if bg { format!(r#" style="--bg-image:url('{}')""#, theme_url(state, "background.jpg")) } else { String::new() };
     let retention = retention_fact(state);
     let content = format!(r##"<div class="stage"><main id="inhalt" class="start" tabindex="-1">
 <div class="hero">{credit}</div>
@@ -838,7 +857,9 @@ pub async fn pad_pdf(state: &Arc<AppState>, pad_id: &str, shown_id: &str) -> any
     let footer = format!("Pad {shown_id}");
     let st = state.clone();
     let res = tokio::task::spawn_blocking(move || {
-        let o = crate::typeset::Options { hsd: theme_hsd(&st), theme_dir: st.config.theme_dir.as_deref(), header: &header, footer: &footer, title: &title };
+        let look = crate::look::get(&st);
+        let accent = look.palette().accent;
+        let o = crate::typeset::Options { hsd: theme_hsd(&st), theme_dir: st.config.theme_dir.as_deref(), logo: crate::look::logo(&st), accent: &accent, product: look.product(), header: &header, footer: &footer, title: &title };
         crate::typeset::pdf(&o, &body)
     }).await.map_err(|e| anyhow::anyhow!("{e}"))?;
     match res {

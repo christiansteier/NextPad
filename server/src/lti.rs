@@ -208,6 +208,11 @@ impl Claims {
         let by_target = self.target_link_uri.as_deref().map(|u| u.split(['?', '#']).next().unwrap_or("").trim_end_matches('/').ends_with("/lti/ideen")).unwrap_or(false);
         (typ == Some("ideen") || by_target).then_some("ideas")
     }
+    /// Admins von NextPad: Administration der Moodle-Instanz oder in NEXTPAD_ADMINS (Mailadressen).
+    fn administers(&self, admins: &[String]) -> bool {
+        self.roles.iter().any(|r| r.ends_with("/system/person#Administrator") || r.ends_with("/institution/person#Administrator"))
+            || self.email.as_deref().map(|e| e.trim().to_ascii_lowercase()).is_some_and(|e| admins.contains(&e))
+    }
     /// Lehrende, Assistenz und Verwaltung moderieren.
     fn moderates(&self) -> bool {
         self.roles.iter().any(|r| r.ends_with("#Instructor") || r.ends_with("#TeachingAssistant") || r.ends_with("#ContentDeveloper") || r.ends_with("#Administrator"))
@@ -300,11 +305,11 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     // Mailadresse nur für die Ankündigung vor dem Löschen eigener Pads
     let email = claims.email.as_deref().map(str::trim).filter(|e| e.contains('@') && e.len() <= 254 && !e.chars().any(|c| c.is_control() || c.is_whitespace()));
     let _ = state.store.set_author_email(&author.id, email);
-    let token = match state.store.create_login(&author.id, ids::now_ms() / 1000 + LOGIN_SECONDS) {
+    let token = match state.store.create_login(&author.id, ids::now_ms() / 1000 + LOGIN_SECONDS, claims.administers(&state.config.admins)) {
         Ok(t) => t,
         Err(e) => { tracing::error!("LTI-Anmeldung speichern: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
     };
-    tracing::info!("LTI-Anmeldung über {}", pl.name);
+    tracing::info!("LTI-Anmeldung über {}{}", pl.name, if claims.administers(&state.config.admins) { " (Admin)" } else { "" });
     let path = base_path(&state);
     let mut target = path.clone();
     let mut session_cookie = None;

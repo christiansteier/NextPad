@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-10-26
+
+### Added
+
+- Appearance settings for admins at `/admin/erscheinungsbild` (HSD theme): name and subtitle in the header,
+  institution name, logo (PNG, JPEG, WebP or script-free SVG), start page background with credit, accent and
+  three house colours. Lines and tints for light and dark mode are derived with WCAG contrast checks or set by
+  hand; the page warns about weak contrasts. Applies to start page, help, editor, idea collection, projector view
+  and PDF export. Reset to the server defaults at any time.
+- Admins are Moodle administrators signing in via LTI, or addresses listed in `NEXTPAD_ADMINS`
+  (YunoHost: configuration panel).
+
+### Changed
+
+- The NextPad mark appears in the header only when no institution logo is set; without a logo, mark and name
+  link to the start page.
+- Editor (HSD theme) takes the accent from a variable instead of a fixed red.
+
 ## [0.7.0] - 2026-10-26
 
 ### Added
