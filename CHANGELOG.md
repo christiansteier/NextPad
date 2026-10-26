@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-10-26
+
+### Changed
+
+- Start page (HSD theme, desktop): the photo now reaches down to the footer; sign-in, recently
+  opened pads and the note sit on their own translucent panel, aligned with the entry panel.
+
+### Fixed
+
+- A hidden "recently opened" list no longer leaves an empty gap above the sign-in.
+
 ## [0.3.1] - 2026-10-26
 
 ### Changed
