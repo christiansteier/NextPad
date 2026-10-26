@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-26
+
+### Added
+
+- Idea collection (start page tile "Ideensammlung", modelled on liveask): everyone posts ideas
+  or questions without a name and votes; one vote per person and post, checked by the server.
+  Whoever created the collection sets the question, marks posts as done or hides them.
+  Changes reach all open pages live (Server-Sent Events). Read-only link for the projector,
+  export as Markdown, text or CSV (`web/test/ideentest.mjs`, `web/test/ideen-a11y.mjs`).
+
+### Changed
+
+- Start page: the tile "Leeres Pad" is gone (opening a new name already creates a pad); the
+  text template "Ideensammlung" is replaced by the idea collection, old links lead there.
+  Desktop shows three tiles per row.
+
 ## [0.3.3] - 2026-10-26
 
 ### Changed

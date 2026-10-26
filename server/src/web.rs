@@ -173,6 +173,12 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         "logo": if theme_hsd(&state) && has_logo(&state) { serde_json::Value::String(format!("{}/theme/logo.png", state.config.base_path)) } else { serde_json::Value::Null },
     });
     let base = &state.config.base_path;
+    if state.store.is_ideas(&access.pad.id) {
+        let mut cfg = cfg;
+        cfg["readonlyId"] = if access.readonly { serde_json::Value::Null } else { json!(access.pad.readonly_id) };
+        let resp = crate::ideas::page(&state, &id, cfg);
+        return with_cookie(resp, access.set_cookie.clone());
+    }
     if state.store.is_board(&access.pad.id) {
         let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Zeichenbrett</title>
 <link rel="stylesheet" href="{base}/static/board/board.css?v={v}"><style>html,body{{margin:0;height:100%;overflow:hidden}} #board{{position:fixed;inset:0}}</style></head>
@@ -256,6 +262,9 @@ async fn export_inner(State(state): State<Arc<AppState>>, Path((id, format)): Pa
         Ok(a) => a,
         Err((s, m)) => return error_page(s, m),
     };
+    if state.store.is_ideas(&access.pad.id) {
+        return crate::ideas::export(&state, &access.pad.id, &format).unwrap_or_else(|| error_page(StatusCode::NOT_FOUND, "Ideensammlungen lassen sich als Markdown, Text oder CSV sichern."));
+    }
     if state.store.is_board(&access.pad.id) {
         return error_page(StatusCode::CONFLICT, "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG, SVG oder Excalidraw-Datei sichern.");
     }
@@ -361,8 +370,14 @@ pub async fn new_pad(State(state): State<Arc<AppState>>, Query(q): Query<HashMap
     if !state.config.allow_free_pads { return error_page(StatusCode::FORBIDDEN, "Freie Pads sind auf diesem Server nicht eingeschaltet."); }
     let name = ids::random16();
     if let Err((s, m)) = create_free_pad(&state, &name, crate::net::client_ip(&state, &headers, peer)) { return error_page(s, m); }
-    if q.get("typ").map(String::as_str) == Some("zeichenbrett") {
-        if let Err(e) = state.store.set_kind(&name, "board") { tracing::warn!("Pad-Typ: {e}"); }
+    // „vorlage=ideen“ war bis 0.3.3 eine Textvorlage, alte Lesezeichen führen jetzt zur Ideensammlung
+    let kind = match (q.get("typ").map(String::as_str), q.get("vorlage").map(String::as_str)) {
+        (Some("zeichenbrett"), _) => Some("board"),
+        (Some("ideen"), _) | (_, Some("ideen")) => Some("ideas"),
+        _ => None,
+    };
+    if let Some(k) = kind {
+        if let Err(e) = state.store.set_kind(&name, k) { tracing::warn!("Pad-Typ: {e}"); }
     } else if let Some(html) = q.get("vorlage").and_then(|v| template(v)) {
         if let Err(e) = state.rooms.set_html(&name, html).await { tracing::warn!("Vorlage: {e}"); }
     }
@@ -385,12 +400,11 @@ fn with_cookie(mut resp: Response, cookie: Option<String>) -> Response {
     resp
 }
 
-/// Vorlagen für neue Pads (Startseite: Gruppenarbeit, Protokoll, Ideensammlung).
+/// Vorlagen für neue Pads (Startseite: Gruppenarbeit, Protokoll).
 fn template(name: &str) -> Option<&'static str> {
     Some(match name {
         "gruppenarbeit" => "<h1>Gruppenarbeit</h1><h2>Aufgabe</h2><p>Worum geht es, was soll am Ende stehen?</p><h2>Wer macht was?</h2><ul><li>Name: Teilaufgabe</li><li>Name: Teilaufgabe</li></ul><h2>Ergebnisse</h2><p></p><h2>Offene Fragen</h2><ul><li></li></ul>",
         "protokoll" => "<h1>Protokoll</h1><p>Datum: </p><p>Anwesend: </p><p>Protokoll: </p><h2>Tagesordnung</h2><ol><li></li><li></li></ol><h2>Ergebnisse und Beschlüsse</h2><ul><li></li></ul><h2>Aufgaben</h2><ul><li>Was, wer, bis wann</li></ul>",
-        "ideen" => "<h1>Ideensammlung</h1><p>Frage: </p><h2>Ideen</h2><ul><li></li><li></li><li></li></ul><h2>Favoriten</h2><ul><li></li></ul><h2>Nächste Schritte</h2><ul><li></li></ul>",
         _ => return None,
     })
 }
@@ -589,14 +603,31 @@ fn site_suffix(state: &AppState) -> String {
     if s.is_empty() { String::new() } else { format!(" · {}", html_escape::encode_text(s)) }
 }
 
+/// Seitenrahmen im eingestellten Design; im Design colibris ohne Dachmarke.
+pub fn page_frame(state: &AppState, title: &str, head: &str, content: &str, scripts: &str) -> String {
+    if theme_hsd(state) { return hsd_page_with(state, title, head, "", "", content, scripts); }
+    let base = &state.config.base_path;
+    format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
+<link rel="stylesheet" href="{base}/static/start.css?v={v}">{head}</head>
+<body class="theme-colibris"><a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
+<header class="site-header"><a class="brand" href="{base}/"><strong>NextPad</strong></a><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
+{content}
+<footer class="site-footer">{links}<span class="site">NextPad{site}</span></footer>
+{scripts}</body></html>"##, v = start_version(), links = footer_links(state), site = site_suffix(state))
+}
+
 /// Seitenrahmen im HSD-Design: Kopf mit Dachmarke und Produktname, Fuß mit Hilfe und Pflichtlinks.
 fn hsd_page(state: &AppState, title: &str, body_class: &str, style_attr: &str, content: &str, scripts: &str) -> String {
+    hsd_page_with(state, title, "", body_class, style_attr, content, scripts)
+}
+
+fn hsd_page_with(state: &AppState, title: &str, head: &str, body_class: &str, style_attr: &str, content: &str, scripts: &str) -> String {
     let base = &state.config.base_path;
     let logo = if has_logo(state) { format!(r#"<img class="logo" src="{base}/theme/logo.png" alt="Hochschule Düsseldorf">"#) } else { r#"<span class="wordmark">HSD</span>"#.to_string() };
     let links = footer_links(state);
     let site = site_suffix(state);
     format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
-<link rel="stylesheet" href="{base}/static/start.css?v={v}"><style>@font-face{{font-family:"HSD Sans";src:url("{base}/theme/font.ttf") format("truetype");font-weight:400;font-display:swap}}</style></head>
+<link rel="stylesheet" href="{base}/static/start.css?v={v}"><style>@font-face{{font-family:"HSD Sans";src:url("{base}/theme/font.ttf") format("truetype");font-weight:400;font-display:swap}}</style>{head}</head>
 <body class="{body_class}"{style_attr}><a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
 <header class="site-header"><a class="brand" href="{base}/" aria-label="NextPad Startseite, Hochschule Düsseldorf">{logo}</a><div class="product"><strong>NextPad</strong><span>Gemeinsam schreiben an der HSD</span></div><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
 {content}
@@ -643,12 +674,11 @@ fn start_page_hsd(state: &AppState, headers: &HeaderMap) -> Response {
 <p class="access" id="padname-access">Kein Passwortschutz: Wer den Namen oder Link kennt, kann mitlesen und mitschreiben.</p>
 </form>
 <details class="new-pad" open>
-<summary>Leeres Pad oder Vorlage</summary>
+<summary>Mit Vorlage beginnen</summary>
 <ul class="templates">
-<li><a class="template template-empty" href="{base}/new"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M6 3h8l4 4v14H6zM14 3v4h4M12 11v6M9 14h6"/></svg><span class="template-name">Leeres Pad</span><span class="template-desc">Ohne Vorgaben beginnen</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" href="{base}/new?vorlage=gruppenarbeit"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3 3 0 0 1 0 5.6M18 14.3c1.8.9 3 2.8 3 5.7"/></svg><span class="template-name">Gruppenarbeit</span><span class="template-desc">Aufgabe, wer macht was, Ergebnisse</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" href="{base}/new?vorlage=protokoll"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg><span class="template-name">Protokoll</span><span class="template-desc">Tagesordnung, Beschlüsse, Aufgaben</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
-<li><a class="template" href="{base}/new?vorlage=ideen"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="template-name">Ideensammlung</span><span class="template-desc">Ideen sammeln und auswählen</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
+<li><a class="template" href="{base}/new?typ=ideen"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="template-name">Ideensammlung</span><span class="template-desc">Ideen und Fragen sammeln, abstimmen</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" href="{base}/new?typ=zeichenbrett"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3M4 20h16"/></svg><span class="template-name">Zeichenbrett</span><span class="template-desc">Gemeinsam skizzieren</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 </ul>
 </details>
@@ -687,7 +717,8 @@ pub async fn help(State(state): State<Arc<AppState>>) -> Response {
     let content = format!(r#"<main id="inhalt" class="doc" tabindex="-1"><p><a href="{base}/">← Zur Startseite</a></p><h1>Hilfe zu NextPad</h1>
 <p>NextPad ist der Nachfolger von Etherpad an der Hochschule Düsseldorf. Mehrere Personen schreiben dort gleichzeitig am selben Text. Alle sehen die Änderungen der anderen sofort.</p>
 <h2>Einem Pad beitreten</h2><p>Den Namen des Pads eingeben und „Öffnen oder anlegen“ wählen. Gleicher Name bedeutet gleiches Pad. Gibt es den Namen noch nicht, legt NextPad ein neues, leeres Pad an. Erlaubt sind Buchstaben, Ziffern, Leerzeichen und die Zeichen - _ . ( ) , bis 50 Zeichen.</p>
-<h2>Ein neues Pad anlegen</h2><p>„Leeres Pad“ erzeugt ein Pad mit zufälligem Namen. Über „Teilen“ im Pad lässt sich der Link kopieren und an die Gruppe schicken. Die Vorlagen bringen eine Gliederung für Gruppenarbeit, Protokoll oder Ideensammlung mit.</p>
+<h2>Mit Vorlage beginnen</h2><p>Die Vorlagen legen ein Pad mit zufälligem Namen an und bringen eine Gliederung für Gruppenarbeit oder Protokoll mit. Über „Teilen“ im Pad lässt sich der Link kopieren und an die Gruppe schicken.</p>
+<h2>Ideensammlung</h2><p>„Ideensammlung“ legt eine Liste an, in die alle ohne Namen Ideen oder Fragen eintragen und für Beiträge stimmen. Jede Person hat je Beitrag eine Stimme. Wer die Sammlung angelegt hat, kann oben die Frage setzen, Beiträge als erledigt markieren oder ausblenden. Für die Leinwand gibt es einen Link nur zum Mitlesen. Gesichert wird als Markdown oder CSV.</p>
 <h2>Zeichenbrett</h2><p>„Zeichenbrett“ legt eine gemeinsame Zeichenfläche an: Formen, Pfeile, Freihand und Text, alle sehen die Zeiger der anderen. Gesichert wird über das Menü links oben als PNG, SVG oder Excalidraw-Datei. Bilder einfügen ist noch nicht möglich. Die Zeichenfläche ist mit Screenreadern kaum nutzbar; für zugängliche Zusammenarbeit eignet sich ein Text-Pad.</p>
 <h2>Name und Profilbild</h2><p>Ohne Anmeldung heißt man im Pad „Gast“. Unter „Teilnehmende“ lässt sich ein eigener Name eintragen. Wer sich über Moodle anmeldet, erscheint mit Namen und Profilbild aus Moodle.</p>
 <h2>Frühere Stände</h2><p>Die Zeitleiste zeigt, wie der Text entstanden ist, und spielt die Änderungen ab.</p>

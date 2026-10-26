@@ -10,7 +10,7 @@ async function guest() {
 }
 const pa = await guest()
 await pa.goto(`${base}/`); console.log('Startseite:', await pa.title())
-await pa.click('a[href$="/new"]'); await pa.waitForSelector('.ProseMirror'); await pa.waitForFunction(() => document.querySelector('#statusbar .ok') !== null)
+await pa.goto(`${base}/new`); await pa.waitForSelector('.ProseMirror'); await pa.waitForFunction(() => document.querySelector('#statusbar .ok') !== null)
 const padUrl = pa.url(); console.log('Neues Pad:', padUrl.replace(base, ''), '| Gast-Name:', await pa.evaluate(() => document.querySelector('#statusbar input.myname')?.value))
 await pa.click('button[title="Teilnehmende"]'); await pa.fill('#statusbar input.myname', 'Gast Anna'); await pa.press('#statusbar input.myname', 'Enter'); await pa.waitForTimeout(300); await pa.click('.ProseMirror')
 const pb = await guest(); await pb.goto(padUrl); await pb.waitForSelector('.ProseMirror'); await pb.waitForFunction(() => document.querySelector('#statusbar .ok') !== null)

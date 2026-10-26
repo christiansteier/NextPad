@@ -2,6 +2,7 @@
 mod api;
 mod config;
 mod docs;
+mod ideas;
 mod ids;
 mod lti;
 mod migrate;
@@ -29,6 +30,8 @@ pub struct AppState {
     pub free_creations: std::sync::Mutex<std::collections::HashMap<String, Vec<i64>>>,
     /// Offene LTI-Anmeldungen und Plattformschlüssel
     pub lti: lti::LtiState,
+    /// Live-Meldungen der Ideensammlungen
+    pub ideas: ideas::Hub,
 }
 
 #[tokio::main]
@@ -59,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = web::BASE_PATH.set(config.base_path.clone());
     std::fs::create_dir_all(&config.data_dir)?;
     let store = Arc::new(store::Store::open(&config::db_path(&config.data_dir))?);
-    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default() });
+    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), ideas: Default::default() });
     if args.get(1).map(String::as_str) == Some("compact") {
         // einmal zusammenführen (Frist aus NEXTPAD_HISTORY_DAYS)
         state.store.compact(ids::now_ms() - state.config.history_days * 86_400_000);
@@ -95,6 +98,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/{version}/{func}", get(api::call).post(api::call).layer(axum::extract::DefaultBodyLimit::max(16 << 20)))
         .route("/p/{id}", get(web::page))
         .route("/p/{id}/export/{format}", get(web::export))
+        .route("/p/{id}/ideen", get(ideas::get).post(ideas::add))
+        .route("/p/{id}/ideen/live", get(ideas::live))
+        .route("/p/{id}/ideen/frage", axum::routing::post(ideas::prompt))
+        .route("/p/{id}/ideen/{n}/stimme", axum::routing::post(ideas::vote))
+        .route("/p/{id}/ideen/{n}/moderation", axum::routing::post(ideas::moderate))
+        .route("/static/ideen.js", get(ideas::static_js))
+        .route("/static/ideen.css", get(ideas::static_css))
         .route("/p/{id}/history", get(web::history))
         .route("/p/{id}/snapshots", get(web::snapshots))
         .route("/p/{id}/snapshots/{ts}", get(web::snapshot_html))
