@@ -1,0 +1,22 @@
+#!/bin/bash
+
+source ../settings/scripts/_common.sh
+source /usr/share/yunohost/helpers
+
+ynh_script_progression "Programm und Daten wiederherstellen..."
+ynh_restore "$install_dir"
+ynh_restore "$data_dir"
+nextpad_set_permissions
+chown root:"$app" "$install_dir/nextpad.env"; chmod 640 "$install_dir/nextpad.env"
+
+ynh_script_progression "Systemdienst und Webserver wiederherstellen..."
+ynh_restore "/etc/nginx/conf.d/$domain.d/$app.conf"
+ynh_restore "/etc/systemd/system/$app.service"
+systemctl enable "$app.service" --quiet
+yunohost service add "$app" --description="NextPad (Etherpad-kompatibler Pad-Server)" --log="systemd"
+
+ynh_script_progression "NextPad starten..."
+ynh_systemctl --service="$app" --action="start" --wait_until="lauscht auf" --log_path="systemd"
+ynh_systemctl --service="nginx" --action="reload"
+
+ynh_script_progression "Wiederherstellung von $app abgeschlossen"

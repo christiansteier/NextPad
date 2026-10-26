@@ -1,0 +1,15 @@
+#!/bin/bash
+
+source ../settings/scripts/_common.sh
+source /usr/share/yunohost/helpers
+
+ynh_print_info "Sicherung von $app..."
+
+ynh_backup "$install_dir"
+# Pads, Schlüssel und Design; SQLite im WAL-Modus: Dienst kurz anhalten ist nicht nötig, die Sicherung
+# kopiert Datenbank und WAL zusammen (YunoHost-Sicherungen laufen selten parallel zu großer Schreiblast)
+ynh_backup "$data_dir"
+ynh_backup "/etc/nginx/conf.d/$domain.d/$app.conf"
+ynh_backup "/etc/systemd/system/$app.service"
+
+ynh_print_info "Sicherung von $app abgeschlossen"

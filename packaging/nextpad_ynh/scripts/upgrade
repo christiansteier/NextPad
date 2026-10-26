@@ -1,0 +1,27 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+nextpad_settings_defaults
+
+ynh_script_progression "NextPad anhalten..."
+ynh_systemctl --service="$app" --action="stop" --log_path="systemd"
+
+ynh_script_progression "Programm aktualisieren..."
+ynh_setup_source --dest_dir="$install_dir" --full_replace
+
+ynh_script_progression "Konfiguration schreiben..."
+nextpad_api_key
+nextpad_write_config
+nextpad_set_permissions
+
+ynh_script_progression "Systemdienst und Webserver aktualisieren..."
+ynh_config_add_nginx
+ynh_config_add_systemd
+yunohost service add "$app" --description="NextPad (Etherpad-kompatibler Pad-Server)" --log="systemd"
+
+ynh_script_progression "NextPad starten..."
+ynh_systemctl --service="$app" --action="start" --wait_until="lauscht auf" --log_path="systemd"
+
+ynh_script_progression "Aktualisierung von $app abgeschlossen"

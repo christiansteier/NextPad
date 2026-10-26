@@ -1,0 +1,76 @@
+#:schema https://raw.githubusercontent.com/YunoHost/apps/main/schemas/manifest.v2.schema.json
+
+packaging_format = 2
+
+id = "nextpad"
+name = "NextPad"
+description.en = "Collaborative pads with timeline, whiteboard and Moodle login; Etherpad API compatible"
+description.de = "Gemeinsam schreiben und zeichnen mit Zeitleiste und Moodle-Anmeldung; Etherpad-kompatibel"
+
+version = "0.2.12~ynh1"
+
+maintainers = ["ZWEK der Hochschule Düsseldorf"]
+
+[upstream]
+license = "EUPL-1.2"
+code = "https://github.com/christiansteier/nextpad"
+
+[integration]
+yunohost = ">= 12.0"
+helpers_version = "2.1"
+architectures = ["amd64"]
+multi_instance = false
+ldap = false
+sso = false
+disk = "100M"
+ram.build = "50M"
+ram.runtime = "100M"
+
+[install]
+    [install.domain]
+    type = "domain"
+
+    [install.path]
+    type = "path"
+    default = "/np"
+
+    [install.init_main_permission]
+    help.de = "„Besucher“ macht freie Pads und die Etherpad-API für Moodle ohne YunoHost-Anmeldung erreichbar."
+    help.en = "'Visitors' makes free pads and the Etherpad API for Moodle reachable without YunoHost login."
+    type = "group"
+    default = "visitors"
+
+    [install.theme]
+    ask.de = "Erscheinungsbild"
+    ask.en = "Theme"
+    help.de = "„hsd“ braucht Logo und Hausschrift in /home/yunohost.app/nextpad/theme (nicht im Paket)."
+    type = "select"
+    choices = ["colibris", "hsd"]
+    default = "colibris"
+
+    [install.allow_free_pads]
+    ask.de = "Freie Pads von der Startseite erlauben?"
+    ask.en = "Allow free pads from the start page?"
+    type = "boolean"
+    default = true
+
+[resources]
+    [resources.sources.main]
+    url = "https://github.com/christiansteier/nextpad/releases/download/v0.2.12/nextpad-0.2.12-amd64"
+    sha256 = "6a271a9b8c6b6e3b1544a1da2dbb45d0e0a42624b95717228e02c6d9f064c1f3"
+    extract = false
+    rename = "nextpad"
+
+    [resources.system_user]
+
+    [resources.install_dir]
+
+    [resources.data_dir]
+    subdirs = ["data", "secrets", "theme"]
+
+    [resources.permissions]
+    main.url = "/"
+    main.show_tile = false
+
+    [resources.ports]
+    main.default = 5096

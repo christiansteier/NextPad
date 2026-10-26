@@ -1,0 +1,15 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+ynh_script_progression "Systemdienst und Webserver entfernen..."
+
+if ynh_hide_warnings yunohost service status "$app" >/dev/null; then
+    yunohost service remove "$app"
+fi
+ynh_config_remove_systemd
+ynh_config_remove_nginx
+
+# Datenverzeichnis (Pads, Schlüssel, Design) bleibt, außer bei --purge (übernimmt YunoHost)
+ynh_script_progression "Entfernen von $app abgeschlossen"

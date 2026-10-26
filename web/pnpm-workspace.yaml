@@ -1,0 +1,3 @@
+# pnpm 11: esbuild darf sein Install-Skript ausfuehren (prueft nur das optionale Plattformpaket)
+allowBuilds:
+  esbuild: true

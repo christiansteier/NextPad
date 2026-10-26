@@ -1,0 +1,129 @@
+/* CoopPad-Editor im Stil von Etherpads Skin „Colibris“: Quicksand, weiße Leisten, grauer Zeilenrand, Symbolschrift von Etherpad. */
+@font-face { font-family: Quicksand; src: url("quicksand.ttf") format("truetype"); font-weight: 300 700; }
+@font-face { font-family: "fontawesome-etherpad"; src: url("icons.woff") format("woff"); font-weight: normal; font-style: normal; }
+:root { --super-dark: #485365; --dark: #576273; --middle: #d2d2d2; --light: #f2f3f4; --super-light: #fff; --primary: #64d29b; --border: #e4e6e9; --gutter: 230px; }
+html, body { margin: 0; height: 100%; }
+body { font-family: Quicksand, Cantarell, "Open Sans", "Helvetica Neue", sans-serif; color: var(--super-dark); background: var(--light); font-size: 15px; }
+#app { display: flex; flex-direction: column; height: 100vh; position: relative; }
+
+/* Werkzeugleiste */
+#toolbar { display: flex; justify-content: space-between; align-items: center; background: var(--super-light); border-bottom: 1px solid var(--border); padding: 0 5px; min-height: 38px; flex-wrap: wrap; }
+#toolbar .menu_left, #toolbar .menu_right, #statusbar .menu_left, #statusbar .menu_right { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.ib { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; margin: 5px 1px; padding: 0 5px; border: 0; border-radius: 3px; background: transparent; color: var(--dark); cursor: pointer; font: inherit; text-decoration: none; }
+.ib:hover { background: var(--light); } .ib.selected { background: var(--light); color: var(--super-dark); }
+.ib:focus-visible, .tsel:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.buttonicon { font-family: "fontawesome-etherpad"; font-size: 15px; line-height: 1; font-style: normal; font-weight: normal; }
+.separator { width: 1px; height: 18px; background: var(--border); margin: 0 10px; }
+.tsel { font: inherit; font-size: 14px; height: 28px; margin: 5px 2px; padding: 0 22px 0 10px; border: 0; border-radius: 3px; background: var(--light) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23576273' stroke-width='1.5'/></svg>") no-repeat right 8px center; color: var(--super-dark); appearance: none; -webkit-appearance: none; cursor: pointer; }
+
+/* Editorbereich: grauer Rand mit Zeilennummern, weißes Dokument */
+#editorcontainerbox { flex: 1; overflow: auto; background: var(--light); }
+#editor { min-height: 100%; background: var(--super-light); margin-left: var(--gutter); }
+#editor .ProseMirror { outline: none; padding: 32px 60px 40px 14px; min-height: 60vh; line-height: 1.6; font-size: 15px; counter-reset: line; }
+#editor .ProseMirror > *, #editor .ProseMirror > ul > li, #editor .ProseMirror > ol > li { position: relative; }
+#editor .ProseMirror > :not(ul):not(ol), #editor .ProseMirror > ul > li, #editor .ProseMirror > ol > li { counter-increment: line; }
+#editor .ProseMirror > :not(ul):not(ol)::before, #editor .ProseMirror > ul > li::before, #editor .ProseMirror > ol > li::before { content: counter(line); position: absolute; right: calc(100% + 24px); top: 0.35em; width: 2.6em; text-align: right; font-size: 11px; color: #aaa; user-select: none; }
+#editor .ProseMirror > ul > li::before, #editor .ProseMirror > ol > li::before { right: calc(100% + 24px + 1.4em); }
+#editor .ProseMirror > ul > li:first-child::before, #editor .ProseMirror > ol > li:first-child::before { right: calc(100% + 24px + 1.4em); }
+#editor .ProseMirror p { margin: 0 0 0.35em; }
+/* Überschriften wie Etherpad (ep_headings2 im Skin Colibris) */
+#editor .ProseMirror h1, #timeline .snapshot h1, .print-view h1 { font-size: 2.5em; }
+#editor .ProseMirror h2, #timeline .snapshot h2, .print-view h2 { font-size: 1.8em; }
+#editor .ProseMirror h3, #timeline .snapshot h3, .print-view h3 { font-size: 1.5em; }
+#editor .ProseMirror h4, #timeline .snapshot h4, .print-view h4 { font-size: 1.2em; }
+#editor .ProseMirror :is(h1,h2,h3,h4), #timeline .snapshot :is(h1,h2,h3,h4), .print-view :is(h1,h2,h3,h4) { line-height: 1.2; margin: .3em 0 .5em; font-weight: 700; }
+#editor .ProseMirror ul, #editor .ProseMirror ol { padding-left: 1.4em; margin: 0 0 .35em; }
+#editor .ProseMirror code { background: var(--light); padding: 0 .25em; border-radius: 2px; }
+#editor.no-colors span.author { background-color: transparent !important; }
+@media (max-width: 1000px) { :root { --gutter: 46px; } #editor .ProseMirror { padding-right: 16px; } }
+
+/* Fußleiste */
+#statusbar { display: flex; justify-content: space-between; align-items: center; background: var(--super-light); border-top: 1px solid var(--border); padding: 0 5px; min-height: 38px; position: relative; }
+#statusbar .conn { font-size: 12px; margin-left: 8px; } #statusbar .ok { color: #2a7a2a; } #statusbar .warn { color: #e60028; margin-left: 8px; font-size: 12px; }
+#statusbar .users { background: #e9e2f3; color: var(--super-dark); padding: 0 10px; font-size: 13px; } #statusbar .users .count { margin-left: 4px; }
+.popup { position: absolute; bottom: 42px; left: 8px; background: var(--super-light); border: 1px solid var(--border); border-radius: 3px; box-shadow: 0 2px 12px #0002; padding: 12px 14px; min-width: 220px; z-index: 5; }
+.popup.right { left: auto; right: 8px; }
+.popup h2 { font-size: 13px; font-weight: 700; margin: 0 0 8px; color: var(--dark); text-transform: uppercase; letter-spacing: .03em; }
+.popup a { display: flex; align-items: center; gap: 8px; padding: 6px 4px; color: var(--super-dark); text-decoration: none; border-radius: 3px; } .popup a:hover { background: var(--light); }
+.popup .user { display: flex; align-items: center; gap: 8px; padding: 4px 2px; } .popup .swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid #0002; }
+.popup .me { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); } .popup .me label { font-size: 12px; color: var(--dark); }
+.popup input.myname { font: inherit; padding: 5px 8px; border: 1px solid var(--middle); border-radius: 3px; }
+
+/* Cursor anderer Personen */
+.collaboration-carets__caret { position: relative; border-left: 1px solid; border-right: 1px solid; margin-left: -1px; margin-right: -1px; word-break: normal; pointer-events: none; }
+.collaboration-carets__label { position: absolute; top: -1.75em; left: -1px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; line-height: 1; padding: 2px 6px 2px 2px; color: #000; white-space: nowrap; user-select: none; border-radius: 3px 3px 3px 0; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; overflow: hidden; font-size: 11px; font-weight: 700; color: #000; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.popup .user .avatar { font-size: 13px; }
+
+/* Zeitleiste wie Etherpads Timeslider: Leiste oben, Stand darunter */
+#timeline { position: absolute; top: 39px; left: 0; right: 0; bottom: 39px; background: var(--light); display: flex; flex-direction: column; z-index: 4; }
+#timeline .tl-controls { display: flex; gap: 8px; align-items: center; padding: 10px 16px; background: var(--super-light); border-bottom: 1px solid var(--border); }
+#timeline .tl-controls button { font-family: inherit; font-size: 13px; height: 28px; padding: 0 10px; border: 0; border-radius: 3px; background: var(--light); color: var(--super-dark); cursor: pointer; }
+#timeline .tl-controls button:hover { background: var(--middle); }
+#timeline .tl-slider { flex: 1; accent-color: var(--primary); }
+#timeline .tl-pos { font-size: 12px; color: var(--dark); min-width: 5em; text-align: right; }
+#timeline .tl-info { padding: 6px 16px; font-size: 13px; color: var(--dark); background: var(--super-light); }
+#timeline .tl-authors { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 16px 8px; font-size: 12px; background: var(--super-light); border-bottom: 1px solid var(--border); }
+#timeline .tl-authors .user { padding: 1px 8px; border-radius: 3px; }
+#timeline .snapshot { flex: 1; overflow: auto; margin-left: var(--gutter); background: var(--super-light); padding: 18px 60px 40px 14px; line-height: 1.6; font-size: 15px; }
+#timeline .snapshot p { margin: 0 0 .35em; }
+
+/* Markdown-Dialog */
+#mddialog { border: 1px solid var(--border); border-radius: 3px; padding: 14px; width: min(90vw, 560px); font-family: inherit; color: var(--super-dark); }
+#mddialog textarea { width: 100%; font: 14px/1.4 monospace; box-sizing: border-box; margin: 6px 0; border: 1px solid var(--middle); border-radius: 3px; padding: 6px; }
+#mddialog .row { display: flex; gap: 6px; justify-content: flex-end; }
+#mddialog button { font: inherit; padding: 5px 12px; border: 0; border-radius: 3px; background: var(--light); cursor: pointer; } #mddialog button[value="ok"] { background: #586a69; color: var(--primary); }
+
+/* Druckansicht */
+.print-view span.author { background-color: transparent; }
+
+/* Besitzer-Bereich im Teilnehmenden-Fenster */
+.popup .owner { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 8px 0; padding: 8px 0; }
+.popup .owner h3 { font-size: 13px; margin: 0 0 4px; }
+.popup .owner .exp { font-size: 12px; margin: 0 0 8px; color: var(--dark); }
+.popup .owner .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.popup .owner button { font: inherit; font-size: 12px; padding: 6px 10px; border: 1px solid var(--middle); background: var(--super-light); cursor: pointer; border-radius: 3px; }
+.popup .owner button.danger { color: #b00020; border-color: #e3a3ad; }
+.theme-hsd .popup .owner button { border-radius: 0; }
+.popup .login p { margin: 0; font-size: 12px; color: var(--dark); }
+.popup .login form { margin: 0; }
+.popup .login button { font: inherit; font-size: 12px; padding: 6px 10px; border: 1px solid var(--middle); background: var(--super-light); cursor: pointer; border-radius: 3px; align-self: flex-start; }
+.theme-hsd .popup .login button { border-radius: 0; }
+
+/* Dunkler Modus (Umschalter in der Werkzeugleiste, sonst Geräteeinstellung): gilt für beide Erscheinungsbilder.
+   Kontraste gegen #1e1e1e: Text #ececec 14,6:1, Zweittext #c4c4c4 9,6:1, Rahmen der Bedienelemente #8c8c8c 4,9:1. */
+html[data-theme="dark"] { color-scheme: dark; }
+html[data-theme="dark"] body { --super-dark: #ececec; --dark: #c4c4c4; --middle: #8c8c8c; --light: #121212; --super-light: #1e1e1e; --border: #3a3a3a; color: #ececec; background: #121212; }
+html[data-theme="dark"] .theme-hsd { --primary: #ff4d6a; }
+html[data-theme="dark"] .theme-hsd #editor .ProseMirror, html[data-theme="dark"] .theme-hsd #editor .ProseMirror :is(h1,h2,h3,h4), html[data-theme="dark"] .theme-hsd #timeline .snapshot :is(h1,h2,h3,h4) { color: #ececec; }
+html[data-theme="dark"] .theme-hsd #editor .ProseMirror a { color: #ececec; }
+html[data-theme="dark"] .theme-hsd .ib, html[data-theme="dark"] .theme-hsd .popup h2, html[data-theme="dark"] .theme-hsd #statusbar .ok { color: #c4c4c4; }
+html[data-theme="dark"] .theme-hsd .ib:hover { background: #2e2e2e; }
+html[data-theme="dark"] .theme-hsd .ib.selected { background: #ececec; color: #000; }
+html[data-theme="dark"] .theme-hsd .ib:focus-visible, html[data-theme="dark"] .theme-hsd .tsel:focus-visible { outline-color: #ff4d6a; }
+html[data-theme="dark"] .theme-hsd .tsel, html[data-theme="dark"] .tsel { background-color: #2a2a2a; color: #ececec; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23c4c4c4' stroke-width='1.5'/></svg>"); }
+html[data-theme="dark"] .theme-hsd #statusbar .users { background: #ececec; color: #000; }
+html[data-theme="dark"] #statusbar .users { background: #3b3450; color: #ececec; }
+html[data-theme="dark"] #statusbar .ok { color: #7fd17f; }
+html[data-theme="dark"] .theme-hsd #statusbar .warn, html[data-theme="dark"] #statusbar .warn { color: #ff8a9a; }
+html[data-theme="dark"] .theme-hsd #timeline .tl-controls button { background: #ececec; color: #000; }
+html[data-theme="dark"] .theme-hsd #mddialog button[value="ok"] { background: #ececec; color: #000; }
+html[data-theme="dark"] #editor .ProseMirror > :not(ul):not(ol)::before, html[data-theme="dark"] #editor .ProseMirror > ul > li::before, html[data-theme="dark"] #editor .ProseMirror > ol > li::before { color: #8c8c8c; }
+html[data-theme="dark"] .popup { box-shadow: 0 2px 12px #000a; }
+html[data-theme="dark"] .popup .owner button.danger { color: #ff8a9a; border-color: #7a3a44; }
+html[data-theme="dark"] #mddialog { background: #1e1e1e; color: #ececec; }
+html[data-theme="dark"] #mddialog textarea, html[data-theme="dark"] .popup input.myname { background: #121212; color: #ececec; }
+/* Autorenfarben sind helle Pastelltöne: darauf dunkle Schrift, ohne Farben wieder helle */
+html[data-theme="dark"] #editor:not(.no-colors) span.author[style*="background"] { color: #111; }
+html[data-theme="dark"] ul[data-type="taskList"] li > label input, html[data-theme="dark"] ul[data-type="taskList"] li > input { accent-color: #ececec; }
+html[data-theme="dark"] ul[data-type="taskList"] li[data-checked="true"] > div { color: #9a9a9a; }
+
+/* Aufgabenlisten zum Abhaken (Markdown: - [ ] / - [x]) */
+ul[data-type="taskList"] { list-style: none; padding-left: 0.2em; }
+ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
+ul[data-type="taskList"] li > label { flex: none; margin-top: 0.2em; user-select: none; }
+ul[data-type="taskList"] li > label input, ul[data-type="taskList"] li > input { width: 1.05em; height: 1.05em; margin: 0; cursor: pointer; accent-color: #000; }
+ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+ul[data-type="taskList"] li > div > p { margin: 0; }
+ul[data-type="taskList"] li[data-checked="true"] > div { color: #6b6b6b; text-decoration: line-through; text-decoration-color: #9a9a9a; }

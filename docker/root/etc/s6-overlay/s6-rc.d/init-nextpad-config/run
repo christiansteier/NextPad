@@ -1,0 +1,16 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+# Erster Start: Ordner unter /config, Rechte für abc (PUID/PGID), API-Schlüssel erzeugen, wenn keiner da ist.
+
+mkdir -p /config/data /config/secrets /config/theme
+
+if [[ ! -s /config/secrets/api-keys.txt ]]; then
+    key="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48)"
+    printf '# Ein Schlüssel je Zeile, optional danach die Moodle-Adresse: <schlüssel> https://moodle.example.org\n%s\n' "${key}" > /config/secrets/api-keys.txt
+    echo "**** Neuer API-Schlüssel in /config/secrets/api-keys.txt angelegt (für mod_etherpadlite in Moodle eintragen) ****"
+fi
+
+lsiown -R abc:abc /config/data
+lsiown abc:abc /config /config/secrets /config/theme
+chmod 750 /config/secrets
+find /config/secrets -type f -exec chown abc:abc {} + -exec chmod 640 {} +
