@@ -1,0 +1,36 @@
+{
+  "name": "cooppad-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Editor- und Zeichenbrett-Bundle für NextPad (TipTap + Yjs, Excalidraw + Yjs), gebaut mit esbuild",
+  "license": "EUPL-1.2",
+  "scripts": {
+    "build": "esbuild src/editor.js --bundle --minify --format=iife --target=es2020 --outfile=dist/editor.js && cp src/editor.css dist/editor.css && pnpm run build:board",
+    "build:board": "rm -rf dist/board && esbuild src/board.jsx --bundle --conditions=production --minify --splitting --format=esm --jsx=automatic --target=es2022 --outdir=dist/board --entry-names=[name] --chunk-names=chunks/[name]-[hash] --asset-names=assets/[name]-[hash] --loader:.woff2=file --loader:.ttf=file --define:process.env.NODE_ENV='\"production\"' --define:process.env.IS_PREACT='\"false\"' && cp -r node_modules/@excalidraw/excalidraw/dist/prod/fonts dist/board/fonts && rm -rf dist/board/fonts/Xiaolai && cp src/board-assets.js dist/board/assets-path.js && node patch-board.mjs"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.32.0",
+    "@tiptap/pm": "3.32.0",
+    "@tiptap/starter-kit": "3.32.0",
+    "@tiptap/extension-collaboration": "3.32.0",
+    "@tiptap/extension-collaboration-caret": "3.32.0",
+    "@tiptap/extension-text-style": "3.32.0",
+    "@tiptap/extension-text-align": "3.32.0",
+    "yjs": "13.6.33",
+    "y-prosemirror": "1.3.7",
+    "y-websocket": "3.1.0",
+    "@tiptap/markdown": "3.32.0",
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@tiptap/extension-list": "3.32.0",
+    "y-protocols": "1.0.7",
+    "lib0": "0.2.119"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.64.1",
+    "ws": "8.22.0",
+    "@axe-core/playwright": "4.13.0"
+  }
+}

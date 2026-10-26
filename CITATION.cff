@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata in this file."
+title: "NextPad"
+abstract: >-
+  A slim pad server in Rust that reproduces the Etherpad HTTP API so Moodle keeps
+  working through the unchanged mod_etherpadlite plugin, while running a modern stack
+  underneath: collaborative writing over Yjs (CRDT), the TipTap editor, a timeline built
+  from snapshots, a whiteboard, and Moodle sign-in through LTI 1.3.
+type: software
+authors:
+  - family-names: "Steier"
+    given-names: "Christian-Maximilian"
+    affiliation: "ZWEK – Centre for Training and Competence Development, Hochschule Düsseldorf – University of Applied Sciences"
+    orcid: "https://orcid.org/0000-0001-7946-0461"
+license: EUPL-1.2
+version: "0.2.2"
+date-released: "2026-10-25"
+keywords:
+  - etherpad
+  - moodle
+  - yjs
+  - crdt
+  - collaborative-editing
+  - rust
+  - lti
+  - typst
+  - higher-education
+# After archiving a release on Zenodo, add the minted DOI(s) here, e.g.:
+# identifiers:
+#   - type: doi
+#     value: "10.5281/zenodo.0000000"
+#     description: "Concept DOI (all versions)"

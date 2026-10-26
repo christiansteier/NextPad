@@ -1,0 +1,9 @@
+.git
+docs
+**/node_modules
+web/dist
+server/target
+server/static/editor.js
+server/static/editor.css
+data
+server/static/board

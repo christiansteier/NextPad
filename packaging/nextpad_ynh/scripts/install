@@ -1,0 +1,54 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# EINSTELLUNGEN
+#=================================================
+nextpad_settings_defaults
+ynh_app_setting_set --key=theme --value="$theme"
+ynh_app_setting_set --key=allow_free_pads --value="$allow_free_pads"
+api_allowed=$(ynh_app_setting_get --key=api_allowed)
+frame_ancestors=$(ynh_app_setting_get --key=frame_ancestors)
+free_pads_per_hour=$(ynh_app_setting_get --key=free_pads_per_hour)
+retention=$(ynh_app_setting_get --key=retention)
+history_days=$(ynh_app_setting_get --key=history_days)
+site_name=$(ynh_app_setting_get --key=site_name)
+footer_links=$(ynh_app_setting_get --key=footer_links)
+background_credit=$(ynh_app_setting_get --key=background_credit)
+background_credit_url=$(ynh_app_setting_get --key=background_credit_url)
+
+#=================================================
+# PROGRAMM
+#=================================================
+ynh_script_progression "Programm einrichten..."
+
+ynh_setup_source --dest_dir="$install_dir"
+
+#=================================================
+# KONFIGURATION
+#=================================================
+ynh_script_progression "Konfiguration schreiben..."
+
+nextpad_api_key
+nextpad_write_config
+nextpad_set_permissions
+
+#=================================================
+# SYSTEM
+#=================================================
+ynh_script_progression "Systemdienst und Webserver einrichten..."
+
+ynh_config_add_nginx
+ynh_config_add_systemd
+yunohost service add "$app" --description="NextPad (Etherpad-kompatibler Pad-Server)" --log="systemd"
+
+#=================================================
+# START
+#=================================================
+ynh_script_progression "NextPad starten..."
+
+ynh_systemctl --service="$app" --action="start" --wait_until="lauscht auf" --log_path="systemd"
+
+ynh_script_progression "Installation von $app abgeschlossen"

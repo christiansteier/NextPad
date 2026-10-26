@@ -1,0 +1,30 @@
+/* HSD-Design für den CoopPad-Editor nach dem Corporate Design der Hochschule Düsseldorf:
+   Arial, Schwarz und Grauraster, HSD-Rot #E60028 nur als Akzent (Linien, Fokus), eckige Formen.
+   Logo und HSD Sans kommen zur Laufzeit aus COOPPAD_THEME_DIR, nicht aus dem Repo. */
+.theme-hsd { --super-dark: #000; --dark: #333; --middle: #999; --light: #f2f2f2; --super-light: #fff; --primary: #e60028; --border: #d9d9d9; }
+.theme-hsd, .theme-hsd body { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; color: #000; }
+.theme-hsd #toolbar { border-bottom: 2px solid #e60028; }
+.theme-hsd .ib, .theme-hsd .tsel, .theme-hsd .popup, .theme-hsd .popup a, .theme-hsd .popup input.myname, .theme-hsd #timeline .tl-controls button, .theme-hsd #mddialog, .theme-hsd #mddialog button, .theme-hsd #mddialog textarea, .theme-hsd .collaboration-carets__label, .theme-hsd #timeline .tl-authors .user { border-radius: 0; }
+.theme-hsd .ib { color: #333; } .theme-hsd .ib:hover { background: #e6e6e6; }
+.theme-hsd .ib.selected { background: #333; color: #fff; }
+.theme-hsd .ib:focus-visible, .theme-hsd .tsel:focus-visible { outline: 2px solid #e60028; outline-offset: 1px; }
+.theme-hsd .tsel { font-family: Arial, "Liberation Sans", sans-serif; background-color: #f2f2f2; color: #000; }
+.theme-hsd .separator { background: #d9d9d9; }
+.theme-hsd .toolbar-logo { height: 26px; width: auto; margin: 0 8px 0 6px; display: block; }
+.theme-hsd #editor .ProseMirror { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; line-height: 1.55; color: #000; }
+/* Überschriften: Maße wie Etherpad (2.5/1.8/1.5/1.2 em bei 15 px). HSD Sans nur ab 20 pt (26,7 px) und nur Regular:
+   H1 37,5 px und H2 27 px in HSD Sans, H3 22,5 px und H4 18 px in Arial fett. */
+@font-face { font-family: "HSD Sans"; src: url("../theme/font.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+.theme-hsd #editor .ProseMirror :is(h1,h2,h3,h4), .theme-hsd #timeline .snapshot :is(h1,h2,h3,h4) { color: #000; }
+.theme-hsd #editor .ProseMirror :is(h1,h2), .theme-hsd #timeline .snapshot :is(h1,h2) { font-family: "HSD Sans", Arial, sans-serif; font-weight: 400; letter-spacing: .01em; }
+.theme-hsd #editor .ProseMirror :is(h3,h4), .theme-hsd #timeline .snapshot :is(h3,h4) { font-family: Arial, "Liberation Sans", sans-serif; font-weight: 700; }
+.theme-hsd #editor .ProseMirror > :not(ul):not(ol)::before, .theme-hsd #editor .ProseMirror > ul > li::before, .theme-hsd #editor .ProseMirror > ol > li::before { color: #666; }
+.theme-hsd #editor .ProseMirror a { color: #333; text-decoration: underline; }
+.theme-hsd #statusbar .users { background: #333; color: #fff; }
+.theme-hsd #statusbar .ok { color: #333; } .theme-hsd #statusbar .warn { color: #e60028; }
+.theme-hsd .popup { box-shadow: 0 2px 10px #0003; } .theme-hsd .popup h2 { color: #333; }
+.theme-hsd .popup .swatch { border-radius: 0; }
+.theme-hsd #timeline .tl-slider { accent-color: #e60028; }
+.theme-hsd #timeline .tl-controls button { background: #333; color: #fff; } .theme-hsd #timeline .tl-controls button:hover { background: #000; }
+.theme-hsd #mddialog button[value="ok"] { background: #333; color: #fff; }
+.theme-hsd .avatar { border-radius: 0; }

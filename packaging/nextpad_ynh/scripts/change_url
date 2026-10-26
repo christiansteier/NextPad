@@ -1,0 +1,26 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+ynh_script_progression "Adresse ändern..."
+ynh_systemctl --service="$app" --action="stop" --log_path="systemd"
+
+ynh_config_change_url_nginx
+
+# Basis-Pfad und öffentliche Adresse stehen in der Umgebungsdatei
+api_allowed=$(ynh_app_setting_get --key=api_allowed)
+frame_ancestors=$(ynh_app_setting_get --key=frame_ancestors)
+theme=$(ynh_app_setting_get --key=theme)
+allow_free_pads=$(ynh_app_setting_get --key=allow_free_pads)
+free_pads_per_hour=$(ynh_app_setting_get --key=free_pads_per_hour)
+retention=$(ynh_app_setting_get --key=retention)
+history_days=$(ynh_app_setting_get --key=history_days)
+site_name=$(ynh_app_setting_get --key=site_name)
+footer_links=$(ynh_app_setting_get --key=footer_links)
+background_credit=$(ynh_app_setting_get --key=background_credit)
+background_credit_url=$(ynh_app_setting_get --key=background_credit_url)
+nextpad_write_config
+
+ynh_systemctl --service="$app" --action="start" --wait_until="lauscht auf" --log_path="systemd"
+ynh_script_progression "Neue Adresse für $app eingerichtet. Moodle (Etherpad Lite, LTI-Werkzeug) auf die neue Adresse umstellen."

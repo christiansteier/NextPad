@@ -1,0 +1,12 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+ynh_app_config_apply() {
+    _ynh_app_config_apply
+    nextpad_write_config
+    ynh_systemctl --service="$app" --action="restart" --wait_until="lauscht auf" --log_path="systemd"
+}
+
+ynh_app_config_run "$1"

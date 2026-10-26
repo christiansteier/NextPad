@@ -1,0 +1,77 @@
+#:schema https://raw.githubusercontent.com/YunoHost/apps/main/schemas/config_panel.v1.schema.json
+
+version = "1.0"
+
+[main]
+name = "NextPad"
+
+    [main.moodle]
+    name = "Moodle"
+
+        [main.moodle.api_allowed]
+        ask.de = "Quelladressen, die die Etherpad-API nutzen dürfen"
+        ask.en = "Source addresses allowed to use the Etherpad API"
+        help.de = "Moodle-Server, kommagetrennt, Netze mit CIDR (z. B. 192.0.2.0/24). Der API-Schlüssel steht in /home/yunohost.app/nextpad/secrets/api-keys.txt."
+        type = "string"
+
+        [main.moodle.frame_ancestors]
+        ask.de = "Seiten, die NextPad einbetten dürfen"
+        ask.en = "Pages allowed to embed NextPad"
+        help.de = "Wert für frame-ancestors, z. B. 'self' https://moodle.example.org"
+        type = "string"
+
+    [main.appearance]
+    name.de = "Erscheinungsbild"
+    name.en = "Appearance"
+
+        [main.appearance.theme]
+        ask.de = "Design"
+        type = "select"
+        choices = ["colibris", "hsd"]
+
+        [main.appearance.site_name]
+        ask.de = "Betreiber in der Fußzeile"
+        type = "string"
+
+        [main.appearance.footer_links]
+        ask.de = "Links in der Fußzeile"
+        help.de = "Beschriftung|https://… getrennt mit ;, z. B. Datenschutz|https://…;Impressum|https://…"
+        type = "string"
+        optional = true
+
+        [main.appearance.background_credit]
+        ask.de = "Bildnachweis für das Hintergrundbild"
+        help.de = "Nur nötig, wenn theme/background.jpg liegt (bei Bildern unter CC-Lizenz Pflicht)"
+        type = "string"
+        optional = true
+
+        [main.appearance.background_credit_url]
+        ask.de = "Link des Bildnachweises"
+        type = "string"
+        optional = true
+
+    [main.pads]
+    name.de = "Freie Pads"
+    name.en = "Free pads"
+
+        [main.pads.allow_free_pads]
+        ask.de = "Freie Pads von der Startseite erlauben"
+        type = "boolean"
+
+        [main.pads.free_pads_per_hour]
+        ask.de = "Höchstens neue freie Pads je Adresse und Stunde"
+        type = "number"
+        min = 1
+        max = 1000
+
+        [main.pads.retention]
+        ask.de = "Aufbewahrung freier Pads"
+        help.de = "off: nichts löschen · dry-run: nur protokollieren · on: nach Frist löschen, vorher Mail an angemeldete Besitzer"
+        type = "select"
+        choices = ["off", "dry-run", "on"]
+
+        [main.pads.history_days]
+        ask.de = "Tage mit jedem Einzelschritt in der Zeitleiste"
+        type = "number"
+        min = 1
+        max = 3650

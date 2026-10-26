@@ -1,0 +1,22 @@
+# Secrets: die Sync-Kette zur Storagebox ist ungefiltert
+.env
+.env.*
+*.token
+token.json
+*.pem
+*.key
+# Build-Artefakte gehören nicht auf den noexec-Mount
+.venv/
+venv/
+node_modules/
+target/
+dist/
+build/
+__pycache__/
+.DS_Store
+# Laufzeitdaten und lokale Schlüssel
+data/
+api-keys.txt
+web/dist/
+# Zeichenbrett-Bündel entsteht beim Bau (web/build.sh, Dockerfile)
+server/static/board/

@@ -1,0 +1,229 @@
+/* NextPad – Startseite und Hilfe im HSD-Design.
+   Herkunft der Werte: [CD] = HSD-Corporate-Design (Manual 2015/v6.0, Webauftritt hs-duesseldorf.de),
+   [abgeleitet] = für NextPad festgelegt, geprüft auf WCAG-2.2-Kontrast. */
+
+:root {
+  /* Marke [CD] */
+  --hsd-red: #e60028;               /* Pantone 185, nur Akzent: Kopflinie, Logo, Fokus */
+  --font-text: Arial, "Liberation Sans", Helvetica, sans-serif;   /* Hausschrift Text, linksbündig */
+  --font-display: "HSD Sans", Arial, sans-serif;                   /* nur ab 20 px, nur Regular */
+
+  /* Farben [abgeleitet], Kontrast gegen --color-surface */
+  --color-text-primary: #000;       /* 21:1 */
+  --color-text-secondary: #4d4d4d;  /* 8,45:1; auf --color-canvas 7,55:1 */
+  --color-surface: #fff;
+  --color-canvas: #f2f2f2;
+  --color-border: #d9d9d9;          /* nur Gliederung, keine Bedeutung */
+  --color-border-control: #767676;  /* Feldrahmen 4,54:1 */
+  --color-action: #000;             /* Hauptschaltfläche wie im HSD-Webauftritt: Schwarz */
+  --color-action-hover: #333;
+  --color-on-action: #fff;          /* 21:1 */
+  --color-error: #b00020;           /* 7,33:1, immer mit Text und Symbol */
+  --focus-ring: 3px solid var(--hsd-red);   /* 4,78:1 auf Weiß */
+
+  /* Maße [abgeleitet] */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --content-width: 880px; --entry-width: 540px;
+  --target-min: 44px;
+  --radius: 0;                      /* [CD] eckig wie der HSD-Webauftritt, darum keine Rundungen */
+  --text-base: 1.0625rem; --text-small: .875rem; --line: 1.5;   /* rem: folgt der Schriftgröße des Browsers */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text-primary: #f2f2f2;    /* 14,9:1 auf #1e1e1e */
+    --color-text-secondary: #bdbdbd;  /* 8,87:1 */
+    --color-surface: #1e1e1e;
+    --color-canvas: #121212;
+    --color-border: #3a3a3a;
+    --color-border-control: #8c8c8c;  /* 4,96:1 */
+    --color-action: #f2f2f2;
+    --color-action-hover: #fff;
+    --color-on-action: #000;
+    --color-error: #ff8a9a;           /* 7,43:1 */
+    --focus-ring: 3px solid #ff4d6a;  /* 5,18:1 */
+  }
+  /* Logo nicht umfärben [CD]: im dunklen Modus auf weißer Fläche wie im Original */
+  .site-header .logo { background: #fff; padding: 4px 6px; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+  font-family: var(--font-text); font-size: var(--text-base); line-height: var(--line);
+  color: var(--color-text-primary); background: var(--color-canvas);
+}
+a { color: inherit; }
+:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip-link { position: absolute; left: var(--space-2); top: -60px; z-index: 10; padding: var(--space-2) var(--space-3); background: var(--color-surface); border: 2px solid var(--color-text-primary); }
+.skip-link:focus { top: var(--space-2); }
+
+/* Kopf: Dachmarke, Produktname, Hilfe. Rote Linie wie im Webauftritt. */
+.site-header {
+  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4); padding-top: max(var(--space-3), env(safe-area-inset-top));
+  padding-left: max(var(--space-4), env(safe-area-inset-left)); padding-right: max(var(--space-4), env(safe-area-inset-right));
+  background: var(--color-surface); border-bottom: 2px solid var(--hsd-red);
+}
+.site-header .brand { display: flex; align-items: center; text-decoration: none; min-height: var(--target-min); }
+.site-header .logo { height: 40px; width: auto; display: block; }
+.site-header .wordmark { font-family: var(--font-display); font-size: 24px; }
+.product { display: flex; flex-direction: column; line-height: 1.2; padding-left: var(--space-4); border-left: 1px solid var(--color-border); }
+.product strong { font-size: 18px; letter-spacing: .02em; }
+.product span { font-size: var(--text-small); color: var(--color-text-secondary); }
+.site-header nav { margin-left: auto; }
+.site-header nav a { display: inline-flex; align-items: center; min-height: var(--target-min); padding: 0 var(--space-2); font-weight: 700; text-decoration: none; }
+.site-header nav a:hover { text-decoration: underline; }
+
+/* Bühne: schmales Fotoband, darüber greift das Einstiegsfeld; alles Weitere darunter auf ruhiger Fläche.
+   Die Hauptaktion liegt so auch auf kleinen Telefonen (667 px hoch) im ersten Bildschirm. */
+.stage { flex: 1; background: var(--color-surface); }
+.wrap { width: 100%; max-width: var(--content-width); margin: 0 auto; padding-left: max(var(--space-4), env(safe-area-inset-left)); padding-right: max(var(--space-4), env(safe-area-inset-right)); }
+.hero { position: relative; height: 64px; background: var(--color-canvas); }
+.has-bg .hero { height: 200px; background: var(--color-canvas) var(--bg-image) center 40% / cover no-repeat; }
+.entry-wrap { position: relative; margin-top: -40px; }
+.has-bg .entry-wrap { margin-top: -64px; }
+/* Über dem Foto leicht durchscheinend (88 %); Zweittext bleibt im ungünstigsten Fall bei 6,3:1 */
+.has-bg .entry { background: color-mix(in srgb, var(--color-surface) 88%, transparent); }
+.below { padding-top: var(--space-6); padding-bottom: var(--space-7); }
+.below > * + * { margin-top: var(--space-6); }
+
+.panel { background: var(--color-surface); padding: var(--space-5); }
+.entry { max-width: var(--entry-width); border: 1px solid var(--color-border); }
+.panel > :last-child { margin-bottom: 0; }
+/* Titel in Arial Bold, normale Schreibung: ruhiger als die Versalien der HSD Sans; die Marke trägt der Kopf */
+h1 { font-weight: 700; font-size: 1.75rem; line-height: 1.15; margin: 0 0 var(--space-2); }
+h2 { font-size: 1.125rem; line-height: 1.3; margin: 0 0 var(--space-3); }
+.lead { margin: 0 0 var(--space-5); color: var(--color-text-secondary); max-width: 60ch; }
+.hint { margin: var(--space-2) 0 0; font-size: var(--text-small); color: var(--color-text-secondary); }
+/* Zugriff gleich beim Einstieg sagen, sachlich statt alarmierend */
+.access { display: flex; gap: var(--space-2); margin: var(--space-3) 0 0; font-size: var(--text-small); }
+.access::before { content: "i"; flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid currentColor; border-radius: 50%; font: 700 12px Georgia, serif; }
+
+/* Formular */
+label.field-label { display: block; font-weight: 700; margin-bottom: var(--space-2); }
+.field-row { display: flex; gap: var(--space-2); }
+.field-row input {
+  flex: 1; min-width: 0; min-height: 48px; padding: 0 var(--space-3);
+  font: inherit; color: var(--color-text-primary); background: var(--color-surface);
+  border: 1px solid var(--color-border-control); border-radius: 0;
+}
+.field-row input:focus-visible { outline-offset: 0; }
+.field-row input[aria-invalid="true"] { border: 2px solid var(--color-error); }
+.field-error { display: flex; gap: var(--space-2); margin: var(--space-2) 0 0; font-size: var(--text-small); font-weight: 700; color: var(--color-error); }
+.field-error::before { content: "!"; flex: none; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 50%; background: var(--color-error); color: var(--color-surface); font-size: 13px; }
+
+/* Schaltflächen: Arial Bold (CD: „für die meisten Anwendungen Arial Bold“), eckig */
+.btn {
+  -webkit-appearance: none; appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-height: 48px; padding: 0 var(--space-5); font: inherit; font-weight: 700; text-decoration: none; border-radius: 0; cursor: pointer;
+}
+.btn-primary { background: var(--color-action); color: var(--color-on-action); border: 2px solid var(--color-action); }
+.btn-primary:hover { background: var(--color-action-hover); border-color: var(--color-action-hover); }
+.btn-secondary { background: var(--color-surface); color: var(--color-text-primary); border: 2px solid var(--color-text-primary); }
+.btn-secondary:hover { background: var(--color-canvas); }
+.btn-block { display: flex; width: 100%; }
+/* Rückmeldung beim Antippen (direkte Manipulation), auch ohne Hover auf Touch-Geräten */
+.btn-primary:active { background: var(--color-action-hover); transform: translateY(1px); }
+.btn-secondary:active, .template:active, .recent-list a:active { background: var(--color-canvas); }
+.btn-link { background: none; border: 0; padding: var(--space-2) 0; min-height: var(--target-min); font: inherit; font-size: var(--text-small); color: var(--color-text-secondary); text-decoration: underline; cursor: pointer; }
+
+/* Neues Pad: aufklappbar im Einstiegsfeld (natives details/summary, ohne JavaScript bedienbar) */
+.new-pad { margin-top: var(--space-4); border-top: 1px solid var(--color-border); }
+.new-pad summary {
+  display: flex; align-items: center; gap: var(--space-2); min-height: var(--target-min); padding: var(--space-3) 0 0;
+  font-weight: 700; cursor: pointer; list-style: none;
+}
+.new-pad summary::-webkit-details-marker { display: none; }
+.new-pad summary::before { content: ""; flex: none; width: 8px; height: 8px; margin: 0 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.new-pad[open] summary::before { transform: rotate(45deg); }
+.new-pad summary:hover { text-decoration: underline; }
+.templates { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.template {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; align-content: center; gap: 0 var(--space-3); height: 100%; min-height: 56px; padding: var(--space-2) var(--space-3);
+  text-decoration: none; border: 1px solid var(--color-border-control); border-radius: var(--radius); background: transparent;
+}
+.template:hover { border-color: var(--color-text-primary); background: var(--color-canvas); }
+.template-icon { grid-row: span 2; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.template-name { font-weight: 700; line-height: 1.25; }
+.template-desc { grid-column: 2; font-size: var(--text-small); line-height: 1.3; color: var(--color-text-secondary); }
+.template .chev { grid-column: 3; grid-row: 1 / span 2; fill: none; stroke: var(--color-text-secondary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (min-width: 480px) { .templates { grid-template-columns: 1fr 1fr; } .template .chev { display: none; } }
+@media (prefers-reduced-motion: no-preference) { .new-pad summary::before { transition: transform .15s; } }
+
+/* Zuletzt geöffnet: Titel umbrechen statt abschneiden */
+.recent-list { list-style: none; margin: 0; padding: 0; }
+.recent-list li + li { border-top: 1px solid var(--color-border); }
+.recent-list a { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 var(--space-3); min-height: var(--target-min); padding: var(--space-3) 0; text-decoration: none; }
+.recent-list a .t { font-weight: 700; overflow-wrap: anywhere; }
+.recent-list a:hover .t { text-decoration: underline; }
+.recent-list a .w { font-size: var(--text-small); color: var(--color-text-secondary); }
+.recent-list a::after { content: "›"; margin-left: auto; padding-left: var(--space-3); font-size: 22px; line-height: 1; color: var(--color-text-secondary); }
+
+/* „Liste leeren“ steht im Satz: trotzdem mindestens 24 px Zielfläche (WCAG 2.5.8) */
+.hint .btn-link { display: inline-flex; align-items: center; min-height: 24px; padding: 0; }
+
+/* Anmeldung: sekundäre Schaltfläche mit einer Zeile Nutzen */
+.account-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+.account-row .btn-block { width: auto; border-width: 1px; border-color: var(--color-border-control); }
+.account-row .btn-block:hover { border-color: var(--color-text-primary); }
+.account-row .hint { margin: 0; flex: 1 1 16em; }
+.account-row .who { margin: 0; flex: 1 1 12em; }
+.account-row .avatar { width: 40px; height: 40px; object-fit: cover; background: var(--color-canvas); }
+.account-row form { margin: 0; }
+.me { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.me .avatar { width: 40px; height: 40px; object-fit: cover; background: var(--color-canvas); }
+.me .who { flex: 1; margin: 0; }
+
+/* Hinweis: ein Absatz über dem Fuß */
+.note { padding-top: var(--space-5); border-top: 1px solid var(--color-border); font-size: var(--text-small); color: var(--color-text-secondary); }
+.note a { color: var(--color-text-primary); }
+
+/* Bildnachweis: eigene Fläche, damit lesbar und groß genug zum Antippen */
+.credit { position: absolute; right: 0; top: 0; margin: 0; }   /* oben: unten liegt das Einstiegsfeld */
+.credit a { display: inline-flex; align-items: center; min-height: 24px; padding: var(--space-1) var(--space-2); font-size: 12px; color: #fff; background: rgba(0, 0, 0, .72); text-decoration: none; }
+.credit a:hover { text-decoration: underline; }
+
+.site-footer {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 var(--space-5);
+  padding: var(--space-3) var(--space-4); padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  font-size: var(--text-small); color: var(--color-text-secondary); background: var(--color-surface); border-top: 1px solid var(--color-border);
+}
+.site-footer a { display: inline-flex; align-items: center; min-height: var(--target-min); }
+.site-footer .site { flex-basis: 100%; text-align: center; padding-bottom: var(--space-2); }
+
+@media (max-width: 479px) {
+  .site-header { gap: var(--space-3); padding-top: max(var(--space-2), env(safe-area-inset-top)); padding-bottom: var(--space-2); }
+  .site-header .logo { height: 32px; }
+  .product { padding-left: var(--space-3); }
+  .product strong { font-size: 16px; }
+  .product span { display: none; }
+  .panel { padding: var(--space-4); }
+  .field-row { flex-direction: column; }
+  .field-row .btn, .account-row .btn-block { width: 100%; }
+}
+@media (min-width: 480px) { .entry-wrap { margin-top: -56px; } .has-bg .hero { height: 300px; } .has-bg .entry-wrap { margin-top: -120px; } }
+@media (min-width: 1000px) {
+  .site-header { padding-left: max(var(--space-5), calc(50vw - 440px)); padding-right: max(var(--space-5), calc(50vw - 440px)); }
+  .site-header .logo { height: 48px; }
+  h1 { font-size: 2.25rem; }
+  .entry-wrap { margin-top: -72px; }
+  /* Desktop: Feld liegt ganz auf dem Foto; Foto und Feld teilen sich eine Rasterzeile, das Foto wächst mit */
+  .has-bg main.start { display: grid; }
+  .has-bg .hero { grid-area: 1 / 1; height: auto; min-height: 460px; }
+  .has-bg .entry-wrap { grid-area: 1 / 1; margin-top: 0; padding-top: 72px; padding-bottom: 72px; }
+  .has-bg .below { grid-area: 2 / 1; }
+  .site-footer .site { flex-basis: auto; padding-bottom: 0; }
+}
+@media (prefers-reduced-motion: no-preference) { .btn, .template { transition: background-color .15s, border-color .15s, transform .05s; } }
+@media (prefers-reduced-motion: reduce) { .btn-primary:active { transform: none; } }
+
+/* Hilfe- und Fehlerseiten */
+.doc { max-width: 40em; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-7); }
+.doc h1 { font-size: 32px; }
+.doc h2 { margin-top: var(--space-6); }
+.doc p, .doc li { max-width: 70ch; }
+.notice { border-left: 4px solid var(--color-text-primary); background: var(--color-surface); padding: var(--space-4) var(--space-5); margin: var(--space-5) 0; }
