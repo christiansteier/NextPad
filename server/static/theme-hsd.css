@@ -1,6 +1,6 @@
-/* HSD-Design für den CoopPad-Editor nach dem Corporate Design der Hochschule Düsseldorf:
+/* HSD-Design für den NextPad-Editor nach dem Corporate Design der Hochschule Düsseldorf:
    Arial, Schwarz und Grauraster, HSD-Rot #E60028 nur als Akzent (Linien, Fokus), eckige Formen.
-   Logo und HSD Sans kommen zur Laufzeit aus COOPPAD_THEME_DIR, nicht aus dem Repo. */
+   Logo und HSD Sans kommen zur Laufzeit aus NEXTPAD_THEME_DIR, nicht aus dem Repo. */
 .theme-hsd { --super-dark: #000; --dark: #333; --middle: #999; --light: #f2f2f2; --super-light: #fff; --primary: #e60028; --border: #d9d9d9; }
 .theme-hsd, .theme-hsd body { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; color: #000; }
 .theme-hsd #toolbar { border-bottom: 2px solid #e60028; }

@@ -86,7 +86,7 @@ pub async fn run_once(state: &Arc<AppState>) {
 async fn notify(state: &Arc<AppState>, r: &RetentionRow, delete_after: i64) -> anyhow::Result<()> {
     let cfg = &state.config;
     let email = r.email.clone().ok_or_else(|| anyhow::anyhow!("keine Adresse"))?;
-    let public = cfg.public_url.clone().ok_or_else(|| anyhow::anyhow!("COOPPAD_PUBLIC_URL fehlt"))?;
+    let public = cfg.public_url.clone().ok_or_else(|| anyhow::anyhow!("NEXTPAD_PUBLIC_URL fehlt"))?;
     let md = state.rooms.markdown(&r.id).await?;
     let title = md.lines().map(|l| l.trim_start_matches('#').trim()).find(|l| !l.is_empty()).unwrap_or(&r.id).chars().take(60).collect::<String>();
     let title = html_escape::decode_html_entities(&title).to_string();
@@ -101,7 +101,7 @@ async fn notify(state: &Arc<AppState>, r: &RetentionRow, delete_after: i64) -> a
     let greeting = name.map(|n| format!("Guten Tag {n},")).unwrap_or_else(|| "Guten Tag,".into());
     let text = format!("{greeting}\n\ndas Pad „{title}“ wurde seit einem Jahr weder bearbeitet noch geöffnet. Es wird am {date} gelöscht.\n\n{pad_link}\n\n{anhang}\n\nSoll das Pad ein weiteres Jahr bleiben, genügt dieser Link:\n{extend_link}\n\nAuch wer das Pad bis dahin öffnet oder bearbeitet, verlängert es. Ohne Verlängerung ist das Pad nach dem {date} nicht mehr erreichbar.\n\nDiese Mail kommt automatisch von NextPad ({site}). Sie geht an die Person, die das Pad angelegt hat.\n", site = cfg.site_name, anhang = if board { "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG oder SVG sichern." } else { "Im Anhang steht der aktuelle Inhalt als PDF." });
     let subject = format!("NextPad: Pad „{title}“ wird am {date} gelöscht");
-    let from = cfg.mail_from.clone().ok_or_else(|| anyhow::anyhow!("COOPPAD_MAIL_FROM fehlt"))?;
+    let from = cfg.mail_from.clone().ok_or_else(|| anyhow::anyhow!("NEXTPAD_MAIL_FROM fehlt"))?;
     let url = cfg.smtp_url.clone().ok_or_else(|| anyhow::anyhow!("SMTP fehlt"))?;
     let filename = format!("pad-{}.pdf", r.id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>());
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {

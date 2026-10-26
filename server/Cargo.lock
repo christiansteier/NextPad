@@ -430,40 +430,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
-name = "cooppad"
-version = "0.2.12"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "bytes",
- "ego-tree",
- "futures-util",
- "html-escape",
- "include_dir",
- "ipnet",
- "jsonwebtoken",
- "lettre",
- "mimalloc",
- "rand 0.9.5",
- "rusqlite",
- "scraper",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "subtle",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "typst",
- "typst-layout",
- "typst-pdf",
- "ureq",
- "yrs",
-]
-
-[[package]]
 name = "core_detect"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2154,6 +2120,40 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "nextpad"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "ego-tree",
+ "futures-util",
+ "html-escape",
+ "include_dir",
+ "ipnet",
+ "jsonwebtoken",
+ "lettre",
+ "mimalloc",
+ "rand 0.9.5",
+ "rusqlite",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "subtle",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "typst",
+ "typst-layout",
+ "typst-pdf",
+ "ureq",
+ "yrs",
+]
 
 [[package]]
 name = "nom"

@@ -2,7 +2,7 @@
 # Baut das Editor-Bundle außerhalb des noexec-Mounts (pnpm + esbuild) und kopiert es nach server/static/.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BUILD="${COOPPAD_WEB_BUILD:-$HOME/.cache/cooppad-web}"
+BUILD="${NEXTPAD_WEB_BUILD:-${COOPPAD_WEB_BUILD:-$HOME/.cache/nextpad-web}}"
 mkdir -p "$BUILD"
 rsync -a --delete --exclude node_modules --exclude dist "$HERE/" "$BUILD/"
 cd "$BUILD"

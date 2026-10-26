@@ -13,7 +13,7 @@ const pads = Array.from({ length: PADS }, (_, i) => `${prefix}-${i}`)
 const sendTimes = new Map(); const lat = []; let open = 0, closed = 0, ready = 0
 async function guestCookie(pad) {
   const r = await fetch(`${base}/p/${encodeURIComponent(pad)}`, { redirect: 'manual' })
-  return r.headers.getSetCookie().map(x => x.split(';')[0]).find(x => x.startsWith('cooppad_author='))
+  return r.headers.getSetCookie().map(x => x.split(';')[0]).find(x => x.startsWith('nextpad_author='))
 }
 const clients = []
 for (let i = 0; i < N; i++) {

@@ -8,16 +8,16 @@ import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 const [G, PAD] = process.argv.slice(2)
 const W = +(process.argv[4] || 20), R = +(process.argv[5] || 300), SEC = +(process.argv[6] || 30), GAP = +(process.argv[7] || 2000)
-const base = process.env.COOPPAD_URL || 'http://127.0.0.1:5093'
+const base = process.env.NEXTPAD_URL || 'http://127.0.0.1:5093'
 const wsBase = base.replace(/^http/, 'ws') + '/ws'
-const key = readFileSync(process.env.COOPPAD_KEY_FILE, 'utf8').trim()
+const key = readFileSync(process.env.NEXTPAD_KEY_FILE, 'utf8').trim()
 const post = async (fn, p) => { const fd = new FormData(); for (const [k, v] of Object.entries({ ...p, apikey: key })) fd.append(k, v); return (await fetch(`${base}/api/1.2/${fn}`, { method: 'POST', body: fd })).json() }
 async function session(i) {
   const a = await post('createAuthorIfNotExistsFor', { authorMapper: 'v' + i, name: 'V' + i })
   const s = await post('createSession', { groupID: G, authorID: a.data.authorID, validUntil: String(Math.floor(Date.now() / 1000) + 3600) })
   return s.data.sessionID
 }
-const pid = execSync('pgrep -x cooppad').toString().trim().split('\n')[0]
+const pid = execSync('pgrep -x nextpad').toString().trim().split('\n')[0]
 let lastTicks = null, lastT = null
 const cpu = () => { const st = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' '); const t = +st[11] + +st[12]; const n = performance.now(); let c = 0; if (lastTicks !== null) c = (t - lastTicks) / 100 / ((n - lastT) / 1000) * 100; lastTicks = t; lastT = n; return c }
 cpu()

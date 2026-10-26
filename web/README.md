@@ -1,4 +1,4 @@
-# CoopPad-Editor (Browser)
+# NextPad-Editor (Browser)
 
 TipTap 3 auf ProseMirror, Yjs über y-websocket gegen den Rust-Server. Gebaut mit esbuild zu einem einzigen Bundle (`dist/editor.js`, rund 540 kB), das in den Server eingebettet wird.
 
@@ -6,11 +6,11 @@ TipTap 3 auf ProseMirror, Yjs über y-websocket gegen den Rust-Server. Gebaut mi
 
     bash build.sh
 
-Das Skript kopiert die Quellen nach `~/.cache/cooppad-web` (die Projektablage ist `noexec`), installiert mit pnpm nach Lockfile, baut und legt `editor.js` und `editor.css` unter `../server/static/` ab. pnpm 11: `pnpm-workspace.yaml` erlaubt das Install-Skript von esbuild (`allowBuilds`).
+Das Skript kopiert die Quellen nach `~/.cache/nextpad-web` (die Projektablage ist `noexec`), installiert mit pnpm nach Lockfile, baut und legt `editor.js` und `editor.css` unter `../server/static/` ab. pnpm 11: `pnpm-workspace.yaml` erlaubt das Install-Skript von esbuild (`allowBuilds`).
 
 ## Was drin ist
 
-StarterKit (ohne Undo-Redo, Link, Codeblock, Zitat, Linie), TextStyle mit Farbe und Schriftgröße, Textausrichtung, Collaboration (Feld `default`), CollaborationCaret, eigene Mark `author` (Autorenkennung je Zeichen; immer als gespeicherte Mark des eigenen Autors aktiv), Toolbar, Statuszeile mit Verbindung und Teilnehmenden, Zeitleiste (Snapshot-Liste des Servers), Export-Links. Konfiguration kommt aus `<script type="application/json" id="cooppad-config">` der Seite.
+StarterKit (ohne Undo-Redo, Link, Codeblock, Zitat, Linie), TextStyle mit Farbe und Schriftgröße, Textausrichtung, Collaboration (Feld `default`), CollaborationCaret, eigene Mark `author` (Autorenkennung je Zeichen; immer als gespeicherte Mark des eigenen Autors aktiv), Toolbar, Statuszeile mit Verbindung und Teilnehmenden, Zeitleiste (Snapshot-Liste des Servers), Export-Links. Konfiguration kommt aus `<script type="application/json" id="nextpad-config">` der Seite.
 
 ## Tests
 

@@ -1,8 +1,8 @@
-# NextPad (technisch cooppad): Editor- und Zeichenbrett-Bündel (pnpm + esbuild), Server (Rust), Laufzeit ohne Toolchain und ohne Shell.
-# Bau:   docker build -t cooppad:<tag> .
-# Start: docker run -d -p 127.0.0.1:5090:5090 -v cooppad-data:/data \
-#          -v /pfad/api-keys.txt:/run/secrets/api-keys:ro -e COOPPAD_API_KEYS_FILE=/run/secrets/api-keys cooppad:<tag>
-# Voreinstellung ist das Colibris-Design. Eigenes Logo und eigene Schrift (Design hsd): -v /pfad/theme:/theme:ro -e COOPPAD_THEME=hsd -e COOPPAD_THEME_DIR=/theme
+# NextPad: Editor- und Zeichenbrett-Bündel (pnpm + esbuild), Server (Rust), Laufzeit ohne Toolchain und ohne Shell.
+# Bau:   docker build -t nextpad:<tag> .
+# Start: docker run -d -p 127.0.0.1:5090:5090 -v nextpad-data:/data \
+#          -v /pfad/api-keys.txt:/run/secrets/api-keys:ro -e NEXTPAD_API_KEYS_FILE=/run/secrets/api-keys nextpad:<tag>
+# Voreinstellung ist das Colibris-Design. Eigenes Logo und eigene Schrift (Design hsd): -v /pfad/theme:/theme:ro -e NEXTPAD_THEME=hsd -e NEXTPAD_THEME_DIR=/theme
 
 # 1. Editor-Bundle
 FROM docker.io/library/node:22-bookworm-slim AS web
@@ -20,7 +20,7 @@ FROM docker.io/library/rust:1.99.1-alpine3.23 AS server
 RUN apk add --no-cache musl-dev build-base
 WORKDIR /src
 COPY server/Cargo.toml server/Cargo.lock ./
-RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release --locked && rm -rf src target/release/deps/cooppad* target/release/cooppad*
+RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release --locked && rm -rf src target/release/deps/nextpad* target/release/nextpad*
 COPY server/static ./static
 COPY --from=web /web/dist/editor.js /web/dist/editor.css ./static/
 COPY --from=web /web/dist/board ./static/board
@@ -37,15 +37,15 @@ LABEL org.opencontainers.image.title="NextPad" \
       org.opencontainers.image.description="Etherpad-kompatibler Pad-Server mit Yjs, Zeitleiste, Zeichenbrett und Moodle-Anmeldung (LTI 1.3)" \
       org.opencontainers.image.source="https://github.com/christiansteier/nextpad" \
       org.opencontainers.image.licenses="EUPL-1.2"
-ENV COOPPAD_BIND=0.0.0.0:5090 \
-    COOPPAD_DATA=/config/data \
-    COOPPAD_API_KEYS_FILE=/config/secrets/api-keys.txt \
-    COOPPAD_LTI_FILE=/config/secrets/lti-platforms.json \
-    COOPPAD_THEME_DIR=/config/theme \
-    COOPPAD_TRUST_PROXY=false \
+ENV NEXTPAD_BIND=0.0.0.0:5090 \
+    NEXTPAD_DATA=/config/data \
+    NEXTPAD_API_KEYS_FILE=/config/secrets/api-keys.txt \
+    NEXTPAD_LTI_FILE=/config/secrets/lti-platforms.json \
+    NEXTPAD_THEME_DIR=/config/theme \
+    NEXTPAD_TRUST_PROXY=false \
     RUST_LOG=info
 COPY docker/root/ /
-COPY --from=server /src/target/release/cooppad /app/nextpad
+COPY --from=server /src/target/release/nextpad /app/nextpad
 RUN chmod +x /etc/s6-overlay/s6-rc.d/*/run
 EXPOSE 5090
 VOLUME /config

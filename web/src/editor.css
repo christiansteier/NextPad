@@ -1,4 +1,4 @@
-/* CoopPad-Editor im Stil von Etherpads Skin „Colibris“: Quicksand, weiße Leisten, grauer Zeilenrand, Symbolschrift von Etherpad. */
+/* NextPad-Editor im Stil von Etherpads Skin „Colibris“: Quicksand, weiße Leisten, grauer Zeilenrand, Symbolschrift von Etherpad. */
 @font-face { font-family: Quicksand; src: url("quicksand.ttf") format("truetype"); font-weight: 300 700; }
 @font-face { font-family: "fontawesome-etherpad"; src: url("icons.woff") format("woff"); font-weight: normal; font-style: normal; }
 :root { --super-dark: #485365; --dark: #576273; --middle: #d2d2d2; --light: #f2f3f4; --super-light: #fff; --primary: #64d29b; --border: #e4e6e9; --gutter: 230px; }

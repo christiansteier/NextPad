@@ -9,7 +9,7 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { batchRemoteUpdates } from './yjs-batch.js'
 
-const cfg = JSON.parse(document.getElementById('cooppad-config').textContent)
+const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
 const ydoc = new Y.Doc()
 const wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + cfg.basePath + '/ws'
 const provider = new WebsocketProvider(wsBase, encodeURIComponent(cfg.urlId), ydoc, { disableBc: true })
@@ -17,7 +17,7 @@ batchRemoteUpdates(provider)
 const yElements = ydoc.getMap('board-elements')
 const myName = cfg.author.guest ? 'Gast' : (cfg.author.name || 'Gast')
 provider.awareness.setLocalStateField('user', { name: myName, color: cfg.author.color, id: cfg.author.id, avatar: cfg.author.avatar || null })
-window.cooppad = { ydoc, provider, yElements }
+window.nextpad = { ydoc, provider, yElements }
 
 // Startdaten erst nach dem ersten Abgleich mit dem Server (sonst überschreibt Excalidraws leerer Startzustand den Bestand)
 const known = new Map() // Kennung → zuletzt gesehene Version (eigene oder fremde)
@@ -38,10 +38,10 @@ function darker(hex) {
 
 function rememberBoard() {
   try {
-    let l = JSON.parse(localStorage.getItem('cooppad.recent') || '[]'); if (!Array.isArray(l)) l = []
+    let l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]'); if (!Array.isArray(l)) l = []
     l = l.filter(e => e && e.id !== cfg.urlId)
     l.unshift({ id: cfg.urlId, t: Date.now(), title: 'Zeichenbrett' })
-    localStorage.setItem('cooppad.recent', JSON.stringify(l.slice(0, 10)))
+    localStorage.setItem('nextpad.recent', JSON.stringify(l.slice(0, 10)))
   } catch {}
 }
 
@@ -106,7 +106,7 @@ function Board() {
   const dark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches
   return (
     <Excalidraw
-      excalidrawAPI={a => { api.current = a; window.cooppad.api = a }}
+      excalidrawAPI={a => { api.current = a; window.nextpad.api = a }}
       initialData={initialData}
       onChange={onChange}
       onPointerUpdate={onPointerUpdate}

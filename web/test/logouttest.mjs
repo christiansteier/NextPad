@@ -1,11 +1,14 @@
 // Abmelden auf drei Wegen: Startseite, Pad (Teilnehmende), Adresse /logout
 import { chromium } from 'playwright'
 import { execSync } from 'node:child_process'
-const base = 'http://127.0.0.1:5093', db = process.env.HOME + '/.cache/cooppad-data-5093/cooppad.sqlite'
+import { existsSync } from 'node:fs'
+const base = 'http://127.0.0.1:5093', dir = process.env.HOME + '/.cache/nextpad-data-5093'
+// Datenbank wie der Server: nextpad.sqlite, sonst die alte cooppad.sqlite
+const db = process.env.NEXTPAD_DB || (existsSync(dir + '/nextpad.sqlite') || !existsSync(dir + '/cooppad.sqlite') ? dir + '/nextpad.sqlite' : dir + '/cooppad.sqlite')
 const login = () => execSync(`sqlite3 ${db} "insert or replace into logins values ('testlogin0123456789abcdef','a.7GWLCPklETZvcgvM',0,99999999999);"`)
 const b = await chromium.launch(); let ok = 0, fail = 0
 const check = (n, c) => { c ? ok++ : fail++; console.log((c ? 'ok   ' : 'FAIL ') + n) }
-async function ctx() { login(); const c = await b.newContext(); await c.addCookies([{ name: 'cooppad_login', value: 'testlogin0123456789abcdef', domain: '127.0.0.1', path: '/' }]); return c.newPage() }
+async function ctx() { login(); const c = await b.newContext(); await c.addCookies([{ name: 'nextpad_login', value: 'testlogin0123456789abcdef', domain: '127.0.0.1', path: '/' }]); return c.newPage() }
 let p = await ctx(); await p.goto(base + '/')
 check('Startseite zeigt Anmeldung', await p.locator('text=Über Moodle angemeldet als').count() === 1)
 check('Vorlagen aufgeklappt', await p.locator('.new-pad[open]').count() === 1 && await p.locator('a[href$="vorlage=protokoll"]').isVisible())

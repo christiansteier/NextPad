@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 mod api;
 mod config;
 mod docs;
@@ -34,13 +35,13 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).init();
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) == Some("--version") { println!("cooppad {}", env!("CARGO_PKG_VERSION")); return Ok(()); }
+    if args.get(1).map(String::as_str) == Some("--version") { println!("nextpad {}", env!("CARGO_PKG_VERSION")); return Ok(()); }
     if args.get(1).map(String::as_str) == Some("import-etherpad") {
-        // cooppad import-etherpad <export-dir> [--no-history] [--only padID,padID]
-        let export = std::path::PathBuf::from(args.get(2).ok_or_else(|| anyhow::anyhow!("Aufruf: cooppad import-etherpad <export-dir> [--no-history] [--only id,id]"))?);
-        let data_dir = std::path::PathBuf::from(std::env::var("COOPPAD_DATA").unwrap_or_else(|_| "./data".into()));
+        // nextpad import-etherpad <export-dir> [--no-history] [--only padID,padID]
+        let export = std::path::PathBuf::from(args.get(2).ok_or_else(|| anyhow::anyhow!("Aufruf: nextpad import-etherpad <export-dir> [--no-history] [--only id,id]"))?);
+        let data_dir = std::path::PathBuf::from(config::var("DATA").unwrap_or_else(|| "./data".into()));
         std::fs::create_dir_all(&data_dir)?;
-        let store = store::Store::open(&data_dir.join("cooppad.sqlite"))?;
+        let store = store::Store::open(&config::db_path(&data_dir))?;
         let with_history = !args.iter().any(|a| a == "--no-history");
         let only: Vec<String> = args.iter().position(|a| a == "--only").and_then(|i| args.get(i + 1)).map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default();
         let t0 = std::time::Instant::now();
@@ -57,16 +58,16 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     let _ = web::BASE_PATH.set(config.base_path.clone());
     std::fs::create_dir_all(&config.data_dir)?;
-    let store = Arc::new(store::Store::open(&config.data_dir.join("cooppad.sqlite"))?);
+    let store = Arc::new(store::Store::open(&config::db_path(&config.data_dir))?);
     let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default() });
     if args.get(1).map(String::as_str) == Some("compact") {
-        // einmal zusammenführen (Frist aus COOPPAD_HISTORY_DAYS)
+        // einmal zusammenführen (Frist aus NEXTPAD_HISTORY_DAYS)
         state.store.compact(ids::now_ms() - state.config.history_days * 86_400_000);
         state.store.flush();
         return Ok(());
     }
     if args.get(1).map(String::as_str) == Some("retention-run") {
-        // einmaliger Durchlauf der Aufbewahrung (Modus aus COOPPAD_RETENTION; dry-run zeigt nur an)
+        // einmaliger Durchlauf der Aufbewahrung (Modus aus NEXTPAD_RETENTION; dry-run zeigt nur an)
         retention::run_once(&state).await;
         state.rooms.snapshot_all("Aufbewahrung").await;
         state.store.flush();
@@ -137,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Altbestand des Update-Logs zusammenführen: Feinschritte bleiben für COOPPAD_HISTORY_DAYS Tage
+    // Altbestand des Update-Logs zusammenführen: Feinschritte bleiben für NEXTPAD_HISTORY_DAYS Tage
     let st = state.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(180)).await;
@@ -159,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
     let st_final = state.clone();
     let bind = state.config.bind;
     for p in &state.config.lti { tracing::info!("LTI-Anmeldung über {} ({})", p.name, p.issuer); }
-    tracing::info!("NextPad (cooppad) {} lauscht auf {bind}, Basis-Pfad '{}'", env!("CARGO_PKG_VERSION"), state.config.base_path);
+    tracing::info!("NextPad {} lauscht auf {bind}, Basis-Pfad '{}'", env!("CARGO_PKG_VERSION"), state.config.base_path);
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())

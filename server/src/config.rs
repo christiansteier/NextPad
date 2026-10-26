@@ -26,7 +26,7 @@ pub struct Config {
     pub theme_dir: Option<PathBuf>,
     /// Name der Einrichtung im Fuß der Startseite
     pub site_name: String,
-    /// Öffentliche Adresse inklusive Basis-Pfad (für LTI-Rücksprung), z. B. https://host/cooppad
+    /// Öffentliche Adresse inklusive Basis-Pfad (für LTI-Rücksprung), z. B. https://host/np
     pub public_url: Option<String>,
     /// Moodle-Instanzen für die Anmeldung per LTI 1.3
     pub lti: Vec<crate::lti::Platform>,
@@ -48,15 +48,27 @@ pub struct Config {
     pub background_credit_url: Option<String>,
 }
 
+/// Einstellung `NEXTPAD_<name>`; der alte Name `COOPPAD_<name>` gilt weiter, damit bestehende
+/// Installationen ohne Änderung laufen.
+pub fn var(name: &str) -> Option<String> {
+    std::env::var(format!("NEXTPAD_{name}")).or_else(|_| std::env::var(format!("COOPPAD_{name}"))).ok()
+}
+
 fn env(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.to_string())
+    var(name).unwrap_or_else(|| default.to_string())
+}
+
+/// Datenbankdatei: `nextpad.sqlite`, eine vorhandene `cooppad.sqlite` aus älteren Fassungen wird weiter genutzt.
+pub fn db_path(data_dir: &std::path::Path) -> PathBuf {
+    let old = data_dir.join("cooppad.sqlite");
+    let new = data_dir.join("nextpad.sqlite");
+    if !new.exists() && old.exists() { old } else { new }
 }
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        let data_dir = PathBuf::from(env("COOPPAD_DATA", "./data"));
-        let keys_file = PathBuf::from(env(
-            "COOPPAD_API_KEYS_FILE",
+        let data_dir = PathBuf::from(env("DATA", "./data"));
+        let keys_file = PathBuf::from(env("API_KEYS_FILE",
             &data_dir.join("api-keys.txt").to_string_lossy(),
         ));
         // Zeile: <schlüssel> [<moodle-basis-url>]
@@ -80,15 +92,15 @@ impl Config {
         for k in &api_keys {
             anyhow::ensure!(k.len() >= 32, "API-Key zu kurz (mindestens 32 Zeichen)");
         }
-        let mut base_path = env("COOPPAD_BASE_PATH", "");
+        let mut base_path = env("BASE_PATH", "");
         if base_path.ends_with('/') {
             base_path.pop();
         }
-        let lti = crate::lti::load(&PathBuf::from(env("COOPPAD_LTI_FILE", &data_dir.join("lti-platforms.json").to_string_lossy())))?;
-        let public_url = std::env::var("COOPPAD_PUBLIC_URL").ok().map(|u| u.trim_end_matches('/').to_string()).filter(|u| !u.is_empty());
-        anyhow::ensure!(lti.is_empty() || public_url.as_deref().map(|u| u.starts_with("https://")).unwrap_or(false), "LTI braucht COOPPAD_PUBLIC_URL mit https");
-        // COOPPAD_FOOTER_LINKS="Datenschutz|https://…;Impressum|https://…"
-        let footer_links = env("COOPPAD_FOOTER_LINKS", "").split(';').filter_map(|e| {
+        let lti = crate::lti::load(&PathBuf::from(env("LTI_FILE", &data_dir.join("lti-platforms.json").to_string_lossy())))?;
+        let public_url = var("PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()).filter(|u| !u.is_empty());
+        anyhow::ensure!(lti.is_empty() || public_url.as_deref().map(|u| u.starts_with("https://")).unwrap_or(false), "LTI braucht NEXTPAD_PUBLIC_URL mit https");
+        // NEXTPAD_FOOTER_LINKS="Datenschutz|https://…;Impressum|https://…"
+        let footer_links = env("FOOTER_LINKS", "").split(';').filter_map(|e| {
             let (l, u) = e.split_once('|')?;
             let (l, u) = (l.trim(), u.trim());
             (!l.is_empty() && u.starts_with("https://")).then(|| (l.to_string(), u.to_string()))
@@ -96,35 +108,35 @@ impl Config {
         Ok(Config {
             public_url,
             lti,
-            login_cookie: env("COOPPAD_LOGIN_COOKIE", "cooppad_login"),
+            login_cookie: env("LOGIN_COOKIE", "nextpad_login"),
             footer_links,
-            retention: crate::retention::Mode::parse(&env("COOPPAD_RETENTION", "off")),
-            retention_days: env("COOPPAD_RETENTION_DAYS", "365").parse().unwrap_or(365).max(30),
-            notice_days: env("COOPPAD_NOTICE_DAYS", "14").parse().unwrap_or(14).clamp(1, 60),
+            retention: crate::retention::Mode::parse(&env("RETENTION", "off")),
+            retention_days: env("RETENTION_DAYS", "365").parse().unwrap_or(365).max(30),
+            notice_days: env("NOTICE_DAYS", "14").parse().unwrap_or(14).clamp(1, 60),
             // Adresse direkt oder aus Datei (systemd LoadCredential), damit Zugangsdaten nicht in der Umgebung stehen
-            smtp_url: std::env::var("COOPPAD_SMTP_URL_FILE").ok().and_then(|f| fs::read_to_string(f).ok()).or_else(|| std::env::var("COOPPAD_SMTP_URL").ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
-            history_days: env("COOPPAD_HISTORY_DAYS", "30").parse().unwrap_or(30).max(1),
-            mail_from: std::env::var("COOPPAD_MAIL_FROM").ok().filter(|s| s.contains('@')),
-            background_credit: std::env::var("COOPPAD_BACKGROUND_CREDIT").ok().filter(|s| !s.trim().is_empty()),
-            background_credit_url: std::env::var("COOPPAD_BACKGROUND_CREDIT_URL").ok().filter(|s| s.starts_with("https://")),
-            bind: env("COOPPAD_BIND", "127.0.0.1:5090").parse()?,
+            smtp_url: var("SMTP_URL_FILE").and_then(|f| fs::read_to_string(f).ok()).or_else(|| var("SMTP_URL")).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            history_days: env("HISTORY_DAYS", "30").parse().unwrap_or(30).max(1),
+            mail_from: var("MAIL_FROM").filter(|s| s.contains('@')),
+            background_credit: var("BACKGROUND_CREDIT").filter(|s| !s.trim().is_empty()),
+            background_credit_url: var("BACKGROUND_CREDIT_URL").filter(|s| s.starts_with("https://")),
+            bind: env("BIND", "127.0.0.1:5090").parse()?,
             data_dir,
             base_path,
             api_keys,
             api_key_moodle,
-            api_allowed: crate::net::parse_list(&env("COOPPAD_API_ALLOWED", "127.0.0.1,::1")),
-            trusted_proxies: crate::net::parse_list(&env("COOPPAD_TRUSTED_PROXIES", "127.0.0.1,::1")),
-            allowed_origins: env("COOPPAD_ALLOWED_ORIGINS", "").split(',').map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()).collect(),
-            frame_ancestors: env("COOPPAD_FRAME_ANCESTORS", "'self'"),
-            api_version: env("COOPPAD_API_VERSION", "1.2.15"),
-            trust_proxy: env("COOPPAD_TRUST_PROXY", "false") == "true",
-            allow_free_pads: env("COOPPAD_ALLOW_FREE_PADS", "false") == "true",
-            free_pads_per_hour: env("COOPPAD_FREE_PADS_PER_HOUR", "20").parse().unwrap_or(20),
-            author_cookie: env("COOPPAD_AUTHOR_COOKIE", "cooppad_author"),
-            theme: env("COOPPAD_THEME", "colibris"),
-            theme_dir: std::env::var("COOPPAD_THEME_DIR").ok().filter(|s| !s.is_empty()).map(PathBuf::from),
-            site_name: env("COOPPAD_SITE_NAME", ""),
-            cookie_name: env("COOPPAD_COOKIE_NAME", "sessionID"),
+            api_allowed: crate::net::parse_list(&env("API_ALLOWED", "127.0.0.1,::1")),
+            trusted_proxies: crate::net::parse_list(&env("TRUSTED_PROXIES", "127.0.0.1,::1")),
+            allowed_origins: env("ALLOWED_ORIGINS", "").split(',').map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()).collect(),
+            frame_ancestors: env("FRAME_ANCESTORS", "'self'"),
+            api_version: env("API_VERSION", "1.2.15"),
+            trust_proxy: env("TRUST_PROXY", "false") == "true",
+            allow_free_pads: env("ALLOW_FREE_PADS", "false") == "true",
+            free_pads_per_hour: env("FREE_PADS_PER_HOUR", "20").parse().unwrap_or(20),
+            author_cookie: env("AUTHOR_COOKIE", "nextpad_author"),
+            theme: env("THEME", "colibris"),
+            theme_dir: var("THEME_DIR").filter(|s| !s.is_empty()).map(PathBuf::from),
+            site_name: env("SITE_NAME", ""),
+            cookie_name: env("COOKIE_NAME", "sessionID"),
         })
     }
 }

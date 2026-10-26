@@ -3,7 +3,7 @@
 //! Typst läuft als Bibliothek im Server, ohne Pakete aus dem Netz und ohne Dateizugriff
 //! außer dem Logo. Nutzertext kommt nur als String-Literal in den Satz (render::to_typst).
 //! Schriften: Liberation Sans (maßgleich zu Arial, OFL) ist eingebaut; Arial und HSD Sans
-//! kommen zur Laufzeit aus COOPPAD_THEME_DIR, weil sie nicht ins öffentliche Repo dürfen.
+//! kommen zur Laufzeit aus NEXTPAD_THEME_DIR, weil sie nicht ins öffentliche Repo dürfen.
 use std::sync::OnceLock;
 use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime};
@@ -66,7 +66,7 @@ fn file_id(path: &str) -> FileId {
 pub struct Options<'a> {
     pub hsd: bool,
     pub theme_dir: Option<&'a std::path::Path>,
-    /// Kopfzeile rechts, z. B. „CoopPad · Stand 24.10.2026“
+    /// Kopfzeile rechts, z. B. „NextPad · Stand 24.10.2026“
     pub header: &'a str,
     /// Fußzeile links (Pad-Name)
     pub footer: &'a str,

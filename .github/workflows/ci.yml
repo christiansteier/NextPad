@@ -21,7 +21,7 @@ jobs:
       - run: bash web/build.sh
         working-directory: .
         env:
-          COOPPAD_WEB_BUILD: ${{ runner.temp }}/web
+          NEXTPAD_WEB_BUILD: ${{ runner.temp }}/web
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -31,3 +31,8 @@ jobs:
       - run: cargo build --locked
       - run: cargo test --locked
       - run: cargo clippy --locked
+      # bekannte Schwachstellen in Abhängigkeiten (RustSec), Ausnahmen mit Begründung in .cargo/audit.toml
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit

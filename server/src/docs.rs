@@ -101,7 +101,7 @@ impl Rooms {
         let last_update = Arc::new(AtomicI64::new(0));
         {
             let (tx_doc, store, pid, ls, del, lu) = (tx.clone(), self.store.clone(), pad_id.to_string(), last_seq.clone(), deleted.clone(), last_update.clone());
-            let _ = doc.observe_update_v1("cooppad", move |txn: &TransactionMut, ev: &UpdateEvent| {
+            let _ = doc.observe_update_v1("nextpad", move |txn: &TransactionMut, ev: &UpdateEvent| {
                 if del.load(Ordering::SeqCst) { return; }
                 let bytes = ev.update.clone();
                 let author: Option<String> = txn.origin().and_then(|o| std::str::from_utf8(o.as_ref()).ok()).filter(|a| a.starts_with("a.")).map(str::to_string);
@@ -114,7 +114,7 @@ impl Rooms {
         }
         let mut awareness = Awareness::new(doc);
         let tx_aw = tx.clone();
-        awareness.on_update("cooppad", move |aw: &Awareness, ev: &yrs::sync::awareness::Event, _origin| {
+        awareness.on_update("nextpad", move |aw: &Awareness, ev: &yrs::sync::awareness::Event, _origin| {
             let changed: Vec<_> = ev.added().iter().chain(ev.updated()).chain(ev.removed()).copied().collect();
             if let Ok(u) = aw.update_with_clients(changed) { let _ = tx_aw.send(Arc::new(Message::Awareness(u).encode_v1())); }
         });

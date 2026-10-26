@@ -8,15 +8,16 @@ A slim pad server in [Rust](https://www.rust-lang.org) that reproduces the
 over [Yjs](https://yjs.dev) (CRDT), the [TipTap](https://tiptap.dev) editor, and a
 timeline built from snapshots. No chat.
 
-> **Naming.** The name for users is **NextPad** (address `/np`). In code, repositories
-> and packages the project is still called `cooppad`.
+> **Naming.** Up to version 0.2 the project was technically called `cooppad`. Settings with
+> the old prefix `COOPPAD_*`, the old database file and old cookies are still recognised.
 
 ## Overview
 
 The ZWEK runs an Etherpad server for the university's Moodle platforms. Moodle attaches
 pads through the plugin `mod_etherpadlite` (Humboldt-Universität zu Berlin) as a course
-activity. Maintaining Etherpad and its plugins has become expensive: the plugin landscape
-slows every upgrade down, and the dependency tree counts more than a thousand npm packages.
+activity. With the current resources, maintaining Etherpad and its plugins is barely
+sustainable: the plugin landscape slows every upgrade down, and the dependency tree counts
+more than a thousand npm packages.
 
 The actual requirement is small: headings, font size, bold, italic, underline,
 strikethrough, text and author colors, a timeline, and Markdown. No chat. NextPad closes
@@ -24,6 +25,32 @@ that gap: a dedicated server that answers exactly the API calls the Moodle plugi
 and behind it runs a modern editor.
 
 Etherpad stays in place as a fallback until the new server has proven itself in operation.
+
+## Why Rust
+
+A pad server sits openly on the network and processes input from everyone who opens a pad.
+Besides the effort of running it, what matters most is how much attack surface it offers.
+
+- **Memory safety.** Rust rules out buffer overflows, use-after-free and data races at
+  compile time. These classes of bugs are behind a large share of security holes in server
+  software. NextPad's own code contains no `unsafe`; the compiler enforces this
+  (`#![forbid(unsafe_code)]`).
+- **Small runtime.** The server runs a single program, without Node.js, without a package
+  manager and without plugins that load third-party code at runtime. In Etherpad, plugins
+  run with full rights inside the server process. The editor bundle for the browser is
+  built with npm, but that code only runs in the browser, not on the server.
+- **Pinned and audited dependencies.** `Cargo.lock` pins every crate to an exact version;
+  a large part of them belongs to PDF typesetting with Typst. CI checks them on every push
+  with `cargo audit` against the RustSec database. Reported issues that demonstrably cannot
+  be reached from NextPad are listed with a reason in `server/.cargo/audit.toml`; any new
+  report fails the build.
+- **Input stays data.** Pad content only enters HTML, Markdown and PDF typesetting as
+  strings, never as markup or code. Sign-in through Moodle accepts RS256-signed tokens only.
+- **Little to operate.** An update means replacing one file. Under load the server needs
+  around 50 MB of memory.
+
+Rust does not protect against logic errors or misconfiguration. Reverse proxy, API keys and
+the list of allowed addresses remain the operator's job.
 
 ## Features
 
@@ -57,14 +84,14 @@ Most documentation is German. The code is the source of truth.
 ## Try it locally
 
 ```bash
-mkdir -p ~/.cache/cooppad-data
-head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48 > ~/.cache/cooppad-data/api-keys.txt
+mkdir -p ~/.cache/nextpad-data
+head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48 > ~/.cache/nextpad-data/api-keys.txt
 bash web/build.sh            # editor and whiteboard bundle (needs Node 22 and pnpm)
 cd server
-CARGO_TARGET_DIR=~/.cache/cargo-target/cooppad cargo build
-COOPPAD_DATA=~/.cache/cooppad-data \
-COOPPAD_FRAME_ANCESTORS="'self' http://127.0.0.1:5090" \
-~/.cache/cargo-target/cooppad/debug/cooppad
+CARGO_TARGET_DIR=~/.cache/cargo-target/nextpad cargo build
+NEXTPAD_DATA=~/.cache/nextpad-data \
+NEXTPAD_FRAME_ANCESTORS="'self' http://127.0.0.1:5090" \
+~/.cache/cargo-target/nextpad/debug/nextpad
 ```
 
 Then create a group, pad, author and session through the API (examples in
@@ -72,6 +99,8 @@ Then create a group, pad, author and session through the API (examples in
 `sessionID` cookie set.
 
 ## Project background
+
+Idea, concept and development: Christian-Maximilian Steier.
 
 This software was developed at Hochschule Düsseldorf – University of Applied Sciences
 (HSD) by ZWEK – Centre for Training and Competence Development, as a successor to the

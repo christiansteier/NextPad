@@ -4,8 +4,8 @@ import { chromium } from 'playwright'
 import { readFileSync } from 'node:fs'
 const [G, P] = readFileSync(process.argv[2], 'utf8').trim().split('|')
 const N = +(process.argv[3] || 60), DELAY = +(process.argv[4] || 0)
-const base = process.env.COOPPAD_URL || 'http://127.0.0.1:5090'
-const key = readFileSync(process.env.COOPPAD_KEY_FILE || process.env.HOME + '/.cache/cooppad-data/api-keys.txt', 'utf8').trim()
+const base = process.env.NEXTPAD_URL || 'http://127.0.0.1:5090'
+const key = readFileSync(process.env.NEXTPAD_KEY_FILE || process.env.HOME + '/.cache/nextpad-data/api-keys.txt', 'utf8').trim()
 async function session(m, name) {
   const a = await (await fetch(`${base}/api/1.2/createAuthorIfNotExistsFor`, { method: 'POST', body: new URLSearchParams({ apikey: key, authorMapper: m, name }) })).json()
   const s = await (await fetch(`${base}/api/1.2/createSession`, { method: 'POST', body: new URLSearchParams({ apikey: key, groupID: G, authorID: a.data.authorID, validUntil: String(Math.floor(Date.now() / 1000) + 3600) }) })).json()
@@ -20,8 +20,8 @@ async function open(sid) {
 }
 const pa = await open(await session('c1', 'Gleich A')), pb = await open(await session('c2', 'Gleich B'))
 // A tippt am Ende, B in einem neuen Absatz davor (eigener Absatz je Person)
-await pa.evaluate(() => window.cooppad.editor.commands.focus('end')); await pa.keyboard.press('Enter')
-await pb.evaluate(() => window.cooppad.editor.commands.focus('start')); await pb.keyboard.press('Enter'); await pb.keyboard.press('ArrowUp')
+await pa.evaluate(() => window.nextpad.editor.commands.focus('end')); await pa.keyboard.press('Enter')
+await pb.evaluate(() => window.nextpad.editor.commands.focus('start')); await pb.keyboard.press('Enter'); await pb.keyboard.press('ArrowUp')
 await pa.waitForTimeout(500); await pb.waitForTimeout(500)
 const ma = 'A' + Date.now().toString(36), mb = 'B' + Date.now().toString(36)
 const text = 'abcdefghijklmnopqrstuvwxyz'.repeat(5).slice(0, N)

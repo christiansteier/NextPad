@@ -1,5 +1,5 @@
 {
-  "name": "cooppad-web",
+  "name": "nextpad-web",
   "version": "0.1.0",
   "private": true,
   "description": "Editor- und Zeichenbrett-Bundle für NextPad (TipTap + Yjs, Excalidraw + Yjs), gebaut mit esbuild",

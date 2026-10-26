@@ -1,4 +1,4 @@
-# API-Spezifikation: Was CoopPad für mod_etherpadlite nachbilden muss
+# API-Spezifikation: Was NextPad für mod_etherpadlite nachbilden muss
 
 Stand 23.10.2026 · Quelle: Quellcode mod_etherpadlite v5.0.3 (github.com/moodlehu/moodle-mod_etherpadlite, Commit cb350cf, 23.01.2026), abgeglichen mit den Zugriffslogs des bestehenden Pad-Servers (09.07. bis 23.10.2026) · Status: Pflichtenheft für den Proof of Concept
 
@@ -10,12 +10,12 @@ Die Tabellen trennen, was das Plugin aufruft (Pflicht), was es nur im Client def
 |---|---|---|
 | Basis-URL | Einstellung `etherpadlite/url` mit Schrägstrich am Ende, z. B. `https://<pad-server>/pad/`. API unter `<url>/api`, Editor unter `<url>/p/<padID>` | client.php 75–81, view.php 92–94 |
 | Versionsabfrage | `GET <url>/api` liefert JSON `{"currentVersion": "1.2.15"}`. Das Plugin verlangt `currentVersion >= apiversion` (Einstellung, Standard `1.2`), sonst Abbruch mit `error_wrong_api_version` | client.php 225–256 |
-| Aufrufpfad | `<url>/api/<apiversion>/<Funktion>`, also mit `1.2` als Pfadsegment, nicht `1.2.15`. CoopPad akzeptiert jede Version `1.2*` | client.php 164–166 |
-| Authentifizierung | Parameter `apikey` in jedem Aufruf. Bei GET im Query-String, bei POST im Body (Moodle-curl sendet Formulardaten, `multipart/form-data`). CoopPad akzeptiert Query, `application/x-www-form-urlencoded` und `multipart/form-data` | client.php 165–172 |
+| Aufrufpfad | `<url>/api/<apiversion>/<Funktion>`, also mit `1.2` als Pfadsegment, nicht `1.2.15`. NextPad akzeptiert jede Version `1.2*` | client.php 164–166 |
+| Authentifizierung | Parameter `apikey` in jedem Aufruf. Bei GET im Query-String, bei POST im Body (Moodle-curl sendet Formulardaten, `multipart/form-data`). NextPad akzeptiert Query, `application/x-www-form-urlencoded` und `multipart/form-data` | client.php 165–172 |
 | Antwortformat | JSON `{"code": <int>, "message": "<text>", "data": <objekt oder null>}`. `code` 0 = ok; 1 = falsche Parameter; 2 = interner Fehler; 3 = unbekannte Funktion; 4 = kein oder falscher API-Key. Das Plugin wertet nur `code == 0` als Erfolg; `data` wird zurückgegeben, alles andere ist `false` und führt in Moodle zu einer Ausnahme | client.php 38–46, 193–221 |
 | Fehlerfreundlichkeit | Antwort muss gültiges JSON sein; leere Antwort oder HTML (z. B. Login-Seite eines Reverse-Proxys) führt zu `false` | client.php 175–185 |
-| Zeitlimits | Verbindungsaufbau 300 s, Gesamtzeit unbegrenzt (Einstellungen `connecttimeout`, `timeout`). CoopPad antwortet in Millisekunden, die Werte sind nur Toleranz | client.php 95–106 |
-| TLS | `check_ssl` steuert, ob Moodle das Zertifikat prüft. Bei 0 verifiziert Moodle weder Host noch Kette. CoopPad liefert ein gültiges Zertifikat der Hochschul-CA, damit `check_ssl=1` möglich wird | client.php 108–112 |
+| Zeitlimits | Verbindungsaufbau 300 s, Gesamtzeit unbegrenzt (Einstellungen `connecttimeout`, `timeout`). NextPad antwortet in Millisekunden, die Werte sind nur Toleranz | client.php 95–106 |
+| TLS | `check_ssl` steuert, ob Moodle das Zertifikat prüft. Bei 0 verifiziert Moodle weder Host noch Kette. NextPad liefert ein gültiges Zertifikat der Hochschul-CA, damit `check_ssl=1` möglich wird | client.php 108–112 |
 | Blockierte Hosts | Moodle blockiert private Netze (`curlsecurityblockedhosts`); `ignoresecurity` hebt das auf. Betrifft nur Moodle | client.php 83–90, 740–766 |
 
 ## Pflicht: Aufrufe, die das Plugin absetzt
@@ -40,11 +40,11 @@ Zahlen in Klammern: Aufrufe in den Logs 09.07. bis 23.10.2026, zwei Moodle-Quell
 
 ## Optional: im Client definiert, vom Plugin nicht aufgerufen
 
-`createGroupIfNotExistsFor`, `listPads`, `listAllGroups`, `listPadsOfAuthor`, `getAuthorName`, `deleteSession`, `getSessionInfo`, `listSessionsOfGroup`, `listSessionsOfAuthor`, `createPad`, `getRevisionsCount`, `padUsersCount`, `getLastEdited`, `listAuthorsOfPad`, `setPublicStatus`, `getPublicStatus`, `setPassword`, `isPasswordProtected`, `padUsers`, `sendClientsMessage` (client.php 286–735). CoopPad liefert für unbekannte Funktionen code 3. Sinnvoll für Betrieb und Migration sind trotzdem: `listAllPads`, `getRevisionsCount`, `getLastEdited`, `listAuthorsOfPad`, `getAttributePool` (für Exportwerkzeuge). Sie werden als zweite Stufe geführt.
+`createGroupIfNotExistsFor`, `listPads`, `listAllGroups`, `listPadsOfAuthor`, `getAuthorName`, `deleteSession`, `getSessionInfo`, `listSessionsOfGroup`, `listSessionsOfAuthor`, `createPad`, `getRevisionsCount`, `padUsersCount`, `getLastEdited`, `listAuthorsOfPad`, `setPublicStatus`, `getPublicStatus`, `setPassword`, `isPasswordProtected`, `padUsers`, `sendClientsMessage` (client.php 286–735). NextPad liefert für unbekannte Funktionen code 3. Sinnvoll für Betrieb und Migration sind trotzdem: `listAllPads`, `getRevisionsCount`, `getLastEdited`, `listAuthorsOfPad`, `getAttributePool` (für Exportwerkzeuge). Sie werden als zweite Stufe geführt.
 
 ## Kennungen
 
-| Kennung | Format bei Etherpad | Regel für CoopPad |
+| Kennung | Format bei Etherpad | Regel für NextPad |
 |---|---|---|
 | groupID | `g.` + 16 Zeichen `[A-Za-z0-9]` | gleich; kryptografisch zufällig |
 | padID (Gruppenpad) | `<groupID>$<padName>`; `padName` ist Freitext (Einstellung `padname`, dazu Moodle-Gruppen-ID) | gleich; `$` ist Trenner, der Teil vor dem ersten `$` ist die Gruppe (lib.php 169–170 zerlegt so) |
@@ -65,9 +65,9 @@ Pad-Kennungen aus der Migration werden unverändert übernommen, damit `etherpad
 | Ablauf | `validUntil` = jetzt + `cookietime` (Einstellung, in Sekunden; beobachtet 10.800 = 3 h) | client.php 427 |
 | Secure | nur wenn `url` mit `https://` beginnt | client.php 435 |
 | HttpOnly, SameSite | nicht gesetzt (PHP-Standard); Browser behandeln SameSite dann als Lax. Innerhalb derselben Site (gleiche eTLD+1) reicht das für den iframe | ebd. |
-| Was CoopPad tun muss | Beim Laden von `/p/<padID>` und beim WebSocket-Aufbau das Cookie `sessionID` lesen, Session nachschlagen, Ablauf prüfen, Gruppe der Session gegen Gruppe des Pads prüfen; Autor der Session liefert Name und Farbe. Mehrere `sessionID`-Werte (durch Kommas) tolerieren, Etherpad erlaubt das | Etherpad-Semantik, nachgebildet |
+| Was NextPad tun muss | Beim Laden von `/p/<padID>` und beim WebSocket-Aufbau das Cookie `sessionID` lesen, Session nachschlagen, Ablauf prüfen, Gruppe der Session gegen Gruppe des Pads prüfen; Autor der Session liefert Name und Farbe. Mehrere `sessionID`-Werte (durch Kommas) tolerieren, Etherpad erlaubt das | Etherpad-Semantik, nachgebildet |
 | Ohne gültige Session | Gruppenpads verweigern (HTTP 403 mit verständlicher Seite). Read-only-Kennungen `r.*` von Gruppenpads ebenfalls nur mit Session der Gruppe | Etherpad-Semantik |
-| Eigene Cookies | CoopPad setzt für den Editor nur ein eigenes, HttpOnly, Secure, SameSite=Lax gesetztes Sitzungscookie, falls nötig; keine Cookies auf der Hochschuldomain | Festlegung |
+| Eigene Cookies | NextPad setzt für den Editor nur ein eigenes, HttpOnly, Secure, SameSite=Lax gesetztes Sitzungscookie, falls nötig; keine Cookies auf der Hochschuldomain | Festlegung |
 
 ## iframe
 
@@ -75,7 +75,7 @@ Pad-Kennungen aus der Migration werden unverändert übernommen, damit `etherpad
 |---|---|---|
 | URL | `<url>/p/<padID>` zum Schreiben, `<url>/p/<readOnlyID>` zum Lesen. Keine Query-Parameter (kein `showChat`, kein `userName`, keine `userColor`, kein `showLineNumbers`) | view.php 89–94 |
 | Einbettung | `<iframe class="etherpadiframe …" src="…">`, Vollbild über zweiten iframe in einem Modal; `minwidth` aus den Einstellungen als CSS-Mindestbreite | templates/iframe.mustache 32, modal.mustache 48, renderer.php 50 |
-| Folgerung für CoopPad | Der Editor muss ohne URL-Parameter auskommen: Name und Farbe aus der Session, kein Chat, Zeilennummern als Editor-Einstellung. Antwort-Header müssen Einbettung durch die Moodle-Hosts erlauben: `Content-Security-Policy: frame-ancestors 'self' https://<moodle-hosts>` statt eines pauschalen `X-Frame-Options` | Festlegung |
+| Folgerung für NextPad | Der Editor muss ohne URL-Parameter auskommen: Name und Farbe aus der Session, kein Chat, Zeilennummern als Editor-Einstellung. Antwort-Header müssen Einbettung durch die Moodle-Hosts erlauben: `Content-Security-Policy: frame-ancestors 'self' https://<moodle-hosts>` statt eines pauschalen `X-Frame-Options` | Festlegung |
 | Gruppenwahl | Moodle rendert sein Gruppenmenü über dem iframe; bei Gruppenmodus wird `padID` um die aktive Moodle-Gruppen-ID verlängert | view.php 74–83, 139 |
 
 ## Gäste und Rechte
@@ -108,10 +108,10 @@ Gruppen-Ereignisse: `group_created`, `grouping_group_assigned` legen Gruppenpads
 | Sicherung ohne Nutzerdaten | nur Aktivitätsdaten (Name, Intro, Zeiten); kein Inhalt | backup_stepslib 60–70 |
 | Sicherung mit Nutzerdaten | Element `content` mit `html` (getHTML), `text` (getText) des Hauptpads und `grouppaddata` (PHP-`serialize` eines Arrays Moodle-Gruppen-ID → {html, text}) | backup_stepslib 72–104 |
 | Wiederherstellung | neue Gruppe (`createGroup`), neues Hauptpad, je Moodle-Gruppe ein Gruppenpad; dann `setText` und `setHTML` mit den gesicherten Ständen (Gruppen über das Moodle-Gruppen-Mapping) | restore_stepslib 60–160 |
-| Folgerung für CoopPad | `setHTML` muss den HTML-Dialekt verstehen, den Etherpad in alte Sicherungen geschrieben hat (Absätze als `<br>`-getrennte Zeilen, `<strong>`, `<em>`, `<u>`, `<s>`, `<ul>/<ol>/<li>`, Überschriften `<h1>`–`<h6>` aus ep_headings2, `<span>` mit Schriftgröße und Farbe aus ep_font_size/ep_font_color). Der Export aller Pads liefert den Testkorpus | Festlegung |
+| Folgerung für NextPad | `setHTML` muss den HTML-Dialekt verstehen, den Etherpad in alte Sicherungen geschrieben hat (Absätze als `<br>`-getrennte Zeilen, `<strong>`, `<em>`, `<u>`, `<s>`, `<ul>/<ol>/<li>`, Überschriften `<h1>`–`<h6>` aus ep_headings2, `<span>` mit Schriftgröße und Farbe aus ep_font_size/ep_font_color). Der Export aller Pads liefert den Testkorpus | Festlegung |
 | Kurs-Reset | Pads löschen und leer neu anlegen (`deletePad`, `createGroupPad` mit `text=''`) | util.php 70–98 |
 
-## Was CoopPad bewusst nicht nachbildet
+## Was NextPad bewusst nicht nachbildet
 
 - Chat, Chat-API, `sendClientsMessage`.
 - Passwortgeschützte Pads, öffentliche Statusänderung (`setPassword`, `setPublicStatus`): das Plugin nutzt sie nicht.
@@ -121,5 +121,5 @@ Gruppen-Ereignisse: `group_created`, `grouping_group_assigned` legen Gruppenpads
 ## Prüfverfahren
 
 1. Vertragstest je Pflichtfunktion gegen diese Tabelle (Request-Form, Antwortform, Fehlercodes).
-2. Moodle-Testinstanz mit mod_etherpadlite gegen CoopPad: Aktivität anlegen, Gruppenmodus, Gast, Zeitfenster, Sicherung mit Nutzerdaten, Wiederherstellung in anderen Kurs, Kurs-Reset, Aktivität löschen.
+2. Moodle-Testinstanz mit mod_etherpadlite gegen NextPad: Aktivität anlegen, Gruppenmodus, Gast, Zeitfenster, Sicherung mit Nutzerdaten, Wiederherstellung in anderen Kurs, Kurs-Reset, Aktivität löschen.
 3. Alle 764 exportierten HTML-Stände durch `setHTML` → `getHTML` schleifen und Abweichungen zählen (Migrationsprobe).
