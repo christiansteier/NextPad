@@ -243,9 +243,10 @@ pub async fn wall(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     } else if !access.free {
         r#"<aside class="wall-join"><p>Mitmachen über die Aktivität im Moodle-Kurs.</p></aside>"#.to_string()
     } else { String::new() };
-    let brand = if state.config.theme == "hsd" && web::has_logo(&state) { format!(r#"<img class="wall-logo" src="{base}/theme/logo.png" alt="Hochschule Düsseldorf">"#) } else { r#"<span class="wall-brand">NextPad</span>"#.to_string() };
+    let brand = if state.config.theme == "hsd" && web::has_logo(&state) { format!(r#"<img class="wall-logo" src="{base}/theme/logo.png" alt="Hochschule Düsseldorf">"#) } else { format!(r#"<span class="wall-brand">{}NextPad</span>"#, web::logo_mark("wall-mark")) };
     let cfg = json!({ "urlId": id, "basePath": base });
-    let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>Leinwand · NextPad</title>
+    let icons = web::icon_links();
+    let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>Leinwand · NextPad</title>
 <link rel="stylesheet" href="{base}/static/start.css?v={sv}"><link rel="stylesheet" href="{base}/static/ideen.css?v={v}"></head>
 <body class="wall"><main class="wall-main"><header class="wall-head"><div><p class="kicker">Ideensammlung</p><h1 id="prompt">Ideen und Fragen</h1></div>{brand}</header>
 <div class="wall-body"><ol class="wall-list" id="wall-list"></ol>{join}</div>

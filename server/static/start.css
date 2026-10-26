@@ -87,7 +87,11 @@ a { color: inherit; }
 .site-header .brand { display: flex; align-items: center; text-decoration: none; min-height: var(--target-min); }
 .site-header .logo { height: 40px; width: auto; display: block; }
 .site-header .wordmark { font-family: var(--font-display); font-size: 24px; }
-.product { display: flex; flex-direction: column; line-height: 1.2; padding-left: var(--space-4); border-left: 1px solid var(--color-border); }
+.product { display: grid; grid-template-columns: auto 1fr; column-gap: var(--space-2); align-items: center; line-height: 1.2; padding-left: var(--space-4); border-left: 1px solid var(--color-border); }
+.product .brand-mark { grid-row: 1 / span 2; }
+/* Zeichen von NextPad vor dem Schriftzug, rein schmückend */
+.brand-mark { flex: none; display: block; width: 32px; height: 32px; }
+.site-header .brand .brand-mark { margin-right: var(--space-2); }
 .product strong { font-size: 18px; letter-spacing: .02em; }
 .product span { font-size: var(--text-small); color: var(--color-text-secondary); }
 .site-header nav { margin-left: auto; }
@@ -227,6 +231,7 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
   .product { padding-left: var(--space-3); }
   .product strong { font-size: 16px; }
   .product span { display: none; }
+  .brand-mark { width: 26px; height: 26px; }
   .panel { padding: var(--space-4); }
   .field-row { flex-direction: column; }
   .field-row .btn, .account-row .btn-block { width: 100%; }
