@@ -226,12 +226,13 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value) -> Response 
 }
 
 /// Leinwand für den Beamer: beliebteste offene Beiträge groß, dazu ein QR-Code zum Mitmachen
-/// (nur bei freien Sammlungen und nur für Personen, die selbst mitschreiben dürfen).
+/// (nur bei freien Sammlungen und nur über den Link zum Mitmachen, nicht über den Leselink).
 pub async fn wall(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let access = match web::check_access(&state, &headers, &id) { Ok(a) => a, Err((s, m)) => return (s, m).into_response() };
     if !state.store.is_ideas(&access.pad.id) { return (StatusCode::NOT_FOUND, "Das ist keine Ideensammlung.").into_response(); }
     let base = &state.config.base_path;
-    let join = if access.free && !access.readonly {
+    // nach dem Link, nicht nach dem Cookie: wer die Leinwand direkt in einem frischen Browser öffnet, hat noch keins
+    let join = if access.free && !id.starts_with("r.") {
         let origin = state.config.public_url.clone().unwrap_or_else(|| {
             let host = headers.get("x-forwarded-host").or_else(|| headers.get(header::HOST)).and_then(|v| v.to_str().ok()).unwrap_or("localhost");
             format!("https://{host}{base}")
