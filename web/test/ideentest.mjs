@@ -55,6 +55,8 @@ await w.context().addCookies(await a.context().cookies())
 await w.goto(url + '/leinwand'); await w.waitForSelector('.wall-item')
 check('Leinwand zeigt offene Beiträge, beliebtester zuerst', (await w.textContent('.wall-item')).includes('Zweite Idee') && (await w.locator('.wall-item').count()) === 1)
 check('Leinwand mit QR-Code', (await w.locator('.wall-join svg').count()) === 1)
+const fresh = await (await b.newContext()).newPage(); await fresh.goto(url + '/leinwand')
+check('Leinwand im frischen Browser (Beamer) mit QR-Code', (await fresh.locator('.wall-join svg').count()) === 1); await fresh.context().close()
 await a.fill('#add-text', 'Vierte Idee'); await a.click('#add-form button[type=submit]')
 await w.waitForFunction(() => document.querySelectorAll('.wall-item').length === 2, null, { timeout: 5000 }).then(() => check('Leinwand live', true)).catch(() => check('Leinwand live', false))
 // Lese-Link

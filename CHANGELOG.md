@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-10-26
+
+### Fixed
+
+- Projector view of an idea collection shows the QR code also in a fresh browser: the join link now depends on
+  the link that was opened, not on an existing cookie.
+- Start page without a background image: template tiles stay inside the entry panel on wide screens.
+
 ## [0.8.1] - 2026-10-26
 
 ### Changed
