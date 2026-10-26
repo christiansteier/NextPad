@@ -1,49 +1,109 @@
-/* NextPad – Ideensammlung. Baut auf start.css auf (Farben, Abstände, Schaltflächen). */
+/* NextPad – Ideensammlung und Leinwand. Baut auf start.css auf (Hausfarben, Tönungen, Abstände, Schaltflächen).
+   Schwarz nur für die Hauptaktion; Zustände zeigen Tönungen der Hausfarben, immer mit Form oder Wort dazu. */
 main.ideas { flex: 1; padding: var(--space-5) 0 var(--space-7); }
 .ideas .wrap { display: flex; flex-direction: column; gap: var(--space-4); }
-.ideas-head h1 { margin: 0 0 var(--space-4); font-family: var(--font-text); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; overflow-wrap: anywhere; }
+.title-row { display: flex; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-4); }
+.ideas-head h1 { margin: 0; font-family: var(--font-text); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; overflow-wrap: anywhere; }
 .kicker { margin: 0 0 var(--space-1); font-size: var(--text-small); font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .06em; }
 .prompt-form { margin-bottom: var(--space-4); }
 .add-form textarea {
   display: block; width: 100%; min-height: 96px; padding: var(--space-3); resize: vertical;
-  font: inherit; color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius);
+  font: inherit; color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius-control);
 }
 .add-form textarea[aria-invalid="true"] { border: 2px solid var(--color-error); }
 .add-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); }
 .add-row .hint { margin: 0; }
 
-.ideas-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+/* kleine Knöpfe nur mit Symbol (Frage ändern, Moderation); Name per aria-label */
+.icon-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--target-min); height: var(--target-min); padding: 0;
+  color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius-control); cursor: pointer;
+}
+.icon-btn svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn:hover { border-color: var(--color-text-primary); background: var(--color-canvas); }
+.icon-btn[aria-expanded="true"] { background: var(--tint-blue); border-color: var(--line-blue); }
+
+/* Sortierung als Reiter: Unterstreichung statt schwarzer Fläche */
+.ideas-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); border-bottom: 1px solid var(--color-border); }
 .ideas-bar .hint { margin: 0; }
-.sort { display: flex; gap: var(--space-2); }
-.chip { min-height: var(--target-min); padding: 0 var(--space-4); font: inherit; font-weight: 700; cursor: pointer; color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius); }
-.chip[aria-pressed="true"] { background: var(--color-action); color: var(--color-on-action); border-color: var(--color-action); }
+.sort { display: flex; gap: var(--space-4); }
+.tab {
+  min-height: var(--target-min); padding: 0 var(--space-1); margin-bottom: -1px; font: inherit; font-weight: 700; cursor: pointer;
+  color: var(--color-text-secondary); background: none; border: 0; border-bottom: 3px solid transparent;
+}
+.tab:hover { color: var(--color-text-primary); }
+.tab[aria-pressed="true"] { color: var(--color-text-primary); border-bottom-color: var(--color-text-primary); }
 
 .idea-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .idea { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); }
-.idea-body { flex: 1; min-width: 0; }
+.idea-body { flex: 1; min-width: 0; align-self: center; }
 .idea-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.idea-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-4); font-size: var(--text-small); color: var(--color-text-secondary); }
+.idea-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-4); margin-top: var(--space-1); font-size: var(--text-small); color: var(--color-text-secondary); }
 .idea-meta:empty { display: none; }
-.idea-meta .btn-link { min-height: var(--target-min); }
 .idea .tag { font-weight: 700; }
 .idea.is-done .idea-text, .idea.is-hidden .idea-text { color: var(--color-text-secondary); }
+.done-mark { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: 700; color: var(--color-text-primary); }
+.done-mark svg { fill: none; stroke: var(--line-green); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.mod-tools { flex: none; display: flex; gap: var(--space-2); }
+
+/* Abstimmen: Pfeil und Zahl; abgegeben = Tönung und Linie in HSD-Blau, Pfeil gefüllt */
 .vote {
-  flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center;
   width: 52px; min-height: 56px; padding: var(--space-1); font: inherit; font-weight: 700; cursor: pointer;
-  color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius);
+  color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius-control);
 }
 .vote svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
 .vote:hover { border-color: var(--color-text-primary); background: var(--color-canvas); }
-.vote[aria-pressed="true"] { background: var(--color-action); color: var(--color-on-action); border-color: var(--color-action); }
-.vote[aria-pressed="true"] svg { fill: currentColor; }
+.vote[aria-pressed="true"] { background: var(--tint-blue); border: 2px solid var(--line-blue); }
+.vote[aria-pressed="true"] svg { fill: var(--line-blue); stroke: var(--line-blue); }
 .vote:disabled { opacity: .6; cursor: progress; }
 .empty { margin: 0; }
+
+/* neu eingetroffen: kurz in Gelb getönt, ohne Bewegung als Randmarke */
+@keyframes idea-new { from { background: var(--tint-yellow); } to { background: var(--color-surface); } }
+@media (prefers-reduced-motion: no-preference) {
+  .idea.is-new { animation: idea-new 3s ease-out; }
+  .vote, .tab, .icon-btn { transition: background-color .15s, border-color .15s, color .15s; }
+}
+@media (prefers-reduced-motion: reduce) { .idea.is-new { box-shadow: inset 4px 0 0 var(--hsd-yellow); } }
 
 .idea-group > summary { min-height: var(--target-min); display: flex; align-items: center; font-weight: 700; cursor: pointer; }
 .idea-group > .hint { margin: 0 0 var(--space-2); }
 .ideas-share h2 { margin: 0 0 var(--space-3); font-size: 1.25rem; }
+.wall-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); margin: 0 0 var(--space-4); }
+.wall-row .hint { margin: 0; flex: 1 1 16em; }
 .share-row { margin: 0 0 var(--space-4); }
 .share-row .field-row input { color: var(--color-text-secondary); }
 .owner-tools { margin: var(--space-3) 0 0; }
 .theme-colibris .site-header .brand strong { font-size: 18px; }
-@media (prefers-reduced-motion: no-preference) { .vote, .chip { transition: background-color .15s, border-color .15s; } }
+
+@media (max-width: 479px) {
+  .idea { flex-wrap: wrap; padding: var(--space-3); }
+  .idea-body { flex-basis: calc(100% - 52px - var(--space-3)); }
+  .mod-tools { width: 100%; justify-content: flex-end; }
+}
+
+/* Leinwand für den Beamer: groß, ruhig, ohne Bedienung. Rote Kopflinie wie auf den Seiten. */
+body.wall { background: var(--color-canvas); }
+.wall-main { flex: 1; display: flex; flex-direction: column; gap: 2.5vh; padding: 3vh 4vw; }
+.wall-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 4vw; padding-bottom: 2vh; border-bottom: 3px solid var(--hsd-red); }
+.wall-head .kicker { font-size: clamp(.9rem, 1.4vw, 1.4rem); }
+.wall-head h1 { margin: 0; font-size: clamp(1.75rem, 4vw, 4rem); line-height: 1.15; overflow-wrap: anywhere; }
+.wall-logo { height: clamp(40px, 6vh, 80px); width: auto; flex: none; }
+.wall-brand { font-weight: 700; font-size: clamp(1rem, 1.6vw, 1.6rem); }
+.wall-body { display: flex; gap: 3vw; align-items: flex-start; }
+.wall-list { flex: 1; list-style: none; margin: 0; padding: 0; display: grid; gap: 1.5vh; }
+.wall-item { display: flex; align-items: center; gap: 2vw; padding: 1.6vh 1.6vw; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 8px solid transparent; }
+.wall-item:first-child { border-left-color: var(--line-blue); }
+.wall-votes {
+  flex: none; min-width: 2.6em; padding: .2em .3em; text-align: center; font-weight: 700; font-size: clamp(1.25rem, 2.6vw, 2.75rem);
+  background: var(--tint-blue); border-radius: var(--radius-control);
+}
+.wall-text { margin: 0; font-size: clamp(1.1rem, 2.3vw, 2.4rem); line-height: 1.25; overflow-wrap: anywhere; }
+.wall-join { flex: none; width: clamp(180px, 22vw, 360px); padding: 1.5vh; text-align: center; background: var(--color-surface); border: 1px solid var(--color-border); }
+.wall-join svg { display: block; width: 100%; height: auto; }
+.wall-join p { margin: 1vh 0 0; font-size: clamp(.9rem, 1.2vw, 1.25rem); overflow-wrap: anywhere; }
+.wall-empty { margin: 0; font-size: clamp(1.1rem, 2vw, 2rem); color: var(--color-text-secondary); }
+.wall-count { margin: auto 0 0; font-size: clamp(.9rem, 1.3vw, 1.3rem); color: var(--color-text-secondary); }
+@media (prefers-reduced-motion: no-preference) { .wall-item.is-new { animation: idea-new 3s ease-out; } }
+@media (max-width: 799px) { .wall-body { flex-direction: column-reverse; } .wall-join { width: min(100%, 280px); align-self: center; } }

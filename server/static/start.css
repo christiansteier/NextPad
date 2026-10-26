@@ -5,6 +5,16 @@
 :root {
   /* Marke [CD] */
   --hsd-red: #e60028;               /* Pantone 185, nur Akzent: Kopflinie, Logo, Fokus */
+  --hsd-blue: #00afd7;              /* Pantone 638 */
+  --hsd-green: #64b432;             /* Pantone 360 */
+  --hsd-yellow: #ffeb00;            /* Pantone 101 */
+  /* Hausfarben sind zu kräftig für Flächen und keine Textfarben [CD]. Daraus [abgeleitet]:
+     Linien auf 70 % abgedunkelt (WCAG 1.4.11, mindestens 3:1), Flächen als Tönung auf Weiß. */
+  --line-blue: #007a96;             /* Blau 70 %: 4,97:1 auf Weiß, 4,41:1 auf --tint-blue */
+  --line-green: #467e23;            /* Grün 70 %: 4,92:1 auf Weiß */
+  --tint-blue: #e0f5fa;             /* Blau 12 %, schwarzer Text 18,6:1 */
+  --tint-green: #ecf6e6;            /* Grün 12 %, 18,9:1 */
+  --tint-yellow: #fff9b2;           /* Gelb 30 %, 19,4:1 */
   --font-text: Arial, "Liberation Sans", Helvetica, sans-serif;   /* Hausschrift Text, linksbündig */
   --font-display: "HSD Sans", Arial, sans-serif;                   /* nur ab 20 px, nur Regular */
 
@@ -25,7 +35,8 @@
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
   --content-width: 880px; --entry-width: 540px;
   --target-min: 44px;
-  --radius: 0;                      /* [CD] eckig wie der HSD-Webauftritt, darum keine Rundungen */
+  --radius: 0;                      /* [CD] Flächen eckig wie der HSD-Webauftritt */
+  --radius-control: 4px;            /* [abgeleitet] leichte Rundung nur für Bedienelemente */
   --text-base: 1.0625rem; --text-small: .875rem; --line: 1.5;   /* rem: folgt der Schriftgröße des Browsers */
 }
 
@@ -42,6 +53,11 @@
     --color-on-action: #000;
     --color-error: #ff8a9a;           /* 7,43:1 */
     --focus-ring: 3px solid #ff4d6a;  /* 5,18:1 */
+    --line-blue: #00afd7;             /* Hausfarbe selbst: 6,44:1 auf #1e1e1e */
+    --line-green: #64b432;            /* 6,44:1 */
+    --tint-blue: #16424c;             /* Blau 25 % auf #1e1e1e, heller Text 9,8:1 */
+    --tint-green: #304423;            /* 9,5:1 */
+    --tint-yellow: #565116;           /* 7,3:1 */
   }
   /* Logo nicht umfärben [CD]: im dunklen Modus auf weißer Fläche wie im Original */
   .site-header .logo { background: #fff; padding: 4px 6px; }
@@ -111,7 +127,7 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
 .field-row input {
   flex: 1; min-width: 0; min-height: 48px; padding: 0 var(--space-3);
   font: inherit; color: var(--color-text-primary); background: var(--color-surface);
-  border: 1px solid var(--color-border-control); border-radius: 0;
+  border: 1px solid var(--color-border-control); border-radius: var(--radius-control);
 }
 .field-row input:focus-visible { outline-offset: 0; }
 .field-row input[aria-invalid="true"] { border: 2px solid var(--color-error); }
@@ -121,7 +137,7 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
 /* Schaltflächen: Arial Bold (CD: „für die meisten Anwendungen Arial Bold“), eckig */
 .btn {
   -webkit-appearance: none; appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  min-height: 48px; padding: 0 var(--space-5); font: inherit; font-weight: 700; text-decoration: none; border-radius: 0; cursor: pointer;
+  min-height: 48px; padding: 0 var(--space-5); font: inherit; font-weight: 700; text-decoration: none; border-radius: var(--radius-control); cursor: pointer;
 }
 .btn-primary { background: var(--color-action); color: var(--color-on-action); border: 2px solid var(--color-action); }
 .btn-primary:hover { background: var(--color-action-hover); border-color: var(--color-action-hover); }
@@ -146,10 +162,17 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
 .templates { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
 .template {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; align-content: center; gap: 0 var(--space-3); height: 100%; min-height: 56px; padding: var(--space-2) var(--space-3);
-  text-decoration: none; border: 1px solid var(--color-border-control); border-radius: var(--radius); background: transparent;
+  text-decoration: none; border: 1px solid var(--color-border-control); border-radius: var(--radius-control); background: transparent;
 }
 .template:hover { border-color: var(--color-text-primary); background: var(--color-canvas); }
-.template-icon { grid-row: span 2; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.template-icon {
+  grid-row: span 2; width: 38px; height: 38px; padding: 8px; border-radius: var(--radius-control);
+  background: var(--tile, var(--color-canvas)); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+/* Kacheln unterscheiden sich durch eine Tönung der Hausfarben; der Name bleibt das Merkmal */
+.template[data-tint="blue"] { --tile: var(--tint-blue); }
+.template[data-tint="green"] { --tile: var(--tint-green); }
+.template[data-tint="yellow"] { --tile: var(--tint-yellow); }
 .template-name { font-weight: 700; line-height: 1.25; }
 .template-desc { grid-column: 2; font-size: var(--text-small); line-height: 1.3; color: var(--color-text-secondary); }
 .template .chev { grid-column: 3; grid-row: 1 / span 2; fill: none; stroke: var(--color-text-secondary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

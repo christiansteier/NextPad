@@ -57,7 +57,7 @@ the list of allowed addresses remain the operator's job.
 - Timeline from snapshots, like Etherpad's timeslider: scrub, play, time and author per step.
 - Export as HTML, Markdown, plain text, and PDF (typeset with [Typst](https://typst.app)).
 - Whiteboard via Excalidraw on the same Yjs server.
-- Idea collection modelled on [liveask](https://github.com/liveask/liveask): post ideas and questions without a name, vote, live for everyone. The server counts one vote per person, only whoever created the collection can moderate. In a Moodle course it runs as an "External tool" activity (LTI 1.3), open only to course members and moderated by the teachers.
+- Idea collection modelled on [liveask](https://github.com/liveask/liveask): post ideas and questions without a name, vote, live for everyone, with a projector view and QR code. The server counts one vote per person, only whoever created the collection can moderate. In a Moodle course it runs as an "External tool" activity (LTI 1.3), open only to course members and moderated by the teachers.
 - Moodle sign-in through LTI 1.3 (names and avatars).
 - Guest pads with ownership and retention rules.
 - One Rust binary, SQLite, roughly 50 MB RAM under load.

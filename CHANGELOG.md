@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-26
+
+### Added
+
+- Idea collection: projector view (`/p/<id>/leinwand`) with the most popular open posts in large
+  type, live, and a QR code for joining (free collections only).
+
+### Changed
+
+- Design softened within the HSD corporate design, always derived from the house colours:
+  blue, green and yellow as tints (12 %, yellow 30 %) for surfaces and darkened to 70 % for lines
+  (at least 3:1, WCAG 1.4.11); in dark mode the house colours themselves. Black only for the main
+  action. Controls get a 4 px radius, surfaces stay square. Start page tiles carry a tinted icon.
+- Idea collection: sorting as tabs; a cast vote shows HSD blue; new posts flash in yellow
+  (a static marker with reduced motion); done posts show a green check and the word "erledigt";
+  moderation as icon buttons; the question is edited via a pencil next to the heading.
+
 ## [0.5.0] - 2026-10-26
 
 ### Added

@@ -60,7 +60,7 @@ API-Schlüssel und die Liste erlaubter Adressen bleiben Aufgabe des Betriebs.
   Autor je Schritt.
 - Export als HTML, Markdown, Text und PDF (mit [Typst](https://typst.app) gesetzt).
 - Zeichenbrett über Excalidraw auf demselben Yjs-Server.
-- Ideensammlung nach dem Vorbild von [liveask](https://github.com/liveask/liveask): Ideen und Fragen ohne Namen eintragen, abstimmen, live für alle. Der Server zählt eine Stimme je Person, moderieren darf nur, wer die Sammlung angelegt hat. Im Moodle-Kurs läuft sie als Aktivität „Externes Tool“ (LTI 1.3) mit Zugang nur für Kursmitglieder, dort moderieren die Lehrenden.
+- Ideensammlung nach dem Vorbild von [liveask](https://github.com/liveask/liveask): Ideen und Fragen ohne Namen eintragen, abstimmen, live für alle, mit Leinwand-Ansicht und QR-Code für den Beamer. Der Server zählt eine Stimme je Person, moderieren darf nur, wer die Sammlung angelegt hat. Im Moodle-Kurs läuft sie als Aktivität „Externes Tool“ (LTI 1.3) mit Zugang nur für Kursmitglieder, dort moderieren die Lehrenden.
 - Anmeldung über Moodle per LTI 1.3 (Namen und Profilbilder).
 - Freie Pads mit Besitz- und Aufbewahrungsregeln.
 - Ein Rust-Binary, SQLite, rund 50 MB RAM unter Last.
