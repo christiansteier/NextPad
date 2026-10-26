@@ -15,13 +15,21 @@
     return r.json()
   }
 
-  function icon(d) {
+  function icon(d, size = 18) {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '18'); s.setAttribute('height', '18'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('focusable', 'false')
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', size); s.setAttribute('height', size); s.setAttribute('aria-hidden', 'true'); s.setAttribute('focusable', 'false')
     const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.append(p)
     return s
   }
   const stimmen = n => `${n} ${n === 1 ? 'Stimme' : 'Stimmen'}`
+  const ICON = {
+    check: 'M5 12.5l4.5 4.5L19 7.5',
+    undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
+    hide: 'M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 5 10 7a17 17 0 0 1-3.2 4M6.6 6.6C4.2 8 2.7 10.4 2 12c1 2 5 7 10 7 1.7 0 3.3-.5 4.6-1.3',
+    show: 'M2 12c1-2 5-7 10-7s9 5 10 7c-1 2-5 7-10 7S3 14 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  }
+  // Beiträge, die schon angezeigt wurden: neue bekommen kurz eine Markierung
+  let known = null
 
   function button(cls, text, key, onClick) {
     const b = document.createElement('button')
@@ -52,14 +60,19 @@
       const n = document.createElement('span'); n.className = 'votes'; n.textContent = stimmen(i.votes)
       meta.append(n)
     }
+    if (i.done) { const d = document.createElement('span'); d.className = 'done-mark'; d.append(icon(ICON.check, 16), 'erledigt'); meta.append(d) }
     if (mine.has(i.id)) { const m = document.createElement('span'); m.className = 'tag'; m.textContent = 'Dein Beitrag'; meta.append(m) }
-    if (data.owner) {
-      meta.append(button('btn-link', i.done ? 'Wieder öffnen' : 'Erledigt', `${i.id}:done`, () => post(`${api}/${i.id}/moderation`, { done: !i.done })))
-      meta.append(button('btn-link', i.hidden ? 'Einblenden' : 'Ausblenden', `${i.id}:hide`, () => post(`${api}/${i.id}/moderation`, { hidden: !i.hidden })))
-    }
     const body = document.createElement('div'); body.className = 'idea-body'
     body.append(text, meta)
     li.append(body)
+    if (data.owner) {
+      const tools = document.createElement('div'); tools.className = 'mod-tools'
+      const mk = (key, label, d, body) => { const b = button('icon-btn', '', `${i.id}:${key}`, () => post(`${api}/${i.id}/moderation`, body)); b.append(icon(d, 20)); b.setAttribute('aria-label', label); b.title = label; return b }
+      if (!i.hidden) tools.append(i.done ? mk('done', 'Wieder öffnen', ICON.undo, { done: false }) : mk('done', 'Als erledigt markieren', ICON.check, { done: true }))
+      tools.append(i.hidden ? mk('hide', 'Wieder einblenden', ICON.show, { hidden: false }) : mk('hide', 'Ausblenden', ICON.hide, { hidden: true }))
+      li.append(tools)
+    }
+    if (known && !known.has(i.id)) li.classList.add('is-new')
     return li
   }
 
@@ -68,8 +81,8 @@
     const voted = new Set(data.voted), mine = new Set(data.mine)
     $('prompt').textContent = data.prompt || 'Ideen und Fragen'
     document.title = `${data.prompt || 'Ideensammlung'} · NextPad`
-    const pf = $('prompt-form')
-    pf.hidden = !data.owner
+    $('prompt-edit').hidden = !data.owner
+    if (!data.owner) { $('prompt-form').hidden = true; $('prompt-edit').setAttribute('aria-expanded', 'false') }
     if (data.owner && document.activeElement !== $('prompt-input')) $('prompt-input').value = data.prompt
     $('add-form').hidden = !data.canWrite
     $('readonly-hint').hidden = data.canWrite
@@ -88,7 +101,8 @@
     $('empty').textContent = items.length > hidden.length ? 'Keine offenen Beiträge.' : cfg.free ? 'Noch keine Beiträge. Den Link teilen, dann können alle mitmachen.' : 'Noch keine Beiträge.'
     const c = `${open.length} ${open.length === 1 ? 'offener Beitrag' : 'offene Beiträge'}`
     if ($('ideas-count').textContent !== c) $('ideas-count').textContent = c
-    for (const b of document.querySelectorAll('.sort .chip')) b.setAttribute('aria-pressed', b.dataset.sort === sort ? 'true' : 'false')
+    for (const b of document.querySelectorAll('.sort .tab')) b.setAttribute('aria-pressed', b.dataset.sort === sort ? 'true' : 'false')
+    known = new Set(data.items.map(i => i.id))
     if (focusKey) document.querySelector(`[data-key="${CSS.escape(focusKey)}"]`)?.focus()
   }
 
@@ -123,13 +137,21 @@
   })
   text.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('add-form').requestSubmit() })
 
+  // Frage ändern: Stift neben der Überschrift klappt das Feld auf, Speichern oder Escape klappt es zu
+  function editPrompt(open) {
+    $('prompt-form').hidden = !open
+    $('prompt-edit').setAttribute('aria-expanded', open ? 'true' : 'false')
+    if (open) { $('prompt-input').value = data?.prompt || ''; $('prompt-input').focus() } else $('prompt-edit').focus()
+  }
+  $('prompt-edit').addEventListener('click', () => editPrompt($('prompt-form').hidden))
+  $('prompt-input').addEventListener('keydown', e => { if (e.key === 'Escape') editPrompt(false) })
   $('prompt-form').addEventListener('submit', async e => {
     e.preventDefault()
-    try { await post(`${api}/frage`, { prompt: $('prompt-input').value }) } catch (x) { alert(x.message) }
+    try { await post(`${api}/frage`, { prompt: $('prompt-input').value }); editPrompt(false) } catch (x) { alert(x.message) }
     await load()
   })
 
-  for (const b of document.querySelectorAll('.sort .chip')) b.addEventListener('click', () => {
+  for (const b of document.querySelectorAll('.sort .tab')) b.addEventListener('click', () => {
     sort = b.dataset.sort
     try { localStorage.setItem('nextpad.ideen.sort', sort) } catch {}
     if (data) render()
@@ -144,7 +166,7 @@
   // Kursaktivität: Zugang nur über Moodle, Links weiterzugeben hilft nicht
   if (!cfg.free) {
     for (const r of document.querySelectorAll('.share-row')) r.hidden = true
-    $('share-h').textContent = 'Sichern'
+    $('share-h').textContent = 'Zeigen und sichern'
     const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'Zugang nur über die Aktivität im Moodle-Kurs.'
     $('share-h').after(p)
   }
