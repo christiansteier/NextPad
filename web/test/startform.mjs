@@ -28,6 +28,11 @@ await p.goto(base + '/'); await p.click('a[href$="typ=zeichenbrett"]'); await p.
 check('Zeichenbrett', await p.locator('.excalidraw').count() > 0)
 await p.goto(base + '/open?padname=%3Cx%3E')
 check('Serverfehlerseite mit Weg zurück', (await p.textContent('h1')).length > 0 && await p.locator('a[href$="/"]').count() > 0)
+await p.goto(base + '/')
+const icon = await p.getAttribute('link[rel=icon][type="image/svg+xml"]', 'href')
+const svg = icon ? await p.request.get(new URL(icon, base).href) : null
+check('Favicon verlinkt und ausgeliefert', !!svg && svg.ok() && (await svg.text()).includes('<svg'))
+check('Zeichen vor dem Namen, schmückend', await p.locator('.site-header .brand-mark[aria-hidden=true]').count() === 1)
 await p.goto(base + '/hilfe')
 check('Hilfe ohne Löschzusage im Probelauf', !(await p.textContent('main')).includes('Tagen ohne Öffnen'))
 await b.close(); console.log(`\n${pass} ok, ${fail} fehlgeschlagen`); process.exit(fail ? 1 : 0)

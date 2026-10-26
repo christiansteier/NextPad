@@ -1,4 +1,4 @@
-# NextPad
+<h1><img src="docs/bilder/nextpad-logo.svg" alt="NextPad" width="252" height="48"></h1>
 
 Deutsche Fassung: [README.de.md](README.de.md)
 

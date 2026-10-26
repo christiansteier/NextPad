@@ -12,6 +12,9 @@ pub const EDITOR_JS: &str = include_str!("../static/editor.js");
 pub const EDITOR_CSS: &str = include_str!("../static/editor.css");
 pub const ICONS_WOFF: &[u8] = include_bytes!("../static/icons.woff");
 pub const FOND_JPG: &[u8] = include_bytes!("../static/fond.jpg");
+pub const LOGO_SVG: &str = include_str!("../static/logo.svg");
+pub const FAVICON_PNG: &[u8] = include_bytes!("../static/favicon-32.png");
+pub const TOUCH_ICON_PNG: &[u8] = include_bytes!("../static/apple-touch-icon.png");
 pub const QUICKSAND_TTF: &[u8] = include_bytes!("../static/quicksand.ttf");
 pub const THEME_HSD_CSS: &str = include_str!("../static/theme-hsd.css");
 /// Inhaltskennung des Bundles für versionierte URLs: Browser-Caches zeigen nach jedem Bau sofort die neue Fassung.
@@ -137,7 +140,8 @@ pub static BASE_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 fn error_page(status: StatusCode, msg: &str) -> Response {
     let base = BASE_PATH.get().map(String::as_str).unwrap_or("");
     let title = match status.as_u16() { 404 => "Nicht gefunden", 403 => "Kein Zugriff", 400 => "Eingabe prüfen", 429 => "Bitte kurz warten", _ => "Das hat nicht geklappt" };
-    (status, Html(format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>{title} · NextPad</title><link rel="stylesheet" href="{base}/static/start.css?v={v}"></head>
+    let icons = icon_links();
+    (status, Html(format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>{title} · NextPad</title><link rel="stylesheet" href="{base}/static/start.css?v={v}"></head>
 <body><main class="doc"><h1>{title}</h1><p class="notice" role="alert">{msg}</p><p><a class="btn btn-secondary" href="{base}/">Zur Startseite von NextPad</a></p></main></body></html>"#, msg = html_escape::encode_text(msg), v = start_version()))).into_response()
 
 }
@@ -180,7 +184,8 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         return with_cookie(resp, access.set_cookie.clone());
     }
     if state.store.is_board(&access.pad.id) {
-        let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Zeichenbrett</title>
+        let icons = icon_links();
+        let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Zeichenbrett</title>
 <link rel="stylesheet" href="{base}/static/board/board.css?v={v}"><style>html,body{{margin:0;height:100%;overflow:hidden}} #board{{position:fixed;inset:0}}</style></head>
 <body><div id="board"></div>
 <script type="application/json" id="nextpad-config">{cfg}</script>
@@ -198,8 +203,9 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     }
     let theme_link = if theme_hsd(&state) { format!(r#"<link rel="stylesheet" href="{}/static/theme-hsd.css?v={}">"#, state.config.base_path, bundle_version()) } else { String::new() };
     let body_class = if theme_hsd(&state) { "theme-hsd" } else { "theme-colibris" };
+    let icons = icon_links();
     let body = format!(
-        r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad</title>
+        r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad</title>
 <link rel="stylesheet" href="{base}/static/editor.css?v={v}">{theme_link}</head>
 <body class="{body_class}"><div id="app"><div id="toolbar" role="toolbar" aria-label="Formatierung"></div><div id="editorcontainerbox"><div id="editor"></div></div><div id="statusbar"></div></div>
 <script type="application/json" id="nextpad-config">{cfg}</script>
@@ -293,7 +299,8 @@ async fn export_inner(State(state): State<Arc<AppState>>, Path((id, format)): Pa
             Ok(h) => {
                 let body = h.split("<body>").nth(1).and_then(|r| r.split("</body>").next()).unwrap_or("").to_string();
                 let base = &state.config.base_path;
-                let page = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Pad</title>
+                let icons = icon_links();
+                let page = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<title>Pad</title>
 <link rel="stylesheet" href="{base}/static/editor.css?v={v}"><style>body{{max-width:48em;margin:2em auto;padding:0 1em}} @media print{{ body{{margin:0;max-width:none}} .no-print{{display:none}} span.author{{background:transparent !important}} }}</style></head>
 <body class="print-view"><p class="no-print">Druckansicht. Im Druckdialog „Als PDF speichern“ wählen. <a href="{base}/p/{id}">Zurück zum Pad</a></p>
 {body}<script src="{base}/static/print.js"></script></body></html>"#, v = bundle_version(), id = html_escape::encode_double_quoted_attribute(&id));
@@ -438,7 +445,8 @@ pub async fn index(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     }
     if state.config.allow_free_pads {
         let base = &state.config.base_path;
-        let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>NextPad</title>
+        let icons = icon_links();
+        let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>NextPad</title>
 <style>@font-face{{font-family:Quicksand;src:url("{base}/static/quicksand.ttf") format("truetype");font-weight:300 700}}
 html,body{{height:100%;margin:0}} body{{background:url("{base}/static/fond.jpg") center center no-repeat fixed #64d29b;background-size:cover;font-family:Quicksand,Cantarell,"Open Sans","Helvetica Neue",sans-serif;font-size:16px;line-height:1.43;color:#333;display:flex;align-items:center;justify-content:center}}
 #inner{{width:350px;max-width:92vw;text-align:center;color:#fff}}
@@ -459,7 +467,8 @@ p.hint{{font-size:13px;margin:26px 0 0;color:#fff;opacity:.9}} p.hint a{{color:#
     }
     let base = &state.config.base_path;
     let (pads, _, _) = state.store.counts().unwrap_or((0, 0, 0));
-    let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad</title>
+    let icons = icon_links();
+    let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad</title>
 <style>body{{font-family:Arial,Helvetica,sans-serif;color:#333;max-width:40em;margin:3em auto;padding:0 1em;line-height:1.5}} h1{{font-size:1.5em;border-bottom:2px solid #e60028;padding-bottom:.2em}} code{{background:#f3f3f3;padding:0 .3em}}</style></head>
 <body><h1>NextPad</h1>
 <p>NextPad: ein Pad-Server, der die Etherpad-Schnittstelle für das Moodle-Plugin <em>Etherpad Lite</em> nachbildet. Pads werden aus Moodle-Kursen heraus geöffnet; einen direkten Einstieg gibt es hier nicht.</p>
@@ -539,6 +548,18 @@ pub async fn theme_font(State(state): State<Arc<AppState>>) -> Response {
 pub async fn static_theme_hsd() -> Response { ([(header::CONTENT_TYPE, "text/css; charset=utf-8"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")], THEME_HSD_CSS).into_response() }
 pub async fn static_icons() -> Response { ([(header::CONTENT_TYPE, "font/woff"), (header::CACHE_CONTROL, "public, max-age=604800, immutable")], ICONS_WOFF).into_response() }
 pub async fn static_fond() -> Response { ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "public, max-age=604800, immutable")], FOND_JPG).into_response() }
+/// Zeichen von NextPad: Blase mit Text und Cursor, für Favicon und Kopfzeile.
+pub fn icon_links() -> String {
+    let base = BASE_PATH.get().map(String::as_str).unwrap_or("");
+    format!(r#"<link rel="icon" href="{base}/static/logo.svg" type="image/svg+xml"><link rel="icon" href="{base}/static/favicon-32.png" sizes="32x32" type="image/png"><link rel="apple-touch-icon" href="{base}/static/apple-touch-icon.png">"#)
+}
+/// Das Zeichen inline, schmückend neben dem Schriftzug.
+pub fn logo_mark(class: &str) -> String {
+    LOGO_SVG.trim().replacen("<svg ", &format!(r#"<svg class="{class}" aria-hidden="true" focusable="false" "#), 1)
+}
+pub async fn static_logo() -> Response { ([(header::CONTENT_TYPE, "image/svg+xml"), (header::CACHE_CONTROL, "public, max-age=604800")], LOGO_SVG).into_response() }
+pub async fn static_favicon() -> Response { ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=604800")], FAVICON_PNG).into_response() }
+pub async fn static_touch_icon() -> Response { ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=604800")], TOUCH_ICON_PNG).into_response() }
 pub async fn static_quicksand() -> Response { ([(header::CONTENT_TYPE, "font/ttf"), (header::CACHE_CONTROL, "public, max-age=604800, immutable")], QUICKSAND_TTF).into_response() }
 pub async fn static_print() -> Response {
     ([(header::CONTENT_TYPE, "application/javascript; charset=utf-8")], "window.addEventListener('load', function () { setTimeout(function () { window.print() }, 200) })").into_response()
@@ -607,13 +628,14 @@ fn site_suffix(state: &AppState) -> String {
 pub fn page_frame(state: &AppState, title: &str, head: &str, content: &str, scripts: &str) -> String {
     if theme_hsd(state) { return hsd_page_with(state, title, head, "", "", content, scripts); }
     let base = &state.config.base_path;
-    format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
+    let icons = icon_links();
+    format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
 <link rel="stylesheet" href="{base}/static/start.css?v={v}">{head}</head>
 <body class="theme-colibris"><a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
-<header class="site-header"><a class="brand" href="{base}/"><strong>NextPad</strong></a><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
+<header class="site-header"><a class="brand" href="{base}/">{mark}<strong>NextPad</strong></a><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
 {content}
 <footer class="site-footer">{links}<span class="site">NextPad{site}</span></footer>
-{scripts}</body></html>"##, v = start_version(), links = footer_links(state), site = site_suffix(state))
+{scripts}</body></html>"##, v = start_version(), mark = logo_mark("brand-mark"), links = footer_links(state), site = site_suffix(state))
 }
 
 /// Seitenrahmen im HSD-Design: Kopf mit Dachmarke und Produktname, Fuß mit Hilfe und Pflichtlinks.
@@ -626,13 +648,14 @@ fn hsd_page_with(state: &AppState, title: &str, head: &str, body_class: &str, st
     let logo = if has_logo(state) { format!(r#"<img class="logo" src="{base}/theme/logo.png" alt="Hochschule Düsseldorf">"#) } else { r#"<span class="wordmark">HSD</span>"#.to_string() };
     let links = footer_links(state);
     let site = site_suffix(state);
-    format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
+    let icons = icon_links();
+    format!(r##"<!doctype html><html lang="de" data-base="{base}"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>{title}</title>
 <link rel="stylesheet" href="{base}/static/start.css?v={v}"><style>@font-face{{font-family:"HSD Sans";src:url("{base}/theme/font.ttf") format("truetype");font-weight:400;font-display:swap}}</style>{head}</head>
 <body class="{body_class}"{style_attr}><a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
-<header class="site-header"><a class="brand" href="{base}/" aria-label="NextPad Startseite, Hochschule Düsseldorf">{logo}</a><div class="product"><strong>NextPad</strong><span>Gemeinsam schreiben an der HSD</span></div><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
+<header class="site-header"><a class="brand" href="{base}/" aria-label="NextPad Startseite, Hochschule Düsseldorf">{logo}</a><div class="product">{mark}<strong>NextPad</strong><span>Gemeinsam schreiben an der HSD</span></div><nav aria-label="Service"><a href="{base}/hilfe">Hilfe</a></nav></header>
 {content}
 <footer class="site-footer">{links}<span class="site">NextPad{site}</span></footer>
-{scripts}</body></html>"##, v = start_version())
+{scripts}</body></html>"##, v = start_version(), mark = logo_mark("brand-mark"))
 }
 
 /// Inhaltskennung von start.css/start.js für versionierte Adressen.
@@ -781,7 +804,8 @@ pub async fn extend_page(State(state): State<Arc<AppState>>, Query(q): Query<Has
     if t.len() != 48 || !t.chars().all(|c| c.is_ascii_alphanumeric()) || state.store.pad_by_extend_token(&t).ok().flatten().is_none() {
         return start_headers(&state, error_page(StatusCode::NOT_FOUND, "Dieser Link gilt nicht mehr. Vielleicht wurde das Pad schon verlängert oder geöffnet."));
     }
-    let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Verlängern</title>
+    let icons = icon_links();
+    let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Verlängern</title>
 <style>body{{font-family:Arial,sans-serif;max-width:32em;margin:0 auto;padding:32px 16px;line-height:1.5}} button{{min-height:48px;padding:0 20px;background:#262626;color:#fff;border:0;font:inherit;font-weight:700;cursor:pointer}} h1{{font-size:24px;border-bottom:2px solid #e60028;padding-bottom:6px}}</style></head>
 <body><h1>Pad verlängern</h1><p>Das Pad bleibt ein weiteres Jahr erhalten.</p><form method="post" action="{base}/verlaengern"><input type="hidden" name="t" value="{t}"><button type="submit">Um ein Jahr verlängern</button></form></body></html>"#);
     start_headers(&state, Html(body).into_response())
@@ -794,7 +818,8 @@ pub async fn extend_by_token(State(state): State<Arc<AppState>>, axum::Form(f): 
     match crate::retention::extend(&state, &pad) {
         Ok(until) => {
             let base = &state.config.base_path;
-            let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Verlängert</title><style>body{{font-family:Arial,sans-serif;max-width:32em;margin:0 auto;padding:32px 16px;line-height:1.5}}</style></head>
+            let icons = icon_links();
+            let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Verlängert</title><style>body{{font-family:Arial,sans-serif;max-width:32em;margin:0 auto;padding:32px 16px;line-height:1.5}}</style></head>
 <body><h1>Verlängert</h1><p>Das Pad bleibt bis mindestens {} erhalten.</p><p><a href="{base}/p/{}">Zum Pad</a></p></body></html>"#, crate::pdf::date_de(until), urlencoding(&pad));
             start_headers(&state, Html(body).into_response())
         }
