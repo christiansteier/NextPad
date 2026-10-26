@@ -63,6 +63,7 @@ Der Code ist die maßgebliche Quelle.
 ```bash
 mkdir -p ~/.cache/cooppad-data
 head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48 > ~/.cache/cooppad-data/api-keys.txt
+bash web/build.sh            # Editor- und Zeichenbrett-Bündel (braucht Node 22 und pnpm)
 cd server
 CARGO_TARGET_DIR=~/.cache/cargo-target/cooppad cargo build
 COOPPAD_DATA=~/.cache/cooppad-data \
