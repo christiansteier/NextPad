@@ -1,10 +1,7 @@
 // Abmelden auf drei Wegen: Startseite, Pad (Teilnehmende), Adresse /logout
 import { chromium } from 'playwright'
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-const base = 'http://127.0.0.1:5093', dir = process.env.HOME + '/.cache/nextpad-data-5093'
-// Datenbank wie der Server: nextpad.sqlite, sonst die alte cooppad.sqlite
-const db = process.env.NEXTPAD_DB || (existsSync(dir + '/nextpad.sqlite') || !existsSync(dir + '/cooppad.sqlite') ? dir + '/nextpad.sqlite' : dir + '/cooppad.sqlite')
+const base = 'http://127.0.0.1:5093', db = process.env.NEXTPAD_DB || process.env.HOME + '/.cache/nextpad-data-5093/nextpad.sqlite'
 const login = () => execSync(`sqlite3 ${db} "insert or replace into logins values ('testlogin0123456789abcdef','a.7GWLCPklETZvcgvM',0,99999999999);"`)
 const b = await chromium.launch(); let ok = 0, fail = 0
 const check = (n, c) => { c ? ok++ : fail++; console.log((c ? 'ok   ' : 'FAIL ') + n) }

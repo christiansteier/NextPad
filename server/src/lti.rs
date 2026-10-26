@@ -291,11 +291,9 @@ pub async fn jwks() -> Response {
 /// Abmelden: Anmeldung löschen, Cookie entfernen. Nur per POST von der eigenen Seite.
 pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !crate::web::origin_ok(&state, &headers) { return StatusCode::FORBIDDEN.into_response(); }
-    for t in crate::web::cookie_values_or(&headers, &state.config.login_cookie, crate::web::LEGACY_LOGIN_COOKIE) { let _ = state.store.delete_login(&t); }
+    for t in crate::web::cookie_values(&headers, &state.config.login_cookie) { let _ = state.store.delete_login(&t); }
     let path = base_path(&state);
     let mut resp = (StatusCode::SEE_OTHER, [(header::LOCATION, path.clone())]).into_response();
-    for name in [state.config.login_cookie.as_str(), crate::web::LEGACY_LOGIN_COOKIE] {
-        if let Ok(v) = HeaderValue::from_str(&format!("{name}=; Path={path}; Max-Age=0; HttpOnly; Secure; SameSite=Lax")) { resp.headers_mut().append(header::SET_COOKIE, v); }
-    }
+    if let Ok(v) = HeaderValue::from_str(&format!("{}=; Path={path}; Max-Age=0; HttpOnly; Secure; SameSite=Lax", state.config.login_cookie)) { resp.headers_mut().append(header::SET_COOKIE, v); }
     resp
 }

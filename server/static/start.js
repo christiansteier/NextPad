@@ -27,8 +27,7 @@
     input.addEventListener('input', () => { if (input.getAttribute('aria-invalid')) show(problem(input.value.trim())) })
   }
 
-  // Zuletzt geöffnet (bis 0.2.x unter cooppad.recent)
-  try { const o = localStorage.getItem('cooppad.recent'); if (o && !localStorage.getItem('nextpad.recent')) localStorage.setItem('nextpad.recent', o); localStorage.removeItem('cooppad.recent') } catch {}
+  // Zuletzt geöffnet
   const KEY = 'nextpad.recent'
   let list = []
   try { list = JSON.parse(localStorage.getItem(KEY) || '[]') } catch { list = [] }

@@ -45,7 +45,7 @@ pub struct Access {
 /// Über Moodle (LTI) angemeldete Person aus dem Anmelde-Cookie.
 pub fn login_author(state: &AppState, headers: &HeaderMap) -> Option<crate::store::Author> {
     let now_s = ids::now_ms() / 1000;
-    cookie_values_or(headers, &state.config.login_cookie, LEGACY_LOGIN_COOKIE).into_iter().find_map(|t| state.store.author_by_login(&t, now_s).ok().flatten())
+    cookie_values(headers, &state.config.login_cookie).into_iter().find_map(|t| state.store.author_by_login(&t, now_s).ok().flatten())
 }
 
 /// Ursprünge (Schema und Host) der bekannten Moodle-Instanzen, für Profilbilder in der CSP.
@@ -63,10 +63,6 @@ fn guest_author(state: &AppState, headers: &HeaderMap, create: bool) -> Result<O
     for v in cookie_values(headers, &state.config.author_cookie) {
         if let Ok(Some(a)) = state.store.author_by_guest_token(&v) { return Ok(Some((a.id, a.name, None))); }
     }
-    // Gast aus einer älteren Fassung: gleiches Token unter dem neuen Namen setzen, Besitz bleibt erhalten
-    for v in cookie_values(headers, LEGACY_AUTHOR_COOKIE) {
-        if let Ok(Some(a)) = state.store.author_by_guest_token(&v) { return Ok(Some((a.id, a.name, Some(cookie(&v))))); }
-    }
     if !create { return Ok(None); }
     let a = state.store.create_author("Gast", None).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Autor konnte nicht angelegt werden."))?;
     let token = state.store.create_guest_token(&a.id).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Autor konnte nicht angelegt werden."))?;
@@ -78,17 +74,6 @@ pub fn valid_free_pad_name(n: &str) -> bool {
     let len = n.chars().count();
     (1..=50).contains(&len) && !n.starts_with("g.") && !n.starts_with("r.") && !n.starts_with(' ') && !n.ends_with(' ')
         && n.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | '(' | ')' | ','))
-}
-
-/// Cookie-Namen bis 0.2.x; sie werden noch angenommen, gesetzt werden die neuen.
-pub const LEGACY_LOGIN_COOKIE: &str = "cooppad_login";
-pub const LEGACY_AUTHOR_COOKIE: &str = "cooppad_author";
-
-/// Werte des Cookies `name` und seines alten Namens, die aktuellen zuerst.
-pub fn cookie_values_or(headers: &HeaderMap, name: &str, legacy: &str) -> Vec<String> {
-    let mut v = cookie_values(headers, name);
-    if name != legacy { v.extend(cookie_values(headers, legacy)); }
-    v
 }
 
 pub fn cookie_values(headers: &HeaderMap, name: &str) -> Vec<String> {
@@ -427,7 +412,7 @@ pub async fn open_pad(State(state): State<Arc<AppState>>, Query(q): Query<HashMa
 pub async fn rename_me(State(state): State<Arc<AppState>>, headers: HeaderMap, axum::Json(body): axum::Json<serde_json::Value>) -> Response {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("").trim().chars().filter(|c| !c.is_control()).take(60).collect::<String>();
     if name.is_empty() { return StatusCode::BAD_REQUEST.into_response(); }
-    let author = cookie_values_or(&headers, &state.config.author_cookie, LEGACY_AUTHOR_COOKIE).into_iter().find_map(|t| state.store.author_by_guest_token(&t).ok().flatten());
+    let author = cookie_values(&headers, &state.config.author_cookie).into_iter().find_map(|t| state.store.author_by_guest_token(&t).ok().flatten());
     let Some(a) = author else { return StatusCode::FORBIDDEN.into_response() };
     match state.store.rename_guest(&a.id, &name) { Ok(true) => axum::Json(json!({ "ok": true, "name": name })).into_response(), _ => StatusCode::FORBIDDEN.into_response() }
 }

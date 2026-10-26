@@ -1,7 +1,5 @@
 # NextPad-Server
 
-Einstellungen heißen `NEXTPAD_*`. Der alte Präfix `COOPPAD_*` aus Version 0.2 gilt weiter; eine vorhandene `cooppad.sqlite` im Datenverzeichnis wird weiter genutzt.
-
 Rust (Axum, yrs). Bildet die Etherpad-API für mod_etherpadlite nach und betreibt dahinter Yjs-Dokumente mit WebSocket-Sync.
 
 ## Bauen und starten

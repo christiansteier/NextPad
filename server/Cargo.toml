@@ -1,6 +1,6 @@
 [package]
 name = "nextpad"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Christian-Maximilian Steier"]
 edition = "2021"
 description = "Etherpad-kompatibler Pad-Server auf Yjs/yrs für mod_etherpadlite"

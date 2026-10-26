@@ -8,9 +8,6 @@ Plugin `mod_etherpadlite` weiterläuft. Darunter liegt ein moderner Unterbau: ge
 Schreiben über [Yjs](https://yjs.dev) (CRDT), der Editor [TipTap](https://tiptap.dev) und
 eine Zeitleiste aus Snapshots. Kein Chat.
 
-> **Name.** Bis Version 0.2 hieß das Projekt technisch `cooppad`. Einstellungen mit dem
-> alten Präfix `COOPPAD_*`, die alte Datenbankdatei und alte Cookies werden weiter erkannt.
-
 ## Worum es geht
 
 Das ZWEK betreibt für die Moodle-Plattformen der Hochschule einen Etherpad-Server. Moodle

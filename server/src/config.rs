@@ -48,21 +48,18 @@ pub struct Config {
     pub background_credit_url: Option<String>,
 }
 
-/// Einstellung `NEXTPAD_<name>`; der alte Name `COOPPAD_<name>` gilt weiter, damit bestehende
-/// Installationen ohne Änderung laufen.
+/// Einstellung `NEXTPAD_<name>`.
 pub fn var(name: &str) -> Option<String> {
-    std::env::var(format!("NEXTPAD_{name}")).or_else(|_| std::env::var(format!("COOPPAD_{name}"))).ok()
+    std::env::var(format!("NEXTPAD_{name}")).ok()
 }
 
 fn env(name: &str, default: &str) -> String {
     var(name).unwrap_or_else(|| default.to_string())
 }
 
-/// Datenbankdatei: `nextpad.sqlite`, eine vorhandene `cooppad.sqlite` aus älteren Fassungen wird weiter genutzt.
+/// Datenbankdatei im Datenverzeichnis.
 pub fn db_path(data_dir: &std::path::Path) -> PathBuf {
-    let old = data_dir.join("cooppad.sqlite");
-    let new = data_dir.join("nextpad.sqlite");
-    if !new.exists() && old.exists() { old } else { new }
+    data_dir.join("nextpad.sqlite")
 }
 
 impl Config {
