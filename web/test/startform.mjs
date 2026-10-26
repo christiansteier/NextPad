@@ -17,11 +17,13 @@ check('Fokus im Feld nach Fehler', await p.evaluate(() => document.activeElement
 const name = 'Redesign Test ' + Date.now().toString().slice(-5)
 await p.fill('#padname', name); await p.press('#padname', 'Enter'); await p.waitForURL(/\/p\//)
 check('gültiger Name öffnet Pad', decodeURIComponent(p.url()).endsWith('/p/' + name))
-for (const [label, sel, test] of [['Gruppenarbeit', 'a[href$="vorlage=gruppenarbeit"]', 'Wer macht was'], ['Protokoll', 'a[href$="vorlage=protokoll"]', 'Tagesordnung'], ['Ideensammlung', 'a[href$="vorlage=ideen"]', 'Favoriten']]) {
+for (const [label, sel, test] of [['Gruppenarbeit', 'a[href$="vorlage=gruppenarbeit"]', 'Wer macht was'], ['Protokoll', 'a[href$="vorlage=protokoll"]', 'Tagesordnung']]) {
   await p.goto(base + '/'); await p.click(sel); await p.waitForSelector('.ProseMirror')
   await p.waitForFunction(t => document.querySelector('.ProseMirror')?.textContent.includes(t), test, { timeout: 8000 }).catch(() => {})
   check(`Vorlage ${label}`, (await p.textContent('.ProseMirror')).includes(test))
 }
+await p.goto(base + '/'); await p.click('a[href$="typ=ideen"]'); await p.waitForSelector('#add-form:not([hidden])', { timeout: 8000 }).catch(() => {})
+check('Ideensammlung', await p.locator('#add-form:not([hidden])').count() === 1)
 await p.goto(base + '/'); await p.click('a[href$="typ=zeichenbrett"]'); await p.waitForSelector('.excalidraw', { timeout: 20000 }).catch(() => {})
 check('Zeichenbrett', await p.locator('.excalidraw').count() > 0)
 await p.goto(base + '/open?padname=%3Cx%3E')

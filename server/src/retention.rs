@@ -90,8 +90,9 @@ async fn notify(state: &Arc<AppState>, r: &RetentionRow, delete_after: i64) -> a
     let md = state.rooms.markdown(&r.id).await?;
     let title = md.lines().map(|l| l.trim_start_matches('#').trim()).find(|l| !l.is_empty()).unwrap_or(&r.id).chars().take(60).collect::<String>();
     let title = html_escape::decode_html_entities(&title).to_string();
-    let title = if state.store.is_board(&r.id) { "Zeichenbrett".to_string() } else { title };
-    let board = state.store.is_board(&r.id);
+    let ideas = state.store.is_ideas(&r.id);
+    let title = if state.store.is_board(&r.id) { "Zeichenbrett".to_string() } else if ideas { "Ideensammlung".to_string() } else { title };
+    let board = state.store.is_board(&r.id) || ideas;
     let pdf = if board { Vec::new() } else { crate::web::pad_pdf(state, &r.id, &r.id).await? };
     let token = format!("{}{}{}", ids::random16(), ids::random16(), ids::random16());
     let pad_link = format!("{public}/p/{}", crate::web::urlencoding(&r.id));
@@ -99,7 +100,7 @@ async fn notify(state: &Arc<AppState>, r: &RetentionRow, delete_after: i64) -> a
     let date = crate::pdf::date_de(delete_after);
     let name = r.owner_name.clone().filter(|n| !n.trim().is_empty() && n != "Gast");
     let greeting = name.map(|n| format!("Guten Tag {n},")).unwrap_or_else(|| "Guten Tag,".into());
-    let text = format!("{greeting}\n\ndas Pad „{title}“ wurde seit einem Jahr weder bearbeitet noch geöffnet. Es wird am {date} gelöscht.\n\n{pad_link}\n\n{anhang}\n\nSoll das Pad ein weiteres Jahr bleiben, genügt dieser Link:\n{extend_link}\n\nAuch wer das Pad bis dahin öffnet oder bearbeitet, verlängert es. Ohne Verlängerung ist das Pad nach dem {date} nicht mehr erreichbar.\n\nDiese Mail kommt automatisch von NextPad ({site}). Sie geht an die Person, die das Pad angelegt hat.\n", site = cfg.site_name, anhang = if board { "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG oder SVG sichern." } else { "Im Anhang steht der aktuelle Inhalt als PDF." });
+    let text = format!("{greeting}\n\ndas Pad „{title}“ wurde seit einem Jahr weder bearbeitet noch geöffnet. Es wird am {date} gelöscht.\n\n{pad_link}\n\n{anhang}\n\nSoll das Pad ein weiteres Jahr bleiben, genügt dieser Link:\n{extend_link}\n\nAuch wer das Pad bis dahin öffnet oder bearbeitet, verlängert es. Ohne Verlängerung ist das Pad nach dem {date} nicht mehr erreichbar.\n\nDiese Mail kommt automatisch von NextPad ({site}). Sie geht an die Person, die das Pad angelegt hat.\n", site = cfg.site_name, anhang = if ideas { "Die Beiträge lassen sich in der Sammlung unter „Teilen und sichern“ als Markdown oder CSV sichern." } else if board { "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG oder SVG sichern." } else { "Im Anhang steht der aktuelle Inhalt als PDF." });
     let subject = format!("NextPad: Pad „{title}“ wird am {date} gelöscht");
     let from = cfg.mail_from.clone().ok_or_else(|| anyhow::anyhow!("NEXTPAD_MAIL_FROM fehlt"))?;
     let url = cfg.smtp_url.clone().ok_or_else(|| anyhow::anyhow!("SMTP fehlt"))?;

@@ -1,0 +1,49 @@
+/* NextPad – Ideensammlung. Baut auf start.css auf (Farben, Abstände, Schaltflächen). */
+main.ideas { flex: 1; padding: var(--space-5) 0 var(--space-7); }
+.ideas .wrap { display: flex; flex-direction: column; gap: var(--space-4); }
+.ideas-head h1 { margin: 0 0 var(--space-4); font-family: var(--font-text); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.2; overflow-wrap: anywhere; }
+.kicker { margin: 0 0 var(--space-1); font-size: var(--text-small); font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .06em; }
+.prompt-form { margin-bottom: var(--space-4); }
+.add-form textarea {
+  display: block; width: 100%; min-height: 96px; padding: var(--space-3); resize: vertical;
+  font: inherit; color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius);
+}
+.add-form textarea[aria-invalid="true"] { border: 2px solid var(--color-error); }
+.add-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-3); }
+.add-row .hint { margin: 0; }
+
+.ideas-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.ideas-bar .hint { margin: 0; }
+.sort { display: flex; gap: var(--space-2); }
+.chip { min-height: var(--target-min); padding: 0 var(--space-4); font: inherit; font-weight: 700; cursor: pointer; color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius); }
+.chip[aria-pressed="true"] { background: var(--color-action); color: var(--color-on-action); border-color: var(--color-action); }
+
+.idea-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.idea { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); }
+.idea-body { flex: 1; min-width: 0; }
+.idea-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.idea-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-4); font-size: var(--text-small); color: var(--color-text-secondary); }
+.idea-meta:empty { display: none; }
+.idea-meta .btn-link { min-height: var(--target-min); }
+.idea .tag { font-weight: 700; }
+.idea.is-done .idea-text, .idea.is-hidden .idea-text { color: var(--color-text-secondary); }
+.vote {
+  flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  width: 52px; min-height: 56px; padding: var(--space-1); font: inherit; font-weight: 700; cursor: pointer;
+  color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius);
+}
+.vote svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.vote:hover { border-color: var(--color-text-primary); background: var(--color-canvas); }
+.vote[aria-pressed="true"] { background: var(--color-action); color: var(--color-on-action); border-color: var(--color-action); }
+.vote[aria-pressed="true"] svg { fill: currentColor; }
+.vote:disabled { opacity: .6; cursor: progress; }
+.empty { margin: 0; }
+
+.idea-group > summary { min-height: var(--target-min); display: flex; align-items: center; font-weight: 700; cursor: pointer; }
+.idea-group > .hint { margin: 0 0 var(--space-2); }
+.ideas-share h2 { margin: 0 0 var(--space-3); font-size: 1.25rem; }
+.share-row { margin: 0 0 var(--space-4); }
+.share-row .field-row input { color: var(--color-text-secondary); }
+.owner-tools { margin: var(--space-3) 0 0; }
+.theme-colibris .site-header .brand strong { font-size: 18px; }
+@media (prefers-reduced-motion: no-preference) { .vote, .chip { transition: background-color .15s, border-color .15s; } }
