@@ -44,14 +44,17 @@ impl Hub {
     }
 }
 
-struct Viewer { pad: String, author: Option<String>, readonly: bool, owner: bool }
+/// `owner`: darf moderieren (wer die freie Sammlung angelegt hat, in Kursen die Lehrenden);
+/// `can_delete`: darf die ganze Sammlung löschen (nur freie Sammlungen, Kursaktivitäten verwaltet Moodle).
+struct Viewer { pad: String, author: Option<String>, readonly: bool, owner: bool, can_delete: bool }
 
 fn viewer(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
     let access = web::check_access(state, headers, id).map_err(|(s, m)| (s, m).into_response())?;
     if !state.store.is_ideas(&access.pad.id) { return Err((StatusCode::NOT_FOUND, "Das ist keine Ideensammlung.").into_response()); }
     let author = access.author.map(|a| a.0);
-    let owner = access.free && !access.readonly && author.is_some() && state.store.owner_of(&access.pad.id).ok().flatten() == author;
-    Ok(Viewer { pad: access.pad.id, author, readonly: access.readonly, owner })
+    let creator = access.free && !access.readonly && author.is_some() && state.store.owner_of(&access.pad.id).ok().flatten() == author;
+    let moderator = !access.readonly && author.as_deref().is_some_and(|a| state.store.is_moderator(&access.pad.id, a));
+    Ok(Viewer { pad: access.pad.id, author, readonly: access.readonly, owner: creator || moderator, can_delete: creator })
 }
 
 /// Schreibende Aufrufe: nur von der eigenen Seite (Origin) und mit eigener Kennung.
@@ -86,7 +89,7 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
     };
     no_store(Json(json!({
         "prompt": prompt, "items": items, "voted": votes, "mine": mine,
-        "owner": v.owner, "canWrite": !v.readonly && v.author.is_some(), "maxText": MAX_TEXT,
+        "owner": v.owner, "canDelete": v.can_delete, "canWrite": !v.readonly && v.author.is_some(), "maxText": MAX_TEXT,
     })).into_response())
 }
 

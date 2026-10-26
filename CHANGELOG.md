@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-26
+
+### Added
+
+- Idea collection as a Moodle activity: an "External tool" (LTI 1.3) with the custom parameter
+  `typ=ideen` (or tool URL `…/lti/ideen`) opens a collection of its own for each activity.
+  Only people who start it from Moodle get in (group session as with Etherpad group pads,
+  works embedded too); teachers moderate, the activity name becomes the question
+  (`web/test/ltitest.mjs`).
+
+### Changed
+
+- Idea collection: empty-state text fits the situation (course, everything done).
+
 ## [0.4.0] - 2026-10-26
 
 ### Added

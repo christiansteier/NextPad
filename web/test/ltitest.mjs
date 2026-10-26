@@ -133,6 +133,43 @@ check('Abmelden', lo.status === 303 && lo.headers.getSetCookie().some(c => c.sta
 const after = await (await fetch(`${base}/`, { headers: { cookie: loginCookie } })).text()
 check('nach Abmelden nicht mehr angemeldet', !after.includes('Erika Muster'))
 
+// Ideensammlung als Kursaktivität: eigene Gruppe je Aktivität, Zugang nur über den Start aus Moodle
+const C = 'https://purl.imsglobal.org/spec/lti/claim/'
+const run = Date.now().toString(36)
+const act = (sub, role, rl, extra = {}) => ({ sub, name: sub === '42' ? 'Erika Muster' : 'Max Lernt', [C + 'roles']: [`http://purl.imsglobal.org/vocab/lis/v2/membership#${role}`], [C + 'context']: { id: 'kurs-' + run, title: 'Testkurs' }, [C + 'resource_link']: { id: rl, title: 'Was soll in die nächste Sitzung?' }, [C + 'custom']: { typ: 'ideen' }, ...extra })
+async function startAct(over, cookie) {
+  const li = await login(); const r = await launch(li, jwt(claims(li.nonce, over)), [li.cookie, cookie].filter(Boolean).join('; '))
+  const sc = r.headers.getSetCookie().find(c => c.startsWith('sessionID='))
+  return { r, loc: r.headers.get('location') || '', sc, sid: sc ? sc.split(';')[0] : '' }
+}
+const t = await startAct(act('42', 'Instructor', 'rl1-' + run))
+check('Aktivität: Lehrende landen in der Sammlung', t.r.status === 303 && /\/p\/g\.[A-Za-z0-9]{16}%24aktivitaet$/.test(t.loc), t.loc)
+check('Aktivität: Sitzungs-Cookie SameSite=None', /SameSite=None/.test(t.sc || '') && /Secure/.test(t.sc || '') && /HttpOnly/.test(t.sc || ''))
+const apiT = base + t.loc.replace(/^\//, '/').replace(/^.*?\/p\//, '/p/') + '/ideen'
+const stT = await (await fetch(apiT, { headers: { cookie: t.sid } })).json()
+check('Aktivität: Lehrende moderieren, löschen nicht', stT.owner === true && stT.canDelete === false, JSON.stringify({ o: stT.owner, d: stT.canDelete }))
+check('Aktivität: Frage aus dem Titel', stT.prompt === 'Was soll in die nächste Sitzung?')
+const s1 = await startAct(act('43', 'Learner', 'rl1-' + run))
+check('Aktivität: Studierende landen in derselben Sammlung', s1.loc === t.loc)
+const stS = await (await fetch(apiT, { headers: { cookie: s1.sid } })).json()
+check('Aktivität: Studierende moderieren nicht', stS.owner === false && stS.canWrite === true)
+check('Aktivität: ohne Start aus Moodle kein Zugang', (await fetch(apiT)).status === 403 && (await fetch(apiT.replace(/\/ideen$/, ''))).status === 403)
+const addS = await fetch(apiT, { method: 'POST', headers: { cookie: s1.sid, origin, 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Mehr Übungen' }) })
+check('Aktivität: Studierende tragen ein', addS.ok)
+const modS = await fetch(apiT + '/1/moderation', { method: 'POST', headers: { cookie: s1.sid, origin, 'content-type': 'application/json' }, body: '{"done":true}' })
+check('Aktivität: Moderation durch Studierende 403', modS.status === 403)
+const modT = await fetch(apiT + '/1/moderation', { method: 'POST', headers: { cookie: t.sid, origin, 'content-type': 'application/json' }, body: '{"done":true}' })
+check('Aktivität: Moderation durch Lehrende', modT.ok)
+const delT = await fetch(apiT.replace(/\/ideen$/, '/delete'), { method: 'POST', headers: { cookie: t.sid, origin } })
+check('Aktivität: Löschen über NextPad 403', delT.status === 403)
+const s2 = await startAct(act('43', 'Learner', 'rl2-' + run), s1.sid)
+check('Aktivität: zweite Aktivität eigene Sammlung', s2.r.status === 303 && s2.loc !== t.loc)
+check('Aktivität: Cookie hält beide Sitzungen', s2.sid.includes(',') && (await fetch(apiT, { headers: { cookie: s2.sid } })).ok)
+const s3 = await startAct({ ...act('43', 'Learner', 'rl3-' + run, { [C + 'custom']: {} }), [C + 'target_link_uri']: `${PUBLIC}/lti/ideen` })
+check('Aktivität: auch über die Zieladresse …/lti/ideen', s3.r.status === 303 && s3.loc.includes('aktivitaet'))
+const s4 = await startAct({ ...act('43', 'Learner', 'x'), [C + 'resource_link']: undefined })
+check('Aktivität ohne Ressourcen-Link 400', s4.r.status === 400, `Status ${s4.r.status}`)
+
 fs.writeFileSync(path.join(dir, 'testpad.txt'), padId)
 console.log(`\n${pass} ok, ${fail} fehlgeschlagen`)
 process.exit(fail ? 1 : 0)

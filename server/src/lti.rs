@@ -8,6 +8,10 @@
 //! 4. NextPad prüft Signatur (Schlüssel der Plattform), Aussteller, Empfänger, Ablauf,
 //!    nonce, Deployment und Nachrichtentyp, legt die Person als Autor an und setzt
 //!    ein Anmelde-Cookie. Danach erscheinen Name und Profilbild aus Moodle in freien Pads.
+//!
+//! Als Kursaktivität (Parameter `typ=ideen` in der Werkzeugkonfiguration oder Zieladresse
+//! `…/lti/ideen`): je Ressourcen-Link eine eigene Gruppe mit einer Ideensammlung. Zugang nur
+//! über den Start aus Moodle (Sitzung wie bei Etherpad-Gruppenpads), Lehrende moderieren.
 use crate::{ids, AppState};
 use axum::{
     body::Bytes,
@@ -178,6 +182,36 @@ struct Claims {
     message_type: Option<String>,
     #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/version")]
     version: Option<String>,
+    #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/resource_link", default)]
+    resource_link: Option<LinkClaim>,
+    #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/context", default)]
+    context: Option<LinkClaim>,
+    #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/roles", default)]
+    roles: Vec<String>,
+    #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/custom", default)]
+    custom: Option<HashMap<String, serde_json::Value>>,
+    #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/target_link_uri", default)]
+    target_link_uri: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LinkClaim {
+    id: String,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+impl Claims {
+    /// Pad-Typ der Kursaktivität; None: nur anmelden.
+    fn activity(&self) -> Option<&'static str> {
+        let typ = self.custom.as_ref().and_then(|c| c.get("typ")).and_then(|v| v.as_str()).map(str::trim);
+        let by_target = self.target_link_uri.as_deref().map(|u| u.split(['?', '#']).next().unwrap_or("").trim_end_matches('/').ends_with("/lti/ideen")).unwrap_or(false);
+        (typ == Some("ideen") || by_target).then_some("ideas")
+    }
+    /// Lehrende, Assistenz und Verwaltung moderieren.
+    fn moderates(&self) -> bool {
+        self.roles.iter().any(|r| r.ends_with("#Instructor") || r.ends_with("#TeachingAssistant") || r.ends_with("#ContentDeveloper") || r.ends_with("#Administrator"))
+    }
 }
 
 fn fetch_jwks(pl: &Platform) -> Result<JwkSet, String> {
@@ -272,8 +306,47 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     };
     tracing::info!("LTI-Anmeldung über {}", pl.name);
     let path = base_path(&state);
-    let mut resp = (StatusCode::SEE_OTHER, [(header::LOCATION, path.clone())]).into_response();
+    let mut target = path.clone();
+    let mut session_cookie = None;
+    if let Some(kind) = claims.activity() {
+        let (Some(ctx), Some(link)) = (&claims.context, &claims.resource_link) else {
+            return page(StatusCode::BAD_REQUEST, "Moodle hat Kurs oder Aktivität nicht mitgeschickt. Bitte die Aktivität im Kurs neu starten.");
+        };
+        let dep = claims.deployment_id.as_deref().unwrap_or("");
+        let key = serde_json::json!([pl.issuer.trim_end_matches('/'), dep, ctx.id, link.id]).to_string();
+        let pad = match state.store.pad_for_link(&key) {
+            Ok(Some(p)) => p,
+            Ok(None) => match state.store.create_link_pad(&key, kind) {
+                Ok(p) => {
+                    let title: String = link.title.as_deref().unwrap_or("").chars().filter(|c| !c.is_control()).take(200).collect();
+                    if !title.trim().is_empty() { let _ = state.store.set_idea_prompt(&p, title.trim()); }
+                    tracing::info!("Kursaktivität über {} angelegt", pl.name);
+                    p
+                }
+                Err(e) => { tracing::error!("Kursaktivität anlegen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Die Aktivität konnte nicht angelegt werden."); }
+            },
+            Err(e) => { tracing::error!("Kursaktivität suchen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
+        };
+        if claims.moderates() { let _ = state.store.add_moderator(&pad, &author.id); }
+        let group = crate::ids::group_of_pad(&pad).unwrap_or("").to_string();
+        let sid = match state.store.create_session(&group, &author.id, ids::now_ms() / 1000 + LOGIN_SECONDS) {
+            Ok(s) => s,
+            Err(e) => { tracing::error!("Sitzung anlegen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
+        };
+        // mehrere Sitzungen in einem Cookie, durch Komma getrennt wie bei Etherpad; ältere bleiben gültig
+        let now_s = ids::now_ms() / 1000;
+        let mut sids: Vec<String> = crate::web::cookie_values(&headers, &state.config.cookie_name).into_iter()
+            .filter(|v| v.starts_with("s.") && v.len() <= 20 && state.store.get_session(v).ok().flatten().is_some_and(|s| s.valid_until > now_s && s.group_id != group))
+            .collect();
+        sids.push(sid);
+        if sids.len() > 30 { sids.drain(..sids.len() - 30); }
+        // SameSite=None, damit die Aktivität auch eingebettet in Moodle funktioniert
+        session_cookie = Some(format!("{}={}; Path={path}; Max-Age={LOGIN_SECONDS}; HttpOnly; Secure; SameSite=None", state.config.cookie_name, sids.join(",")));
+        target = format!("{path}p/{}", crate::web::urlencoding(&pad));
+    }
+    let mut resp = (StatusCode::SEE_OTHER, [(header::LOCATION, target)]).into_response();
     let h = resp.headers_mut();
+    if let Some(c) = session_cookie { if let Ok(v) = HeaderValue::from_str(&c) { h.append(header::SET_COOKIE, v); } }
     for c in [
         format!("{}={token}; Path={path}; Max-Age={LOGIN_SECONDS}; HttpOnly; Secure; SameSite=Lax", state.config.login_cookie),
         format!("{STATE_COOKIE}=; Path={path}lti/; Max-Age=0; HttpOnly; Secure; SameSite=None"),
