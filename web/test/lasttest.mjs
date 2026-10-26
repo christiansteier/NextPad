@@ -8,11 +8,11 @@ import { WebsocketProvider } from 'y-websocket'
 import WebSocket from 'ws'
 const [G] = readFileSync(process.argv[2], 'utf8').trim().split('|')
 const N = +(process.argv[3] || 200), PADS = +(process.argv[4] || 20), SEC = +(process.argv[5] || 30), GAP = +(process.argv[6] || 500)
-const base = process.env.COOPPAD_URL || 'http://127.0.0.1:5090'
+const base = process.env.NEXTPAD_URL || 'http://127.0.0.1:5090'
 const wsBase = base.replace(/^http/, 'ws') + '/ws'
-const key = readFileSync(process.env.COOPPAD_KEY_FILE || process.env.HOME + '/.cache/cooppad-data/api-keys.txt', 'utf8').trim()
+const key = readFileSync(process.env.NEXTPAD_KEY_FILE || process.env.HOME + '/.cache/nextpad-data/api-keys.txt', 'utf8').trim()
 const post = async (fn, params) => { const fd = new FormData(); for (const [k, v] of Object.entries({ ...params, apikey: key })) fd.append(k, v); return (await fetch(`${base}/api/1.2/${fn}`, { method: 'POST', body: fd })).json() }
-const pid = execSync('pgrep -x cooppad').toString().trim().split('\n')[0]
+const pid = execSync('pgrep -x nextpad').toString().trim().split('\n')[0]
 // CPU aus /proc (Delta utime+stime je Abtastung, in Prozent eines Kerns), RSS aus /proc/pid/status
 import { readFileSync as rf } from 'node:fs'
 const clk = 100

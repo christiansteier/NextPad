@@ -2,7 +2,8 @@
 
 ## Author
 
-- Christian-Maximilian Steier, ORCID: [0000-0001-7946-0461](https://orcid.org/0000-0001-7946-0461)
+- Christian-Maximilian Steier (idea, concept and development), ORCID:
+  [0000-0001-7946-0461](https://orcid.org/0000-0001-7946-0461)
 
 ## Affiliation
 

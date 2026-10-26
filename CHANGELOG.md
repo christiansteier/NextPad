@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-26
+
+### Changed
+
+- Technical name is now `nextpad` throughout: program and crate, settings `NEXTPAD_*`,
+  database file `nextpad.sqlite`, cookies `nextpad_login`, `nextpad_author`, `nextpad_lti`,
+  status name, browser object `window.nextpad`.
+- Compatibility with 0.2: settings with the prefix `COOPPAD_*` are still read, an existing
+  `cooppad.sqlite` keeps being used, old login and guest cookies are still accepted (a guest
+  cookie is re-issued under the new name, so ownership of free pads is kept), the list of
+  recently opened pads moves to the new browser key.
+
+### Added
+
+- Help page: section "Über NextPad" with author and link to the source code.
+- READMEs: section on why Rust, including attack surface.
+- CI runs `cargo audit`; advisories that cannot be reached from NextPad are documented in
+  `server/.cargo/audit.toml`.
+- `#![forbid(unsafe_code)]` for the server.
+
 ## [0.2.12] - 2026-10-26
 
 ### Added

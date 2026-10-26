@@ -30,5 +30,5 @@ Zusammenführen des Update-Logs und Probelauf der Aufbewahrung von Hand (mit den
 
 ```bash
 sudo -u __APP__ bash -c 'set -a; . __INSTALL_DIR__/nextpad.env; __INSTALL_DIR__/nextpad compact'
-sudo -u __APP__ bash -c 'set -a; . __INSTALL_DIR__/nextpad.env; COOPPAD_RETENTION=dry-run __INSTALL_DIR__/nextpad retention-run'
+sudo -u __APP__ bash -c 'set -a; . __INSTALL_DIR__/nextpad.env; NEXTPAD_RETENTION=dry-run __INSTALL_DIR__/nextpad retention-run'
 ```

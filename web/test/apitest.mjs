@@ -1,8 +1,8 @@
-// Vertragstest der Etherpad-API gegen einen laufenden CoopPad-Server (Node, fetch).
-// node test/apitest.mjs  (COOPPAD_URL, COOPPAD_KEY_FILE optional)
+// Vertragstest der Etherpad-API gegen einen laufenden NextPad-Server (Node, fetch).
+// node test/apitest.mjs  (NEXTPAD_URL, NEXTPAD_KEY_FILE optional)
 import { readFileSync, writeFileSync } from 'node:fs'
-const base = process.env.COOPPAD_URL || 'http://127.0.0.1:5090'
-const key = readFileSync(process.env.COOPPAD_KEY_FILE || process.env.HOME + '/.cache/cooppad-data/api-keys.txt', 'utf8').trim()
+const base = process.env.NEXTPAD_URL || 'http://127.0.0.1:5090'
+const key = readFileSync(process.env.NEXTPAD_KEY_FILE || process.env.HOME + '/.cache/nextpad-data/api-keys.txt', 'utf8').trim()
 let fails = 0
 const ok = (name, cond, info = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (info ? '  ' + info : '')); if (!cond) fails++ }
 const get = async (fn, params) => (await fetch(`${base}/api/1.2/${fn}?` + new URLSearchParams({ ...params, apikey: key }))).json()

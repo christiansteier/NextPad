@@ -7,15 +7,15 @@ Dieses Dokument beschreibt den Entwicklungsablauf.
 
 ```bash
 git clone <repoadresse>
-cd cooppad
+cd nextpad
 cd server
-CARGO_TARGET_DIR=~/.cache/cargo-target/cooppad cargo build
+CARGO_TARGET_DIR=~/.cache/cargo-target/nextpad cargo build
 ```
 
 Der Editor in `web/` wird mit pnpm gebaut (siehe `web/README.md`); das Ergebnis
 (`dist/editor.js`, `dist/editor.css`) wird in den Server eingebettet. Das Arbeitsverzeichnis
 liegt auf einem `noexec`-Mount, daher kopiert das Bauskript die Quellen nach
-`~/.cache/cooppad-web`.
+`~/.cache/nextpad-web`.
 
 ## Tests und Prüfung
 

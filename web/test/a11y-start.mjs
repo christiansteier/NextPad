@@ -12,7 +12,7 @@ const report = {}
 for (const scheme of ['light', 'dark']) {
   for (const w of widths) {
     const ctx = await b.newContext({ viewport: { width: w, height: 900 }, colorScheme: scheme, reducedMotion: 'reduce' })
-    await ctx.addInitScript(() => { try { localStorage.setItem('cooppad.recent', JSON.stringify([{ id: 'gruppe-3', t: Date.now() - 600000, title: 'Gruppenarbeit Statistik' }])) } catch {} })
+    await ctx.addInitScript(() => { try { localStorage.setItem('nextpad.recent', JSON.stringify([{ id: 'gruppe-3', t: Date.now() - 600000, title: 'Gruppenarbeit Statistik' }])) } catch {} })
     const p = await ctx.newPage()
     await p.goto(url)
     await p.waitForTimeout(300)

@@ -45,7 +45,7 @@ pub struct Access {
 /// Über Moodle (LTI) angemeldete Person aus dem Anmelde-Cookie.
 pub fn login_author(state: &AppState, headers: &HeaderMap) -> Option<crate::store::Author> {
     let now_s = ids::now_ms() / 1000;
-    cookie_values(headers, &state.config.login_cookie).into_iter().find_map(|t| state.store.author_by_login(&t, now_s).ok().flatten())
+    cookie_values_or(headers, &state.config.login_cookie, LEGACY_LOGIN_COOKIE).into_iter().find_map(|t| state.store.author_by_login(&t, now_s).ok().flatten())
 }
 
 /// Ursprünge (Schema und Host) der bekannten Moodle-Instanzen, für Profilbilder in der CSP.
@@ -58,15 +58,19 @@ fn moodle_origins(state: &AppState) -> String {
 /// Gastautor aus dem eigenen Cookie (geheimes Token, nicht die öffentliche Autorenkennung).
 /// Legt nur bei `create` einen neuen an (Editorseite); sonst ohne Cookie: kein Autor.
 fn guest_author(state: &AppState, headers: &HeaderMap, create: bool) -> Result<Option<(String, String, Option<String>)>, (StatusCode, &'static str)> {
+    let path = if state.config.base_path.is_empty() { "/".to_string() } else { format!("{}/", state.config.base_path) };
+    let cookie = |token: &str| format!("{}={}; Path={}; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax", state.config.author_cookie, token, path);
     for v in cookie_values(headers, &state.config.author_cookie) {
         if let Ok(Some(a)) = state.store.author_by_guest_token(&v) { return Ok(Some((a.id, a.name, None))); }
+    }
+    // Gast aus einer älteren Fassung: gleiches Token unter dem neuen Namen setzen, Besitz bleibt erhalten
+    for v in cookie_values(headers, LEGACY_AUTHOR_COOKIE) {
+        if let Ok(Some(a)) = state.store.author_by_guest_token(&v) { return Ok(Some((a.id, a.name, Some(cookie(&v))))); }
     }
     if !create { return Ok(None); }
     let a = state.store.create_author("Gast", None).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Autor konnte nicht angelegt werden."))?;
     let token = state.store.create_guest_token(&a.id).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Autor konnte nicht angelegt werden."))?;
-    let path = if state.config.base_path.is_empty() { "/".to_string() } else { format!("{}/", state.config.base_path) };
-    let cookie = format!("{}={}; Path={}; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax", state.config.author_cookie, token, path);
-    Ok(Some((a.id, a.name, Some(cookie))))
+    Ok(Some((a.id, a.name, Some(cookie(&token)))))
 }
 
 /// Zulässige Namen freier Pads: wie Etherpad begrenzt, ohne Steuer- und Trennzeichen.
@@ -74,6 +78,17 @@ pub fn valid_free_pad_name(n: &str) -> bool {
     let len = n.chars().count();
     (1..=50).contains(&len) && !n.starts_with("g.") && !n.starts_with("r.") && !n.starts_with(' ') && !n.ends_with(' ')
         && n.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | '(' | ')' | ','))
+}
+
+/// Cookie-Namen bis 0.2.x; sie werden noch angenommen, gesetzt werden die neuen.
+pub const LEGACY_LOGIN_COOKIE: &str = "cooppad_login";
+pub const LEGACY_AUTHOR_COOKIE: &str = "cooppad_author";
+
+/// Werte des Cookies `name` und seines alten Namens, die aktuellen zuerst.
+pub fn cookie_values_or(headers: &HeaderMap, name: &str, legacy: &str) -> Vec<String> {
+    let mut v = cookie_values(headers, name);
+    if name != legacy { v.extend(cookie_values(headers, legacy)); }
+    v
 }
 
 pub fn cookie_values(headers: &HeaderMap, name: &str) -> Vec<String> {
@@ -177,7 +192,7 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Zeichenbrett</title>
 <link rel="stylesheet" href="{base}/static/board/board.css?v={v}"><style>html,body{{margin:0;height:100%;overflow:hidden}} #board{{position:fixed;inset:0}}</style></head>
 <body><div id="board"></div>
-<script type="application/json" id="cooppad-config">{cfg}</script>
+<script type="application/json" id="nextpad-config">{cfg}</script>
 <script src="{base}/static/board/assets-path.js?v={v}"></script>
 <script type="module" src="{base}/static/board/board.js?v={v}"></script></body></html>"#, v = board_version(), cfg = cfg.to_string().replace("</", "<\\/"));
         let mut resp = Html(body).into_response();
@@ -196,7 +211,7 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         r#"<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad</title>
 <link rel="stylesheet" href="{base}/static/editor.css?v={v}">{theme_link}</head>
 <body class="{body_class}"><div id="app"><div id="toolbar" role="toolbar" aria-label="Formatierung"></div><div id="editorcontainerbox"><div id="editor"></div></div><div id="statusbar"></div></div>
-<script type="application/json" id="cooppad-config">{cfg}</script>
+<script type="application/json" id="nextpad-config">{cfg}</script>
 <script src="{base}/static/editor.js?v={v}"></script></body></html>"#,
         v = bundle_version(),
         cfg = cfg.to_string().replace("</", "<\\/")
@@ -412,7 +427,7 @@ pub async fn open_pad(State(state): State<Arc<AppState>>, Query(q): Query<HashMa
 pub async fn rename_me(State(state): State<Arc<AppState>>, headers: HeaderMap, axum::Json(body): axum::Json<serde_json::Value>) -> Response {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("").trim().chars().filter(|c| !c.is_control()).take(60).collect::<String>();
     if name.is_empty() { return StatusCode::BAD_REQUEST.into_response(); }
-    let author = cookie_values(&headers, &state.config.author_cookie).into_iter().find_map(|t| state.store.author_by_guest_token(&t).ok().flatten());
+    let author = cookie_values_or(&headers, &state.config.author_cookie, LEGACY_AUTHOR_COOKIE).into_iter().find_map(|t| state.store.author_by_guest_token(&t).ok().flatten());
     let Some(a) = author else { return StatusCode::FORBIDDEN.into_response() };
     match state.store.rename_guest(&a.id, &name) { Ok(true) => axum::Json(json!({ "ok": true, "name": name })).into_response(), _ => StatusCode::FORBIDDEN.into_response() }
 }
@@ -511,7 +526,7 @@ fn theme_file(state: &AppState, name: &str) -> Option<Vec<u8>> {
     std::fs::read(dir.join(name)).ok()
 }
 fn has_logo(state: &AppState) -> bool { state.config.theme_dir.as_ref().map(|d| d.join("logo.png").is_file()).unwrap_or(false) }
-/// Logo und Hausschrift aus COOPPAD_THEME_DIR (nicht im Repo, Marke der Hochschule).
+/// Logo und Hausschrift aus NEXTPAD_THEME_DIR (nicht im Repo, Marke der Hochschule).
 pub async fn theme_logo(State(state): State<Arc<AppState>>) -> Response {
     match theme_file(&state, "logo.png") { Some(b) => ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], b).into_response(), None => StatusCode::NOT_FOUND.into_response() }
 }
@@ -536,7 +551,7 @@ pub async fn static_css() -> Response {
 pub async fn status(State(state): State<Arc<AppState>>) -> Response {
     let (pads, groups, authors) = state.store.counts().unwrap_or((0, 0, 0));
     axum::Json(json!({
-        "name": "cooppad", "version": env!("CARGO_PKG_VERSION"), "apiVersion": state.config.api_version,
+        "name": "nextpad", "version": env!("CARGO_PKG_VERSION"), "apiVersion": state.config.api_version,
         "pads": pads, "groups": groups, "authors": authors, "loaded": state.rooms.loaded(),
     })).into_response()
 }
@@ -583,7 +598,7 @@ fn start_headers(state: &AppState, mut resp: Response) -> Response {
     resp
 }
 
-/// Betreiberangabe hinter „NextPad“ (COOPPAD_SITE_NAME), leer ohne Angabe.
+/// Betreiberangabe hinter „NextPad“ (NEXTPAD_SITE_NAME), leer ohne Angabe.
 fn site_suffix(state: &AppState) -> String {
     let s = &state.config.site_name;
     if s.is_empty() { String::new() } else { format!(" · {}", html_escape::encode_text(s)) }
@@ -696,6 +711,7 @@ pub async fn help(State(state): State<Arc<AppState>>) -> Response {
 <h2>Wer kann ein Pad sehen?</h2><p>Alle, die den Namen oder Link kennen. Pads von der Startseite sind nicht durch ein Passwort geschützt. Für Kurse mit festen Gruppen eignet sich die Pad-Aktivität in Moodle; dort sehen nur Kursmitglieder die Pads.</p>
 <h2>Wie lange bleibt ein Pad?</h2>{retention}
 <h2>Zuletzt geöffnet</h2><p>Die Liste auf der Startseite speichert nur dieser Browser. Sie lässt sich dort leeren.</p>
+<h2>Über NextPad</h2><p>Idee, Konzept und Entwicklung: Christian-Maximilian Steier. NextPad ist freie Software unter der EUPL-1.2, der Quellcode liegt auf <a href="https://github.com/christiansteier/nextpad">GitHub</a>.</p>
 </main>"#);
     start_headers(&state, Html(hsd_page(&state, "NextPad · Hilfe", "", "", &content, "")).into_response())
 

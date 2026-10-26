@@ -1,6 +1,6 @@
 //! Import eines Etherpad-Exports (Verzeichnis aus `ep-export.py`): Autoren, Gruppen, Pads,
 //! aktueller Stand aus `pad.json`, Tagesstände aus `revisionen.jsonl` per Changeset-Replay.
-//! Nur lesend auf dem Export, schreibt ausschließlich in das CoopPad-Datenverzeichnis.
+//! Nur lesend auf dem Export, schreibt ausschließlich in das NextPad-Datenverzeichnis.
 use crate::render::{self, Block, Marks};
 use crate::store::Store;
 use anyhow::{anyhow, Context, Result};

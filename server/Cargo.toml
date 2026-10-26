@@ -1,6 +1,7 @@
 [package]
-name = "cooppad"
-version = "0.2.12"
+name = "nextpad"
+version = "0.3.0"
+authors = ["Christian-Maximilian Steier"]
 edition = "2021"
 description = "Etherpad-kompatibler Pad-Server auf Yjs/yrs für mod_etherpadlite"
 license = "EUPL-1.2"

@@ -15,11 +15,11 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Berlin
-      - COOPPAD_PUBLIC_URL=https://pads.example.org
-      - COOPPAD_TRUST_PROXY=true
-      - COOPPAD_TRUSTED_PROXIES=192.0.2.1
-      - COOPPAD_API_ALLOWED=192.0.2.10
-      - COOPPAD_THEME=colibris
+      - NEXTPAD_PUBLIC_URL=https://pads.example.org
+      - NEXTPAD_TRUST_PROXY=true
+      - NEXTPAD_TRUSTED_PROXIES=192.0.2.1
+      - NEXTPAD_API_ALLOWED=192.0.2.10
+      - NEXTPAD_THEME=colibris
     volumes:
       - /pfad/zu/nextpad/config:/config
     ports:
@@ -33,7 +33,7 @@ services:
 docker run -d \
   --name=nextpad \
   -e PUID=1000 -e PGID=1000 -e TZ=Europe/Berlin \
-  -e COOPPAD_PUBLIC_URL=https://pads.example.org \
+  -e NEXTPAD_PUBLIC_URL=https://pads.example.org \
   -p 127.0.0.1:5090:5090 \
   -v /pfad/zu/nextpad/config:/config \
   --restart unless-stopped \
@@ -48,7 +48,7 @@ docker run -d \
 | `-e PUID=1000` | Benutzerkennung, der `/config/data` gehört |
 | `-e PGID=1000` | Gruppenkennung |
 | `-e TZ=Europe/Berlin` | Zeitzone |
-| `-e COOPPAD_*` | alle Einstellungen aus `server/README.md`; Pfade sind im Image schon auf `/config` gesetzt |
+| `-e NEXTPAD_*` | alle Einstellungen aus `server/README.md`; Pfade sind im Image schon auf `/config` gesetzt |
 | `-v /config` | `data/` (SQLite), `secrets/` (`api-keys.txt`, `lti-platforms.json`, Plattformschlüssel), `theme/` (`logo.png`, `font.ttf`, `background.jpg`) |
 
 Beim ersten Start legt der Container die Ordner an und erzeugt einen API-Schlüssel in `/config/secrets/api-keys.txt`, wenn keiner vorhanden ist (Hinweis im Log). Diesen Schlüssel in Moodle beim Plugin Etherpad Lite eintragen.
@@ -85,6 +85,6 @@ docker image prune -f
 
 ```bash
 docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad compact        # Update-Log zusammenführen
-docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad retention-run  # Aufbewahrung (Modus aus COOPPAD_RETENTION)
+docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad retention-run  # Aufbewahrung (Modus aus NEXTPAD_RETENTION)
 docker logs -f nextpad
 ```

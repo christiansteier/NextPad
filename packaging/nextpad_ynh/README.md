@@ -1,6 +1,6 @@
 # NextPad für YunoHost
 
-YunoHost-Paket für NextPad (technisch cooppad). Installation aus diesem Ordner:
+YunoHost-Paket für NextPad. Installation aus diesem Ordner:
 
 ```bash
 sudo yunohost app install ./nextpad_ynh --args "domain=pads.example.org&path=/np&init_main_permission=visitors&theme=colibris&allow_free_pads=1"

@@ -1,0 +1,15 @@
+# Bekannte Meldungen der RustSec-Datenbank, die NextPad nicht betreffen (geprüft am 26.10.2026).
+# Jede neue Meldung lässt `cargo audit` und damit die CI fehlschlagen.
+[advisories]
+ignore = [
+    # rsa 0.9 (über jsonwebtoken), Marvin-Angriff: betrifft Operationen mit dem geheimen Schlüssel.
+    # NextPad prüft nur RS256-Signaturen mit dem öffentlichen Schlüssel der Moodle-Instanz. Keine Korrektur verfügbar.
+    "RUSTSEC-2023-0071",
+    # crypto-bigint 0.5 (über jsonwebtoken, p256/p384): Zeitverhalten bei Operationen mit geheimen Werten.
+    # NextPad lässt nur RS256 zu (lti.rs), elliptische Kurven werden nie verwendet.
+    "RUSTSEC-2026-0387",
+    # quick-xml 0.38 (über typst, hayagriva, citationberg): Lesen von CSL-Dateien für Literaturverzeichnisse.
+    # Pad-Inhalte gehen nur als Zeichenketten in den Satz (render.rs, typst_str), eine Bibliografie wird nie geladen.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]

@@ -1,4 +1,4 @@
-// CoopPad-Editor: TipTap auf ProseMirror, Yjs-Sync über y-websocket gegen den Rust-Server.
+// NextPad-Editor: TipTap auf ProseMirror, Yjs-Sync über y-websocket gegen den Rust-Server.
 import { Editor, Mark, Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
@@ -14,7 +14,9 @@ import { WebsocketProvider } from 'y-websocket'
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror'
 import { DOMSerializer } from '@tiptap/pm/model'
 
-const cfg = JSON.parse(document.getElementById('cooppad-config').textContent)
+const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
+// Liste „Zuletzt geöffnet“ lag bis 0.2.x unter cooppad.recent
+try { const o = localStorage.getItem('nextpad.recent'); if (o && !localStorage.getItem('nextpad.recent')) localStorage.setItem('nextpad.recent', o); localStorage.removeItem('nextpad.recent') } catch {}
 const testFlags = new URLSearchParams(location.search) // nur für Tests: ?nocaret=1 schaltet die Cursor-Anzeige ab
 const palette = cfg.palette
 
@@ -42,7 +44,7 @@ const AuthorMark = Mark.create({
 
 // Plugin: Die Mark des eigenen Autors ist immer als gespeicherte Mark aktiv, damit alles,
 // was lokal getippt wird, die eigene Kennung trägt. Fremde Marks bleiben unangetastet.
-const authorKey = new PluginKey('cooppad-author')
+const authorKey = new PluginKey('nextpad-author')
 const AuthorTagging = Extension.create({
   name: 'authorTagging',
   addProseMirrorPlugins() {
@@ -72,7 +74,7 @@ const MarkdownPaste = Extension.create({
   addProseMirrorPlugins() {
     const ed = this.editor
     return [new Plugin({
-      key: new PluginKey('cooppad-markdown-paste'),
+      key: new PluginKey('nextpad-markdown-paste'),
       props: {
         handlePaste(view, event) {
           const cd = event.clipboardData
@@ -201,18 +203,18 @@ darkQuery.addEventListener('change', () => { if (!storedTheme()) applyTheme() })
 applyTheme()
 if (cfg.free) { const home = document.createElement('a'); home.className = 'ib'; home.href = `${cfg.basePath}/`; home.title = 'Startseite'; home.innerHTML = '<span class="buttonicon" aria-hidden="true"></span>'; menuRight.appendChild(home) }
 
-window.cooppad = { editor, provider, ydoc, remoteBatch }
+window.nextpad = { editor, provider, ydoc, remoteBatch }
 
 // Zuletzt geöffnet (Startseite): freie Pads mit Titel aus der ersten Zeile, nur in diesem Browser
 function rememberPad() {
   if (!cfg.free) return
   try {
     const title = (editor.state.doc.firstChild?.textContent || '').trim().slice(0, 60)
-    let l = JSON.parse(localStorage.getItem('cooppad.recent') || '[]'); if (!Array.isArray(l)) l = []
+    let l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]'); if (!Array.isArray(l)) l = []
     const old = l.find(e => e && e.id === cfg.urlId)
     l = l.filter(e => e && e.id !== cfg.urlId)
     l.unshift({ id: cfg.urlId, t: Date.now(), title: title || old?.title || '' })
-    localStorage.setItem('cooppad.recent', JSON.stringify(l.slice(0, 10)))
+    localStorage.setItem('nextpad.recent', JSON.stringify(l.slice(0, 10)))
   } catch {}
 }
 rememberPad()
@@ -283,7 +285,7 @@ function renderStatus() {
       e.stopPropagation()
       if (!confirm('Pad endgültig löschen? Alle, die es geöffnet haben, verlieren den Zugang. Vorher bei Bedarf exportieren.')) return
       const r = await fetch(`${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/delete`, { method: 'POST' })
-      if (r.ok) { try { const l = JSON.parse(localStorage.getItem('cooppad.recent') || '[]').filter(x => x && x.id !== cfg.urlId); localStorage.setItem('cooppad.recent', JSON.stringify(l)) } catch {} location.href = `${cfg.basePath}/` }
+      if (r.ok) { try { const l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]').filter(x => x && x.id !== cfg.urlId); localStorage.setItem('nextpad.recent', JSON.stringify(l)) } catch {} location.href = `${cfg.basePath}/` }
     })
     row2.appendChild(del); box.appendChild(row2); usersPopup.appendChild(box)
   }

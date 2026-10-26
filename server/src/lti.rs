@@ -1,11 +1,11 @@
-//! Anmeldung über Moodle per LTI 1.3: Moodle ist die Plattform, CoopPad das Werkzeug.
+//! Anmeldung über Moodle per LTI 1.3: Moodle ist die Plattform, NextPad das Werkzeug.
 //!
 //! Ablauf (OIDC-Anmeldung, von Moodle angestoßen):
 //! 1. Moodle schickt den Browser an `/lti/login` (iss, login_hint, target_link_uri …).
-//! 2. CoopPad merkt sich state und nonce, bindet state per Cookie an den Browser
+//! 2. NextPad merkt sich state und nonce, bindet state per Cookie an den Browser
 //!    und leitet an den Autorisierungsendpunkt von Moodle weiter.
 //! 3. Moodle schickt ein signiertes id_token per Formular an `/lti/launch`.
-//! 4. CoopPad prüft Signatur (Schlüssel der Plattform), Aussteller, Empfänger, Ablauf,
+//! 4. NextPad prüft Signatur (Schlüssel der Plattform), Aussteller, Empfänger, Ablauf,
 //!    nonce, Deployment und Nachrichtentyp, legt die Person als Autor an und setzt
 //!    ein Anmelde-Cookie. Danach erscheinen Name und Profilbild aus Moodle in freien Pads.
 use crate::{ids, AppState};
@@ -19,7 +19,7 @@ use jsonwebtoken::{jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf, sync::{Arc, Mutex}};
 
-/// Eine Moodle-Instanz, bei der CoopPad als LTI-1.3-Werkzeug eingetragen ist.
+/// Eine Moodle-Instanz, bei der NextPad als LTI-1.3-Werkzeug eingetragen ist.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Platform {
     /// Kurzname für Protokolle
@@ -83,8 +83,8 @@ pub struct LtiState {
 }
 
 const PENDING_MS: i64 = 600_000;
-const STATE_COOKIE: &str = "cooppad_lti";
-/// Gültigkeit der Anmeldung in CoopPad (Sekunden)
+const STATE_COOKIE: &str = "nextpad_lti";
+/// Gültigkeit der Anmeldung in NextPad (Sekunden)
 pub const LOGIN_SECONDS: i64 = 14 * 24 * 3600;
 
 impl LtiState {
@@ -282,7 +282,7 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     resp
 }
 
-/// Öffentliche Schlüssel des Werkzeugs. CoopPad nutzt keine LTI-Dienste und signiert nichts,
+/// Öffentliche Schlüssel des Werkzeugs. NextPad nutzt keine LTI-Dienste und signiert nichts,
 /// Moodle verlangt aber eine Schlüsseladresse in der Werkzeugkonfiguration.
 pub async fn jwks() -> Response {
     ([(header::CONTENT_TYPE, "application/json")], r#"{"keys":[]}"#).into_response()
@@ -291,9 +291,11 @@ pub async fn jwks() -> Response {
 /// Abmelden: Anmeldung löschen, Cookie entfernen. Nur per POST von der eigenen Seite.
 pub async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !crate::web::origin_ok(&state, &headers) { return StatusCode::FORBIDDEN.into_response(); }
-    for t in crate::web::cookie_values(&headers, &state.config.login_cookie) { let _ = state.store.delete_login(&t); }
+    for t in crate::web::cookie_values_or(&headers, &state.config.login_cookie, crate::web::LEGACY_LOGIN_COOKIE) { let _ = state.store.delete_login(&t); }
     let path = base_path(&state);
     let mut resp = (StatusCode::SEE_OTHER, [(header::LOCATION, path.clone())]).into_response();
-    if let Ok(v) = HeaderValue::from_str(&format!("{}=; Path={path}; Max-Age=0; HttpOnly; Secure; SameSite=Lax", state.config.login_cookie)) { resp.headers_mut().append(header::SET_COOKIE, v); }
+    for name in [state.config.login_cookie.as_str(), crate::web::LEGACY_LOGIN_COOKIE] {
+        if let Ok(v) = HeaderValue::from_str(&format!("{name}=; Path={path}; Max-Age=0; HttpOnly; Secure; SameSite=Lax")) { resp.headers_mut().append(header::SET_COOKIE, v); }
+    }
     resp
 }

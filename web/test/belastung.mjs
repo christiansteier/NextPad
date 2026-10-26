@@ -11,7 +11,7 @@ const pads = Array.from({ length: PADS }, (_, i) => `${prefix}-${i}`)
 // Pad anlegen (nur Prozess 0) bzw. öffnen; Gast-Cookie je Person über einen Seitenaufruf
 async function guestCookie(pad) {
   const r = await fetch(`${base}/p/${encodeURIComponent(pad)}`, { redirect: 'manual' })
-  const c = r.headers.getSetCookie().map(x => x.split(';')[0]).find(x => x.startsWith('cooppad_author='))
+  const c = r.headers.getSetCookie().map(x => x.split(';')[0]).find(x => x.startsWith('nextpad_author='))
   return c
 }
 if (proc === '0') for (const p of pads) await fetch(`${base}/open?padname=${encodeURIComponent(p)}`, { redirect: 'manual' })
