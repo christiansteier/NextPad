@@ -119,6 +119,8 @@ function renderCaret(user) {
 const editor = new Editor({
   element: document.getElementById('editor'),
   editable: !cfg.readonly,
+  // Name der Schreibfläche für Screenreader (TipTap setzt role=textbox ohne Namen)
+  editorProps: { attributes: { 'aria-label': cfg.readonly ? 'Text des Pads, nur lesen' : 'Text des Pads', 'aria-multiline': 'true' } },
   extensions: [
     StarterKit.configure({ undoRedo: false, link: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: { levels: [1, 2, 3, 4] } }),
     TextStyle, Color, FontSize,

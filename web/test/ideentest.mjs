@@ -58,8 +58,10 @@ check('Leinwand mit QR-Code', (await w.locator('.wall-join svg').count()) === 1)
 await a.fill('#add-text', 'Vierte Idee'); await a.click('#add-form button[type=submit]')
 await w.waitForFunction(() => document.querySelectorAll('.wall-item').length === 2, null, { timeout: 5000 }).then(() => check('Leinwand live', true)).catch(() => check('Leinwand live', false))
 // Lese-Link
-const ro = await a.inputValue('#share-ro')
-await g.goto(ro.replace(/^https?:\/\/[^/]+/, base)); await g.waitForFunction(() => document.querySelectorAll('#open-list li').length === 2)
+check('Mitmachen als Knopf, kein Lese-Link mehr', await a.isVisible('#share-copy') && (await a.locator('#share-ro').count()) === 0)
+check('Kopfzeile nennt die Bearbeitungsansicht', (await a.textContent('#view-kicker')).includes('Bearbeitungsansicht'))
+const roId = await a.evaluate(() => JSON.parse(document.getElementById('nextpad-config').textContent).readonlyId)
+await g.goto(`${base}/p/${roId}`); await g.waitForFunction(() => document.querySelectorAll('#open-list li').length === 2)
 check('Lese-Link ohne Eingabe und Abstimmung', !(await g.isVisible('#add-form')) && (await g.locator('.vote').count()) === 0)
 // Export
 const csv = await (await a.request.get(url + '/export/csv')).text()

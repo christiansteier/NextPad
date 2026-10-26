@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-26
+
+### Changed
+
+- Editor (HSD theme) follows the softened design: active tool and participant count as HSD-blue
+  tint with an underline instead of black, controls with 4 px radius, timeline buttons outlined.
+- Start page: panels over the photo 94 % opaque instead of 88 %. Measured on the rendered page
+  (`web/test/transparenz.mjs`, text against the least favourable background pixel), every text now
+  reaches at least 7.4:1 in light and 7.6:1 in dark mode (before: 6.4:1).
+- Idea collection: the read-only link is gone (the projector view covers it); "Link zum Mitmachen
+  kopieren" is a button with a short explanation like "Leinwand öffnen"; the header reads
+  "Ideensammlung · Bearbeitungsansicht".
+
+### Fixed
+
+- The editor's writing area has an accessible name ("Text des Pads"); screen readers announced
+  only "text field" before.
+
 ## [0.6.0] - 2026-10-26
 
 ### Added
