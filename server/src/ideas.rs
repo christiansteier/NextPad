@@ -186,7 +186,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value) -> Response 
     let base = &state.config.base_path;
     let content = format!(r#"<main id="inhalt" class="ideas" tabindex="-1"><div class="wrap">
 <section class="panel ideas-head" aria-labelledby="ideas-h">
-<p class="kicker">Ideensammlung</p>
+<p class="kicker" id="view-kicker">Ideensammlung · Bearbeitungsansicht</p>
 <div class="title-row"><h1 id="ideas-h"><span id="prompt">Ideen und Fragen</span></h1><button type="button" class="icon-btn" id="prompt-edit" aria-controls="prompt-form" aria-expanded="false" hidden><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3"/></svg><span class="visually-hidden">Frage ändern</span></button></div>
 <form id="prompt-form" class="prompt-form" hidden><label class="field-label" for="prompt-input">Frage oder Thema der Sammlung</label><div class="field-row"><input id="prompt-input" maxlength="{MAX_PROMPT}" autocomplete="off"><button class="btn btn-secondary" type="submit">Speichern</button></div></form>
 <form id="add-form" class="add-form" hidden>
@@ -205,9 +205,8 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value) -> Response 
 <details class="idea-group" id="hidden-box" hidden><summary>Ausgeblendet (<span id="hidden-n">0</span>)</summary><p class="hint">Nur für dich sichtbar.</p><ol class="idea-list" id="hidden-list"></ol></details>
 <section class="panel ideas-share" aria-labelledby="share-h">
 <h2 id="share-h">Teilen, zeigen, sichern</h2>
-<p class="wall-row"><a class="btn btn-secondary" href="{base}/p/{u}/leinwand" target="_blank" rel="noopener">Leinwand öffnen</a><span class="hint">Große Ansicht für den Beamer mit den beliebtesten Beiträgen. Sie aktualisiert sich selbst.</span></p>
-<p class="share-row"><label class="field-label" for="share-link">Link zum Mitmachen</label><span class="field-row"><input id="share-link" readonly value=""><button class="btn btn-secondary" type="button" data-copy="share-link">Kopieren</button></span></p>
-<p class="share-row"><label class="field-label" for="share-ro">Link nur zum Mitlesen</label><span class="field-row"><input id="share-ro" readonly value=""><button class="btn btn-secondary" type="button" data-copy="share-ro">Kopieren</button></span></p>
+<p class="wall-row share-row"><button class="btn btn-secondary" type="button" id="share-copy">Link zum Mitmachen kopieren</button><span class="hint">Wer den Link hat, kann Beiträge eintragen und abstimmen. Ohne Anmeldung und ohne Namen.</span></p>
+<p class="wall-row"><a class="btn btn-secondary" href="{base}/p/{u}/leinwand" target="_blank" rel="noopener">Leinwand öffnen</a><span class="hint">Große Ansicht für den Beamer mit den beliebtesten Beiträgen und einem QR-Code zum Mitmachen. Sie aktualisiert sich selbst.</span></p>
 <p class="hint">Sichern: <a href="{base}/p/{u}/export/md">Markdown</a> · <a href="{base}/p/{u}/export/csv">CSV für Tabellen</a></p>
 <p class="owner-tools" id="owner-tools" hidden><button type="button" class="btn-link" id="delete-all">Sammlung löschen</button></p>
 </section>

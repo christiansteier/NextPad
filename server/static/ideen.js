@@ -157,12 +157,9 @@
     if (data) render()
   })
 
-  // Teilen
-  const link = id => `${location.origin}${base}/p/${encodeURIComponent(id)}`
-  $('share-link').value = link(cfg.urlId)
-  if (cfg.readonlyId) $('share-ro').value = link(cfg.readonlyId)
-  else $('share-ro').closest('.share-row').hidden = true
-  if (cfg.readonly) $('share-link').closest('.share-row').hidden = true
+  // Teilen: Link zum Mitmachen in die Zwischenablage
+  const link = `${location.origin}${base}/p/${encodeURIComponent(cfg.urlId)}`
+  if (cfg.readonly) { $('view-kicker').textContent = 'Ideensammlung · Leseansicht'; $('share-copy').closest('.share-row').hidden = true }
   // Kursaktivität: Zugang nur über Moodle, Links weiterzugeben hilft nicht
   if (!cfg.free) {
     for (const r of document.querySelectorAll('.share-row')) r.hidden = true
@@ -170,10 +167,12 @@
     const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'Zugang nur über die Aktivität im Moodle-Kurs.'
     $('share-h').after(p)
   }
-  for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
-    const f = $(b.dataset.copy)
-    try { await navigator.clipboard.writeText(f.value) } catch { f.select(); document.execCommand('copy') }
-    b.textContent = 'Kopiert'; setTimeout(() => { b.textContent = 'Kopieren' }, 2000)
+  $('share-copy').addEventListener('click', async () => {
+    const b = $('share-copy')
+    let ok = true
+    try { await navigator.clipboard.writeText(link) } catch { ok = false }
+    b.textContent = ok ? 'Link kopiert' : link
+    setTimeout(() => { b.textContent = 'Link zum Mitmachen kopieren' }, ok ? 2000 : 8000)
   })
   $('delete-all').addEventListener('click', async () => {
     if (!confirm('Die Sammlung samt allen Beiträgen und Stimmen löschen? Das lässt sich nicht rückgängig machen.')) return

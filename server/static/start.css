@@ -102,8 +102,8 @@ a { color: inherit; }
 .has-bg .hero { height: 200px; background: var(--color-canvas) var(--bg-image) center 40% / cover no-repeat; }
 .entry-wrap { position: relative; margin-top: -40px; }
 .has-bg .entry-wrap { margin-top: -64px; }
-/* Über dem Foto leicht durchscheinend (88 %); Zweittext bleibt im ungünstigsten Fall bei 6,3:1 */
-.has-bg .entry { background: color-mix(in srgb, var(--color-surface) 88%, transparent); }
+/* Über dem Foto leicht durchscheinend (94 %); Zweittext im ungünstigsten Fall 7,4:1 hell, 7,6:1 dunkel (web/test/transparenz.mjs) */
+.has-bg .entry { background: color-mix(in srgb, var(--color-surface) 94%, transparent); }
 .below { padding-top: var(--space-6); padding-bottom: var(--space-7); }
 .below > * + * { margin-top: var(--space-6); }
 /* ausgeblendete Liste „Zuletzt geöffnet“ soll keinen Abstand hinterlassen */
@@ -243,7 +243,7 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
   .has-bg .hero { grid-area: 1 / 1 / 3 / 2; height: auto; min-height: 460px; }
   .has-bg .entry-wrap { grid-area: 1 / 1; margin-top: 0; padding-top: 72px; padding-bottom: var(--space-5); }
   .has-bg .entry { max-width: none; }
-  .has-bg .below { position: relative; grid-area: 2 / 1; align-self: start; max-width: calc(var(--content-width) - 2 * var(--space-4)); margin-bottom: 72px; padding: var(--space-5); border: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-surface) 88%, transparent); }
+  .has-bg .below { position: relative; grid-area: 2 / 1; align-self: start; max-width: calc(var(--content-width) - 2 * var(--space-4)); margin-bottom: 72px; padding: var(--space-5); border: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-surface) 94%, transparent); }
   .site-footer .site { flex-basis: auto; padding-bottom: 0; }
 }
 @media (prefers-reduced-motion: no-preference) { .btn, .template { transition: background-color .15s, border-color .15s, transform .05s; } }
