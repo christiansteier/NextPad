@@ -75,6 +75,12 @@ In Moodle (Website-Administration › Plugins › Externes Tool › Tools verwal
 
 Danach eine Aktivität mit diesem Werkzeug auf der Moodle-Startseite anlegen. Ihre Adresse `mod/lti/launch.php?id=<cmid>` ist `start_url`.
 
+### Ideensammlung als Kursaktivität
+
+Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unter „Mehr anzeigen“ › „Benutzerdefinierte Parameter“ `typ=ideen` eintragen. Der Name der Aktivität wird zur Frage der Sammlung. Alternativ zeigt ein eigener Werkzeugeintrag mit der Tool-URL `<public>/lti/ideen` direkt auf die Sammlung.
+
+Jede Aktivität bekommt eine eigene Gruppe mit einer Sammlung. Hinein kommt nur, wer die Aktivität aus Moodle startet: NextPad legt dabei eine Sitzung an wie bei Etherpad-Gruppenpads (Cookie `NEXTPAD_COOKIE_NAME`, mehrere Sitzungen durch Komma getrennt, `SameSite=None`, damit die Aktivität auch eingebettet läuft). Rollen Instructor, TeachingAssistant, ContentDeveloper und Administrator moderieren. Löschen lässt sich eine Kurs-Sammlung nicht aus NextPad heraus, sie folgt keiner Aufbewahrungsfrist.
+
 ### Aufbewahrung prüfen
 
 ```sh
@@ -85,7 +91,7 @@ zeigt, welche Pads angekündigt oder gelöscht würden, ohne etwas zu tun.
 
 ## Endpunkte
 
-`GET /api` (Version), `GET|POST /api/1.2*/<Funktion>` (siehe `docs/api-spezifikation.md`), `GET /p/<padID>` und `/p/<readOnlyID>` (Editor), `GET /ws/<id>` (Yjs-Sync), `GET /p/<id>/export/html|txt`, `GET /p/<id>/snapshots`, `GET /p/<id>/snapshots/<ts>`, `GET /status`, `GET /static/editor.js|css|print.js`; mit freien Pads zusätzlich `GET /` (Startseite), `GET /new`, `GET /open?padname=`, `POST /me` (eigener Name), `GET /hilfe`, `GET /new?vorlage=gruppenarbeit|protokoll|ideen`, `POST /p/<id>/extend` und `POST /p/<id>/delete` (nur Besitz), `GET|POST /verlaengern` (Link aus der Mail); mit LTI `GET|POST /lti/login`, `POST /lti/launch`, `GET /lti/jwks`, `POST /logout`.
+`GET /api` (Version), `GET|POST /api/1.2*/<Funktion>` (siehe `docs/api-spezifikation.md`), `GET /p/<padID>` und `/p/<readOnlyID>` (Editor), `GET /ws/<id>` (Yjs-Sync), `GET /p/<id>/export/html|txt`, `GET /p/<id>/snapshots`, `GET /p/<id>/snapshots/<ts>`, `GET /status`, `GET /static/editor.js|css|print.js`; mit freien Pads zusätzlich `GET /` (Startseite), `GET /new`, `GET /open?padname=`, `POST /me` (eigener Name), `GET /hilfe`, `GET /new?vorlage=gruppenarbeit|protokoll`, `GET /new?typ=zeichenbrett|ideen`, `GET|POST /p/<id>/ideen`, `GET /p/<id>/ideen/live` (Server-Sent Events), `POST /p/<id>/ideen/frage`, `POST /p/<id>/ideen/<n>/stimme`, `POST /p/<id>/ideen/<n>/moderation`, `POST /p/<id>/extend` und `POST /p/<id>/delete` (nur Besitz), `GET|POST /verlaengern` (Link aus der Mail); mit LTI `GET|POST /lti/login`, `POST /lti/launch` (auch Start einer Kursaktivität), `GET /lti/jwks`, `POST /logout`.
 
 ## Aufbau
 

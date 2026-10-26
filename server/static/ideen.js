@@ -73,7 +73,7 @@
     if (data.owner && document.activeElement !== $('prompt-input')) $('prompt-input').value = data.prompt
     $('add-form').hidden = !data.canWrite
     $('readonly-hint').hidden = data.canWrite
-    $('owner-tools').hidden = !data.owner
+    $('owner-tools').hidden = !data.canDelete
 
     const items = [...data.items]
     if (sort === 'top') items.sort((a, b) => b.votes - a.votes || a.id - b.id)
@@ -85,6 +85,7 @@
     $('done-n').textContent = done.length; $('done-box').hidden = !done.length
     $('hidden-n').textContent = hidden.length; $('hidden-box').hidden = !hidden.length
     $('empty').hidden = open.length > 0
+    $('empty').textContent = items.length > hidden.length ? 'Keine offenen Beiträge.' : cfg.free ? 'Noch keine Beiträge. Den Link teilen, dann können alle mitmachen.' : 'Noch keine Beiträge.'
     const c = `${open.length} ${open.length === 1 ? 'offener Beitrag' : 'offene Beiträge'}`
     if ($('ideas-count').textContent !== c) $('ideas-count').textContent = c
     for (const b of document.querySelectorAll('.sort .chip')) b.setAttribute('aria-pressed', b.dataset.sort === sort ? 'true' : 'false')
@@ -140,6 +141,13 @@
   if (cfg.readonlyId) $('share-ro').value = link(cfg.readonlyId)
   else $('share-ro').closest('.share-row').hidden = true
   if (cfg.readonly) $('share-link').closest('.share-row').hidden = true
+  // Kursaktivität: Zugang nur über Moodle, Links weiterzugeben hilft nicht
+  if (!cfg.free) {
+    for (const r of document.querySelectorAll('.share-row')) r.hidden = true
+    $('share-h').textContent = 'Sichern'
+    const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'Zugang nur über die Aktivität im Moodle-Kurs.'
+    $('share-h').after(p)
+  }
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     const f = $(b.dataset.copy)
     try { await navigator.clipboard.writeText(f.value) } catch { f.select(); document.execCommand('copy') }
@@ -156,7 +164,7 @@
 
   // Zuletzt geöffnet auf der Startseite
   function remember() {
-    if (cfg.readonly) return
+    if (cfg.readonly || !cfg.free) return
     try {
       let l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]'); if (!Array.isArray(l)) l = []
       l = l.filter(e => e && e.id !== cfg.urlId)

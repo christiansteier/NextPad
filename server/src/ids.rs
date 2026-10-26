@@ -11,7 +11,6 @@ pub fn session_id() -> String { format!("s.{}", random16()) }
 pub fn readonly_id() -> String { format!("r.{}", random16()) }
 
 /// Gruppenkennung aus einer Pad-Kennung (`g.xxx$name` → `g.xxx`), wie das Moodle-Plugin es tut.
-#[allow(dead_code)]
 pub fn group_of_pad(pad_id: &str) -> Option<&str> {
     if pad_id.starts_with("g.") {
         pad_id.split('$').next()

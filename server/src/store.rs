@@ -130,6 +130,8 @@ CREATE TABLE IF NOT EXISTS ideas (
   hidden INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS idea_votes (pad_id TEXT NOT NULL, idea_id INTEGER NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, idea_id, author_id));
 CREATE TABLE IF NOT EXISTS idea_prompts (pad_id TEXT PRIMARY KEY, prompt TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, author_id));
 "#;
 
 impl Store {
@@ -236,6 +238,8 @@ impl Store {
         c.execute("DELETE FROM idea_votes WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM ideas WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM idea_prompts WHERE pad_id=?1", params![id])?;
+        c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
+        c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM snapshots WHERE pad_id=?1", params![id])?;
         Ok(c.execute("DELETE FROM pads WHERE id=?1", params![id])? > 0)
     }
@@ -301,6 +305,30 @@ impl Store {
         if let Some(h) = hidden { n = c.execute("UPDATE ideas SET hidden=?3 WHERE pad_id=?1 AND id=?2", params![pad_id, idea_id, h])?; }
         if let Some(d) = done { n = c.execute("UPDATE ideas SET done=?3 WHERE pad_id=?1 AND id=?2", params![pad_id, idea_id, d])?; }
         Ok(n > 0)
+    }
+    // Aktivitäten aus Moodle (LTI): je Ressourcen-Link eine eigene Gruppe mit einem Pad
+    pub fn pad_for_link(&self, link_key: &str) -> Result<Option<String>> {
+        Ok(self.c().query_row("SELECT l.pad_id FROM lti_links l JOIN pads p ON p.id=l.pad_id WHERE l.link_key=?1", params![link_key], |r| r.get(0)).optional()?)
+    }
+    /// Legt Gruppe und Pad für einen Ressourcen-Link an. Liefert die Pad-Kennung.
+    pub fn create_link_pad(&self, link_key: &str, kind: &str) -> Result<String> {
+        let group = ids::group_id();
+        let pad = format!("{group}$aktivitaet");
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let now = ids::now_ms();
+        tx.execute("INSERT INTO groups (id, created) VALUES (?1, ?2)", params![group, now])?;
+        tx.execute("INSERT INTO pads (id, group_id, readonly_id, created, last_edited, kind) VALUES (?1, ?2, ?3, ?4, ?4, ?5)", params![pad, group, ids::readonly_id(), now, kind])?;
+        tx.execute("INSERT OR REPLACE INTO lti_links (link_key, pad_id) VALUES (?1, ?2)", params![link_key, pad])?;
+        tx.commit()?;
+        Ok(pad)
+    }
+    pub fn add_moderator(&self, pad_id: &str, author_id: &str) -> Result<()> {
+        self.c().execute("INSERT OR IGNORE INTO pad_moderators (pad_id, author_id) VALUES (?1, ?2)", params![pad_id, author_id])?;
+        Ok(())
+    }
+    pub fn is_moderator(&self, pad_id: &str, author_id: &str) -> bool {
+        self.c().query_row("SELECT 1 FROM pad_moderators WHERE pad_id=?1 AND author_id=?2", params![pad_id, author_id], |_| Ok(())).optional().ok().flatten().is_some()
     }
     pub fn idea_prompt(&self, pad_id: &str) -> Result<String> {
         Ok(self.c().query_row("SELECT prompt FROM idea_prompts WHERE pad_id=?1", params![pad_id], |r| r.get(0)).optional()?.unwrap_or_default())
