@@ -8,9 +8,6 @@ A slim pad server in [Rust](https://www.rust-lang.org) that reproduces the
 over [Yjs](https://yjs.dev) (CRDT), the [TipTap](https://tiptap.dev) editor, and a
 timeline built from snapshots. No chat.
 
-> **Naming.** Up to version 0.2 the project was technically called `cooppad`. Settings with
-> the old prefix `COOPPAD_*`, the old database file and old cookies are still recognised.
-
 ## Overview
 
 The ZWEK runs an Etherpad server for the university's Moodle platforms. Moodle attaches

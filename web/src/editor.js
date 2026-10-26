@@ -15,8 +15,6 @@ import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror'
 import { DOMSerializer } from '@tiptap/pm/model'
 
 const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
-// Liste „Zuletzt geöffnet“ lag bis 0.2.x unter cooppad.recent
-try { const o = localStorage.getItem('nextpad.recent'); if (o && !localStorage.getItem('nextpad.recent')) localStorage.setItem('nextpad.recent', o); localStorage.removeItem('nextpad.recent') } catch {}
 const testFlags = new URLSearchParams(location.search) // nur für Tests: ?nocaret=1 schaltet die Cursor-Anzeige ab
 const palette = cfg.palette
 

@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-10-26
+
+### Changed
+
+- Only the name `nextpad` remains: settings must use the prefix `NEXTPAD_*`, the database
+  file is `nextpad.sqlite`, cookies are `nextpad_*`.
+
+### Fixed
+
+- Opening a pad no longer clears the list of recently opened pads (introduced in 0.3.0).
+
 ## [0.3.0] - 2026-10-26
 
 ### Changed
@@ -11,10 +22,6 @@ All notable changes to this project are documented in this file. The format is b
 - Technical name is now `nextpad` throughout: program and crate, settings `NEXTPAD_*`,
   database file `nextpad.sqlite`, cookies `nextpad_login`, `nextpad_author`, `nextpad_lti`,
   status name, browser object `window.nextpad`.
-- Compatibility with 0.2: settings with the prefix `COOPPAD_*` are still read, an existing
-  `cooppad.sqlite` keeps being used, old login and guest cookies are still accepted (a guest
-  cookie is re-issued under the new name, so ownership of free pads is kept), the list of
-  recently opened pads moves to the new browser key.
 
 ### Added
 
@@ -35,7 +42,7 @@ All notable changes to this project are documented in this file. The format is b
 - Example addresses in the documentation and the configuration panel use the documentation
   range `192.0.2.0/24`; the LTI example platform is called `test-moodle`.
 - `web/test/markdowntest.mjs` creates its own group and pad and no longer needs a fixture file.
-- The operator name (`COOPPAD_SITE_NAME`) is empty by default; without it the footer shows
+- The operator name (`NEXTPAD_SITE_NAME`) is empty by default; without it the footer shows
   only "NextPad". Previously the operator was hard-coded in the plain start and info pages.
 - Binaries for the YunoHost app come from the GitHub releases.
 
