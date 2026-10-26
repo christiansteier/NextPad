@@ -13,6 +13,15 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
+      # Editor- und Zeichenbrett-Bündel, der Server bettet sie beim Übersetzen ein
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g pnpm@11.28.5 --no-fund --no-audit
+      - run: bash web/build.sh
+        working-directory: .
+        env:
+          COOPPAD_WEB_BUILD: ${{ runner.temp }}/web
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

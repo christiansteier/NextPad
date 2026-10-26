@@ -20,6 +20,7 @@ liegt auf einem `noexec`-Mount, daher kopiert das Bauskript die Quellen nach
 ## Tests und Prüfung
 
 ```bash
+bash web/build.sh          # Editor- und Zeichenbrett-Bündel, vor dem ersten Rust-Bau nötig
 cd server
 cargo test                 # Unit-Tests (Aufbewahrung, Migration, IDs)
 cargo build --release      # Freigabe-Binary mit LTO, stripped
