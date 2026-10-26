@@ -26,6 +26,8 @@ pub struct Config {
     pub theme_dir: Option<PathBuf>,
     /// Name der Einrichtung im Fuß der Startseite
     pub site_name: String,
+    /// Mailadressen (klein geschrieben) mit Admin-Recht zusätzlich zur Moodle-Administration
+    pub admins: Vec<String>,
     /// Öffentliche Adresse inklusive Basis-Pfad (für LTI-Rücksprung), z. B. https://host/np
     pub public_url: Option<String>,
     /// Moodle-Instanzen für die Anmeldung per LTI 1.3
@@ -133,6 +135,7 @@ impl Config {
             theme: env("THEME", "colibris"),
             theme_dir: var("THEME_DIR").filter(|s| !s.is_empty()).map(PathBuf::from),
             site_name: env("SITE_NAME", ""),
+            admins: env("ADMINS", "").split(',').map(|s| s.trim().to_ascii_lowercase()).filter(|s| s.contains('@')).collect(),
             cookie_name: env("COOKIE_NAME", "sessionID"),
         })
     }

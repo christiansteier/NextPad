@@ -243,11 +243,12 @@ pub async fn wall(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     } else if !access.free {
         r#"<aside class="wall-join"><p>Mitmachen über die Aktivität im Moodle-Kurs.</p></aside>"#.to_string()
     } else { String::new() };
-    let brand = if state.config.theme == "hsd" && web::has_logo(&state) { format!(r#"<img class="wall-logo" src="{base}/theme/logo.png" alt="Hochschule Düsseldorf">"#) } else { format!(r#"<span class="wall-brand">{}NextPad</span>"#, web::logo_mark("wall-mark")) };
+    let brand = if state.config.theme == "hsd" && web::has_logo(&state) { format!(r#"<img class="wall-logo" src="{}" alt="{}">"#, web::theme_url(&state, "logo.png"), html_escape::encode_double_quoted_attribute(crate::look::get(&state).institution())) } else { format!(r#"<span class="wall-brand">{}{}</span>"#, web::logo_mark("wall-mark"), html_escape::encode_text(crate::look::get(&state).product())) };
     let cfg = json!({ "urlId": id, "basePath": base });
     let icons = web::icon_links();
+    let css = web::look_css(&state);
     let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><meta name="color-scheme" content="light dark"><title>Leinwand · NextPad</title>
-<link rel="stylesheet" href="{base}/static/start.css?v={sv}"><link rel="stylesheet" href="{base}/static/ideen.css?v={v}"></head>
+<link rel="stylesheet" href="{base}/static/start.css?v={sv}"><link rel="stylesheet" href="{base}/static/ideen.css?v={v}">{css}</head>
 <body class="wall"><main class="wall-main"><header class="wall-head"><div><p class="kicker">Ideensammlung</p><h1 id="prompt">Ideen und Fragen</h1></div>{brand}</header>
 <div class="wall-body"><ol class="wall-list" id="wall-list"></ol>{join}</div>
 <p class="wall-empty" id="wall-empty" hidden>Noch keine Beiträge.</p><p class="wall-count" id="wall-count"></p></main>

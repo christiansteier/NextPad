@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS ideas (
 CREATE TABLE IF NOT EXISTS idea_votes (pad_id TEXT NOT NULL, idea_id INTEGER NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, idea_id, author_id));
 CREATE TABLE IF NOT EXISTS idea_prompts (pad_id TEXT PRIMARY KEY, prompt TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, author_id));
 "#;
 
@@ -152,6 +153,9 @@ impl Store {
                 ALTER TABLE pads ADD COLUMN notice_sent INTEGER; ALTER TABLE pads ADD COLUMN delete_after INTEGER; ALTER TABLE pads ADD COLUMN extend_token TEXT;
                 ALTER TABLE authors ADD COLUMN email TEXT; CREATE INDEX IF NOT EXISTS pads_extend ON pads(extend_token);")?;
         }
+        // Schema-Ergänzung 26.10.2026: Admin-Recht einer Anmeldung über Moodle
+        let has_admin: bool = conn.prepare("SELECT 1 FROM pragma_table_info('logins') WHERE name='admin'")?.exists([])?;
+        if !has_admin { conn.execute_batch("ALTER TABLE logins ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;")?; }
         let wconn = Connection::open(path)?;
         wconn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         let (tx, rx) = mpsc::sync_channel::<WriteOp>(65_536);
@@ -463,9 +467,9 @@ impl Store {
     }
 
     // Anmeldungen über Moodle (LTI)
-    pub fn create_login(&self, author_id: &str, valid_until: i64) -> Result<String> {
+    pub fn create_login(&self, author_id: &str, valid_until: i64, admin: bool) -> Result<String> {
         let token = format!("{}{}{}", ids::random16(), ids::random16(), ids::random16());
-        self.c().execute("INSERT INTO logins (token, author_id, created, valid_until) VALUES (?1, ?2, ?3, ?4)", params![token, author_id, ids::now_ms(), valid_until])?;
+        self.c().execute("INSERT INTO logins (token, author_id, created, valid_until, admin) VALUES (?1, ?2, ?3, ?4, ?5)", params![token, author_id, ids::now_ms(), valid_until, admin as i64])?;
         Ok(token)
     }
     pub fn author_by_login(&self, token: &str, now_s: i64) -> Result<Option<Author>> {
@@ -473,8 +477,20 @@ impl Store {
             "SELECT a.id, a.mapper, a.name, a.moodle_url, a.moodle_user FROM logins l JOIN authors a ON a.id=l.author_id WHERE l.token=?1 AND l.valid_until > ?2",
             params![token, now_s], |r| Ok(Author { id: r.get(0)?, mapper: r.get(1)?, name: r.get(2)?, avatar: avatar_url(r.get(3)?, r.get(4)?) })).optional()?)
     }
+    pub fn login_is_admin(&self, token: &str, now_s: i64) -> Result<bool> {
+        Ok(self.c().query_row("SELECT admin FROM logins WHERE token=?1 AND valid_until > ?2", params![token, now_s], |r| r.get::<_, i64>(0)).optional()?.unwrap_or(0) == 1)
+    }
     pub fn delete_login(&self, token: &str) -> Result<bool> {
         Ok(self.c().execute("DELETE FROM logins WHERE token=?1", params![token])? > 0)
+    }
+
+    // Einstellungen (Erscheinungsbild)
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        Ok(self.c().query_row("SELECT value FROM settings WHERE key=?1", params![key], |r| r.get(0)).optional()?)
+    }
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.c().execute("INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])?;
+        Ok(())
     }
 
     // Update-Log und Snapshots

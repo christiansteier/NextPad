@@ -14,6 +14,7 @@ nextpad_settings_defaults() {
     ynh_app_setting_set_default --key=footer_links --value=""
     ynh_app_setting_set_default --key=background_credit --value=""
     ynh_app_setting_set_default --key=background_credit_url --value=""
+    ynh_app_setting_set_default --key=admins --value=""
 }
 
 # Umgebungsdatei aus den Einstellungen schreiben

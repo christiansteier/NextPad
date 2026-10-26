@@ -2,7 +2,7 @@
 import { chromium } from 'playwright'
 import { execSync } from 'node:child_process'
 const base = 'http://127.0.0.1:5093', db = process.env.NEXTPAD_DB || process.env.HOME + '/.cache/nextpad-data-5093/nextpad.sqlite'
-const login = () => execSync(`sqlite3 ${db} "insert or replace into logins values ('testlogin0123456789abcdef','a.7GWLCPklETZvcgvM',0,99999999999);"`)
+const login = () => execSync(`sqlite3 ${db} "insert or replace into logins (token, author_id, created, valid_until) values ('testlogin0123456789abcdef','a.7GWLCPklETZvcgvM',0,99999999999);"`)
 const b = await chromium.launch(); let ok = 0, fail = 0
 const check = (n, c) => { c ? ok++ : fail++; console.log((c ? 'ok   ' : 'FAIL ') + n) }
 async function ctx() { login(); const c = await b.newContext(); await c.addCookies([{ name: 'nextpad_login', value: 'testlogin0123456789abcdef', domain: '127.0.0.1', path: '/' }]); return c.newPage() }

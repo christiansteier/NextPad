@@ -27,11 +27,12 @@ Konfiguration über Umgebungsvariablen:
 | `NEXTPAD_FREE_PADS_PER_HOUR` | `20` | höchstens so viele neue freie Pads je Quelladresse und Stunde |
 | `NEXTPAD_AUTHOR_COOKIE` | `nextpad_author` | Name des Gast-Cookies |
 | `NEXTPAD_THEME` | `colibris` | Erscheinungsbild: `colibris` (wie Etherpad) oder `hsd` (Corporate Design der Hochschule Düsseldorf) |
-| `NEXTPAD_THEME_DIR` | leer | Verzeichnis mit `logo.png` und `font.ttf` für das Design; Marke und Hausschrift liegen bewusst nicht im Repo |
+| `NEXTPAD_THEME_DIR` | leer | Vorgabe-Verzeichnis mit `logo.png`, `background.jpg` und `font.ttf` für das Design; Marke und Hausschrift liegen bewusst nicht im Repo |
 | `NEXTPAD_BACKGROUND_CREDIT` | leer | Bildnachweis für `background.jpg` im Design-Verzeichnis (Hintergrund der HSD-Startseite), z. B. `Foto: Jula2812, CC BY-SA 4.0, Wikimedia Commons`; bei Bildern unter CC-Lizenz Pflicht |
 | `NEXTPAD_BACKGROUND_CREDIT_URL` | leer | Link des Bildnachweises (Dateiseite auf Commons) |
 | `NEXTPAD_HISTORY_DAYS` | `30` | so lange zeigt die Zeitleiste jeden Einzelschritt; ältere Abschnitte nur als Tagesstände (`nextpad compact`) |
 | `NEXTPAD_SITE_NAME` | leer | Betreiberangabe im Fuß der Startseite (z. B. `ZWEK der Hochschule Düsseldorf`) |
+| `NEXTPAD_ADMINS` | leer | Mailadressen aus Moodle (mit Komma getrennt), die das Erscheinungsbild einstellen dürfen; die Moodle-Administration darf es immer |
 | `NEXTPAD_COOKIE_NAME` | `sessionID` | Name des Session-Cookies, das Moodle setzt |
 | `NEXTPAD_PUBLIC_URL` | leer | öffentliche Adresse mit Basis-Pfad, z. B. `https://host/np`; Pflicht für LTI (Rücksprungadresse) und für Links in Mails |
 | `NEXTPAD_LTI_FILE` | `<data>/lti-platforms.json` | Moodle-Instanzen für die Anmeldung per LTI 1.3, fehlt die Datei: keine Anmeldung |
@@ -89,13 +90,23 @@ NEXTPAD_RETENTION=dry-run nextpad retention-run
 
 zeigt, welche Pads angekündigt oder gelöscht würden, ohne etwas zu tun.
 
+### Erscheinungsbild einstellen
+
+Im Design `hsd` stellen Admins unter `/admin/erscheinungsbild` Name und Untertitel im Kopf, die Einrichtung (Name des Logos), das Logo, das Hintergrundbild der Startseite samt Bildnachweis und die Farben ein. Admin ist, wer sich über Moodle (LTI) anmeldet und dort zur Administration gehört (Rolle `institution/person#Administrator` oder `system/person#Administrator`) oder mit seiner Mailadresse in `NEXTPAD_ADMINS` steht. Angemeldete Admins sehen auf der Startseite den Knopf „Erscheinungsbild“.
+
+- Farben: eine Akzentfarbe (Kopflinie, Fokusrahmen) und drei Hausfarben. Linien und Tönungen für hell und dunkel leitet NextPad ab (Linien auf mindestens 4,5:1 abgedunkelt, Tönungen als Anteil auf Weiß bzw. Dunkelgrau); wer will, legt sie selbst fest. Kontraste unter WCAG 2.2 meldet die Seite.
+- Logo: PNG, JPEG, WebP oder SVG bis 2 MB; SVG nur ohne Skripte und Ereignisattribute, ausgeliefert mit `sandbox`. Mit Logo der Einrichtung entfällt das NextPad-Zeichen im Kopf.
+- Hintergrundbild: JPEG, PNG oder WebP bis 6 MB.
+- Ohne Einstellung gilt die Vorgabe des Servers (`NEXTPAD_THEME_DIR`, `NEXTPAD_BACKGROUND_CREDIT`). „Alles auf die Vorgabe zurücksetzen“ stellt sie wieder her; hochgeladene Bilder bleiben liegen und sind wieder wählbar.
+- Gespeichert wird in der Datenbank (Tabelle `settings`), Bilder unter `<NEXTPAD_DATA>/erscheinungsbild/`.
+
 ## Endpunkte
 
-`GET /api` (Version), `GET|POST /api/1.2*/<Funktion>` (siehe `docs/api-spezifikation.md`), `GET /p/<padID>` und `/p/<readOnlyID>` (Editor), `GET /ws/<id>` (Yjs-Sync), `GET /p/<id>/export/html|txt`, `GET /p/<id>/snapshots`, `GET /p/<id>/snapshots/<ts>`, `GET /status`, `GET /static/editor.js|css|print.js`; mit freien Pads zusätzlich `GET /` (Startseite), `GET /new`, `GET /open?padname=`, `POST /me` (eigener Name), `GET /hilfe`, `GET /new?vorlage=gruppenarbeit|protokoll`, `GET /new?typ=zeichenbrett|ideen`, `GET|POST /p/<id>/ideen`, `GET /p/<id>/ideen/live` (Server-Sent Events), `POST /p/<id>/ideen/frage`, `POST /p/<id>/ideen/<n>/stimme`, `POST /p/<id>/ideen/<n>/moderation`, `GET /p/<id>/leinwand`, `POST /p/<id>/extend` und `POST /p/<id>/delete` (nur Besitz), `GET|POST /verlaengern` (Link aus der Mail); mit LTI `GET|POST /lti/login`, `POST /lti/launch` (auch Start einer Kursaktivität), `GET /lti/jwks`, `POST /logout`.
+`GET /api` (Version), `GET|POST /api/1.2*/<Funktion>` (siehe `docs/api-spezifikation.md`), `GET /p/<padID>` und `/p/<readOnlyID>` (Editor), `GET /ws/<id>` (Yjs-Sync), `GET /p/<id>/export/html|txt`, `GET /p/<id>/snapshots`, `GET /p/<id>/snapshots/<ts>`, `GET /status`, `GET /static/editor.js|css|print.js`; mit freien Pads zusätzlich `GET /` (Startseite), `GET /new`, `GET /open?padname=`, `POST /me` (eigener Name), `GET /hilfe`, `GET /new?vorlage=gruppenarbeit|protokoll`, `GET /new?typ=zeichenbrett|ideen`, `GET|POST /p/<id>/ideen`, `GET /p/<id>/ideen/live` (Server-Sent Events), `POST /p/<id>/ideen/frage`, `POST /p/<id>/ideen/<n>/stimme`, `POST /p/<id>/ideen/<n>/moderation`, `GET /p/<id>/leinwand`, `POST /p/<id>/extend` und `POST /p/<id>/delete` (nur Besitz), `GET|POST /verlaengern` (Link aus der Mail); mit LTI `GET|POST /lti/login`, `POST /lti/launch` (auch Start einer Kursaktivität), `GET /lti/jwks`, `POST /logout`, `GET|POST /admin/erscheinungsbild` und `POST /admin/erscheinungsbild/vorgabe` (nur Admins), `GET /theme/logo.png` und `/theme/background.jpg` (eingestelltes Bild in seinem Format).
 
 ## Aufbau
 
-`config.rs` Konfiguration · `ids.rs` Kennungen · `store.rs` SQLite (Gruppen, Pads, Autoren, Sessions, Update-Log, Snapshots) · `docs.rs` geladene Dokumente, Broadcast, Persistenz, Snapshots · `sync.rs` WebSocket mit `yrs::sync` · `api.rs` Etherpad-API · `render.rs` Yjs ↔ HTML/Text · `web.rs` Editorseite, Zugriffsprüfung, Export, Status.
+`config.rs` Konfiguration · `ids.rs` Kennungen · `store.rs` SQLite (Gruppen, Pads, Autoren, Sessions, Update-Log, Snapshots) · `docs.rs` geladene Dokumente, Broadcast, Persistenz, Snapshots · `sync.rs` WebSocket mit `yrs::sync` · `api.rs` Etherpad-API · `render.rs` Yjs ↔ HTML/Text · `web.rs` Editorseite, Zugriffsprüfung, Export, Status · `look.rs` Erscheinungsbild und Verwaltungsseite.
 
 ## Fallen (gefunden im Proof of Concept)
 
