@@ -127,3 +127,55 @@ ul[data-type="taskList"] li > label input, ul[data-type="taskList"] li > input {
 ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
 ul[data-type="taskList"] li > div > p { margin: 0; }
 ul[data-type="taskList"] li[data-checked="true"] > div { color: #6b6b6b; text-decoration: line-through; text-decoration-color: #9a9a9a; }
+
+/* Tabellen (Markdown: | A | B |) */
+#editor .ProseMirror table, #timeline .snapshot table, .print-view table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: .3em 0 .7em; overflow: hidden; }
+#editor .ProseMirror :is(td, th), #timeline .snapshot :is(td, th), .print-view :is(td, th) { border: 1px solid var(--middle); padding: 4px 8px; vertical-align: top; min-width: 3em; position: relative; box-sizing: border-box; }
+#editor .ProseMirror th, #timeline .snapshot th, .print-view th { background: var(--light); font-weight: 700; text-align: left; }
+#editor .ProseMirror :is(td, th) > p { margin: 0; }
+#editor .ProseMirror .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--primary) 18%, transparent); pointer-events: none; }
+.tsel:disabled { opacity: .45; cursor: default; }
+
+/* Bewertung im Text: Daumen hoch und runter mit Zähler */
+.rating { display: inline-flex; gap: 2px; vertical-align: middle; margin: 0 2px; padding: 1px; border: 1px solid var(--border); border-radius: 999px; background: var(--super-light); line-height: 1; user-select: none; white-space: nowrap; }
+.rating .rate { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; color: var(--dark); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.rating .rate:hover:not(:disabled) { background: var(--light); }
+.rating .rate:disabled { cursor: default; }
+.rating .rate:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.rating .rate.up.on { background: #e3f1e6; color: #1d5e2c; }
+.rating .rate.down.on { background: #fbe4e7; color: #8a1426; }
+.rating .thumb { flex: none; }
+.ProseMirror-selectednode.rating, #editor .ProseMirror-selectednode.toc { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ib .buttonicon svg { display: block; }
+
+/* Inhaltsverzeichnis als Baustein im Text */
+#editor .ProseMirror nav.toc, #timeline .snapshot nav.toc, .print-view nav.toc { border-left: 3px solid var(--middle); padding: 6px 12px; margin: .3em 0 .8em; background: var(--light); }
+nav.toc .toc-title { font-weight: 700; margin-bottom: 4px; }
+nav.toc ol, #tocbar ol, #editor .ProseMirror nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc li, #tocbar li { margin: 2px 0; }
+:is(nav.toc, #tocbar) li.lvl2 { padding-left: 1em; } :is(nav.toc, #tocbar) li.lvl3 { padding-left: 2em; } :is(nav.toc, #tocbar) li.lvl4 { padding-left: 3em; }
+:is(nav.toc, #tocbar) li.empty { color: var(--dark); font-style: italic; }
+:is(nav.toc, #tocbar) a { color: var(--super-dark); text-decoration: none; }
+:is(nav.toc, #tocbar) a:hover { text-decoration: underline; }
+
+/* Inhaltsverzeichnis als Seitenleiste im grauen Rand */
+body.toc-open { --gutter: 300px; }
+#tocbar { position: sticky; top: 0; float: left; box-sizing: border-box; width: calc(var(--gutter) - 80px); max-height: calc(100vh - 80px); overflow: auto; padding: 14px 12px 14px 16px; font-size: 13px; line-height: 1.35; }
+#tocbar .toc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#tocbar h2 { font-size: 13px; font-weight: 700; margin: 0; color: var(--dark); text-transform: uppercase; letter-spacing: .03em; }
+#tocbar .toc-close { border: 0; background: transparent; color: var(--dark); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 3px; }
+#tocbar .toc-close:hover { background: var(--super-light); }
+#tocbar li { margin: 0 0 6px; } #tocbar li.lvl1 > a { font-weight: 700; }
+#tocbar .toc-insert { margin-top: 10px; font: inherit; font-size: 12px; padding: 5px 10px; border: 1px solid var(--middle); background: var(--super-light); color: var(--super-dark); cursor: pointer; border-radius: 3px; }
+#tocbar :is(a, button):focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+@media (max-width: 1000px) {
+  body.toc-open { --gutter: 46px; }
+  /* schmal: als Block über dem Text, die Werkzeugleiste kann beliebig hoch umbrechen */
+  #tocbar { position: static; float: none; width: auto; max-height: 40vh; background: var(--super-light); border-bottom: 1px solid var(--border); }
+}
+.theme-hsd #tocbar .toc-insert, .theme-hsd .rating { border-radius: var(--radius-control, 0); }
+.theme-hsd .rating .rate { border-radius: var(--radius-control, 0); }
+html[data-theme="dark"] .rating .rate.up.on { background: #1f3a26; color: #a8e0b4; }
+html[data-theme="dark"] .rating .rate.down.on { background: #46202a; color: #ffb3bf; }
+html[data-theme="dark"] #editor .ProseMirror nav.toc { background: #262626; }
+@media print { #tocbar { display: none; } }

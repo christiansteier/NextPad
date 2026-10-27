@@ -33,6 +33,23 @@ pub fn safe_align(v: &str) -> Option<&'static str> {
     match v.trim() { "left" => Some("left"), "center" => Some("center"), "right" => Some("right"), "justify" => Some("justify"), _ => None }
 }
 
+/// Bewertung als kurzer Text, z. B. „👍 3 · 👎 1“.
+fn rating_text<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> String {
+    let (up, down) = crate::bausteine::tally(&crate::bausteine::votes(txn, &crate::bausteine::rating_id(txn, el)));
+    format!("👍 {up} · 👎 {down}")
+}
+
+/// Überschriften des ganzen Pads (für das Inhaltsverzeichnis in Text, Markdown und PDF).
+fn doc_headings<T: ReadTxn>(txn: &T) -> Vec<(u8, String)> {
+    txn.get_xml_fragment(FRAGMENT).map(|f| crate::bausteine::headings(txn, &f)).unwrap_or_default()
+}
+
+/// Zellen einer Tabellenzeile: (Kopfzelle?, Element)
+fn row_cells<T: ReadTxn>(txn: &T, row: &XmlOut) -> Vec<(bool, XmlElementRef)> {
+    let XmlOut::Element(r) = row else { return Vec::new() };
+    r.children(txn).filter_map(|c| match c { XmlOut::Element(e) => Some((e.tag().as_ref() == "tableHeader", e)), _ => None }).collect()
+}
+
 /// Aufgabenliste: Häkchen eines taskItem (TipTap speichert true/false, ältere Stände als Text).
 fn is_checked<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> bool {
     match el.get_attribute(txn, "checked") {
@@ -103,12 +120,24 @@ fn text_html<T: ReadTxn>(txn: &T, t: &XmlTextRef) -> String {
     out
 }
 
-fn element_html<T: ReadTxn>(txn: &T, el: &XmlElementRef, out: &mut String, depth: usize) {
+/// Zustand beim HTML-Export: Überschriften fürs Inhaltsverzeichnis und ihre Sprungmarken.
+struct HtmlCtx { headings: Vec<(u8, String)>, next_heading: usize, in_table: usize }
+
+fn toc_html(cx: &HtmlCtx, out: &mut String) {
+    out.push_str("<nav data-type=\"toc\" class=\"toc\"><div class=\"toc-title\">Inhaltsverzeichnis</div><ol>");
+    let min = cx.headings.iter().map(|h| h.0).min().unwrap_or(1);
+    for (i, (level, text)) in cx.headings.iter().enumerate() {
+        out.push_str(&format!("<li class=\"lvl{}\"><a href=\"#abschnitt-{}\">{}</a></li>", level - min + 1, i + 1, esc(text)));
+    }
+    out.push_str("</ol></nav>\n");
+}
+
+fn element_html<T: ReadTxn>(txn: &T, el: &XmlElementRef, out: &mut String, depth: usize, cx: &mut HtmlCtx) {
     let tag = el.tag().to_string();
-    let inner = |txn: &T, out: &mut String| {
+    let inner = |txn: &T, out: &mut String, cx: &mut HtmlCtx| {
         if depth >= MAX_DEPTH { out.push_str(&esc(&el.get_string(txn))); return; }
         for child in el.children(txn) {
-            node_html(txn, &child, out, depth + 1);
+            node_html(txn, &child, out, depth + 1, cx);
         }
     };
     match tag.as_str() {
@@ -117,41 +146,64 @@ fn element_html<T: ReadTxn>(txn: &T, el: &XmlElementRef, out: &mut String, depth
                 Some(a) if a != "left" => out.push_str(&format!("<p style=\"text-align:{a}\">")),
                 _ => out.push_str("<p>"),
             }
-            inner(txn, out);
+            inner(txn, out, cx);
             out.push_str("</p>\n");
         }
         "heading" => {
             let level = attr_string(el.get_attribute(txn, "level")).and_then(|l| l.parse::<u8>().ok()).unwrap_or(1).clamp(1, 6);
-            out.push_str(&format!("<h{level}>"));
-            inner(txn, out);
+            // Sprungmarke in derselben Zählung wie bausteine::headings: ohne leere und ohne solche in Tabellen
+            if cx.in_table == 0 && !crate::bausteine::plain_text(txn, el).trim().is_empty() {
+                cx.next_heading += 1;
+                out.push_str(&format!("<h{level} id=\"abschnitt-{}\">", cx.next_heading));
+            } else {
+                out.push_str(&format!("<h{level}>"));
+            }
+            inner(txn, out, cx);
             out.push_str(&format!("</h{level}>\n"));
         }
-        "bulletList" => { out.push_str("<ul>\n"); inner(txn, out); out.push_str("</ul>\n"); }
-        "orderedList" => { out.push_str("<ol>\n"); inner(txn, out); out.push_str("</ol>\n"); }
-        "listItem" => { out.push_str("<li>"); inner(txn, out); out.push_str("</li>\n"); }
-        "taskList" => { out.push_str("<ul data-type=\"taskList\">\n"); inner(txn, out); out.push_str("</ul>\n"); }
+        "bulletList" => { out.push_str("<ul>\n"); inner(txn, out, cx); out.push_str("</ul>\n"); }
+        "orderedList" => { out.push_str("<ol>\n"); inner(txn, out, cx); out.push_str("</ol>\n"); }
+        "listItem" => { out.push_str("<li>"); inner(txn, out, cx); out.push_str("</li>\n"); }
+        "taskList" => { out.push_str("<ul data-type=\"taskList\">\n"); inner(txn, out, cx); out.push_str("</ul>\n"); }
         "taskItem" => {
             let c = is_checked(txn, el);
             out.push_str(&format!("<li data-type=\"taskItem\" data-checked=\"{c}\"><input type=\"checkbox\" disabled{}> ", if c { " checked" } else { "" }));
-            inner(txn, out);
+            inner(txn, out, cx);
             out.push_str("</li>\n");
         }
-        "blockquote" => { out.push_str("<blockquote>\n"); inner(txn, out); out.push_str("</blockquote>\n"); }
-        "codeBlock" => { out.push_str("<pre><code>"); inner(txn, out); out.push_str("</code></pre>\n"); }
+        "blockquote" => { out.push_str("<blockquote>\n"); inner(txn, out, cx); out.push_str("</blockquote>\n"); }
+        "codeBlock" => { out.push_str("<pre><code>"); inner(txn, out, cx); out.push_str("</code></pre>\n"); }
+        "table" => { cx.in_table += 1; out.push_str("<table>\n"); inner(txn, out, cx); out.push_str("</table>\n"); cx.in_table -= 1; }
+        "tableRow" => { out.push_str("<tr>"); inner(txn, out, cx); out.push_str("</tr>\n"); }
+        "tableHeader" | "tableCell" => {
+            let t = if tag == "tableHeader" { "th" } else { "td" };
+            let span = |k: &str| attr_string(el.get_attribute(txn, k)).and_then(|v| v.parse::<u32>().ok()).filter(|n| *n > 1 && *n <= 100);
+            out.push_str(&format!("<{t}"));
+            if let Some(n) = span("colspan") { out.push_str(&format!(" colspan=\"{n}\"")); }
+            if let Some(n) = span("rowspan") { out.push_str(&format!(" rowspan=\"{n}\"")); }
+            out.push('>'); inner(txn, out, cx); out.push_str(&format!("</{t}>"));
+        }
+        "rating" => {
+            let id = crate::bausteine::rating_id(txn, el);
+            let v = crate::bausteine::votes(txn, &id);
+            let (up, down) = crate::bausteine::tally(&v);
+            out.push_str(&format!("<span data-type=\"rating\" class=\"rating\" data-rating=\"{}\" data-votes=\"{}\">👍 {up} · 👎 {down}</span>", attr(&id), attr(&crate::bausteine::votes_attr(&v))));
+        }
+        "tableOfContents" => toc_html(cx, out),
         "hardBreak" => out.push_str("<br>"),
         "horizontalRule" => out.push_str("<hr>\n"),
-        _ => { out.push_str("<div>"); inner(txn, out); out.push_str("</div>\n"); }
+        _ => { out.push_str("<div>"); inner(txn, out, cx); out.push_str("</div>\n"); }
     }
 }
 
-fn node_html<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) {
+fn node_html<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize, cx: &mut HtmlCtx) {
     if depth > MAX_DEPTH { return; }
     match node {
-        XmlOut::Element(el) => element_html(txn, el, out, depth),
+        XmlOut::Element(el) => element_html(txn, el, out, depth, cx),
         XmlOut::Text(t) => out.push_str(&text_html(txn, t)),
         XmlOut::Fragment(f) => {
             for c in f.children(txn) {
-                node_html(txn, &c, out, depth + 1);
+                node_html(txn, &c, out, depth + 1, cx);
             }
         }
     }
@@ -160,8 +212,9 @@ fn node_html<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize)
 /// Vollständiges HTML-Dokument wie Etherpads getHTML.
 pub fn to_html<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String {
     let mut body = String::new();
+    let mut cx = HtmlCtx { headings: crate::bausteine::headings(txn, frag), next_heading: 0, in_table: 0 };
     for c in frag.children(txn) {
-        node_html(txn, &c, &mut body, 0);
+        node_html(txn, &c, &mut body, 0, &mut cx);
     }
     format!("<!DOCTYPE HTML><html><body>{body}</body></html>")
 }
@@ -209,6 +262,23 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
                             }
                         }
                     }
+                }
+                "table" => {
+                    for row in el.children(txn) {
+                        let cells: Vec<String> = row_cells(txn, &row).iter().map(|(_, c)| {
+                            let mut t = String::new();
+                            for b in c.children(txn) { node_text(txn, &b, &mut t, depth + 1, None); }
+                            t.trim_end().replace('\n', " / ")
+                        }).collect();
+                        out.push_str(&cells.join(" | ")); out.push('\n');
+                    }
+                }
+                "rating" => out.push_str(&rating_text(txn, el)),
+                "tableOfContents" => {
+                    out.push_str("Inhaltsverzeichnis\n");
+                    let hs = doc_headings(txn);
+                    let min = hs.iter().map(|h| h.0).min().unwrap_or(1);
+                    for (l, t) in hs { out.push_str(&format!("{}- {t}\n", "  ".repeat((l - min) as usize))); }
                 }
                 "hardBreak" => out.push('\n'),
                 "horizontalRule" => out.push_str("----\n"),
@@ -271,6 +341,7 @@ fn inline_md_d<T: ReadTxn>(txn: &T, el: &XmlElementRef, depth: usize) -> String 
         match &c {
             XmlOut::Text(t) => out.push_str(&text_md(txn, t)),
             XmlOut::Element(e) if e.tag().as_ref() == "hardBreak" => out.push_str("  \n"),
+            XmlOut::Element(e) if e.tag().as_ref() == "rating" => out.push_str(&rating_text(txn, e)),
             XmlOut::Element(e) => out.push_str(&inline_md_d(txn, e, depth + 1)),
             XmlOut::Fragment(_) => {}
         }
@@ -308,6 +379,28 @@ fn block_md<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) 
             if depth == 0 { out.push('\n'); }
         }
         "codeBlock" => { out.push_str("```\n"); out.push_str(&inline_md(txn, el)); out.push_str("\n```\n\n"); }
+        "table" => {
+            // GFM-Tabelle: erste Zeile ist der Kopf; mehrere Absätze einer Zelle mit <br>
+            let rows: Vec<Vec<String>> = el.children(txn).map(|r| row_cells(txn, &r).iter().map(|(_, c)| {
+                c.children(txn).filter_map(|b| match b { XmlOut::Element(e) => Some(inline_md(txn, &e)), _ => None }).collect::<Vec<_>>().join("<br>").replace('|', "\\|").replace('\n', " ")
+            }).collect()).filter(|r: &Vec<String>| !r.is_empty()).collect();
+            let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+            if cols == 0 { return; }
+            for (i, r) in rows.iter().enumerate() {
+                let mut cells = r.clone(); cells.resize(cols, String::new());
+                out.push_str(&format!("| {} |\n", cells.join(" | ")));
+                if i == 0 { out.push_str(&format!("|{}\n", " --- |".repeat(cols))); }
+            }
+            out.push('\n');
+        }
+        "tableOfContents" => {
+            let hs = doc_headings(txn);
+            if hs.is_empty() { return; }
+            out.push_str("**Inhaltsverzeichnis**\n\n");
+            let min = hs.iter().map(|h| h.0).min().unwrap_or(1);
+            for (l, t) in hs { out.push_str(&format!("{}- {}\n", "  ".repeat((l - min) as usize), t.replace('&', "&amp;").replace('<', "&lt;"))); }
+            out.push('\n');
+        }
         "horizontalRule" => out.push_str("---\n\n"),
         _ => { out.push_str(&inline_md(txn, el)); out.push_str("\n\n"); }
     }
@@ -369,6 +462,11 @@ fn inline_typst<T: ReadTxn>(txn: &T, el: &XmlElementRef, depth: usize) -> String
         match &c {
             XmlOut::Text(t) => out.push_str(&text_typst(txn, t)),
             XmlOut::Element(e) if e.tag().as_ref() == "hardBreak" => out.push_str("#linebreak()"),
+            XmlOut::Element(e) if e.tag().as_ref() == "rating" => {
+                // keine Emoji-Schrift im Satz: Stimmen als „+3 · −1“ in einer Pille
+                let (up, down) = crate::bausteine::tally(&crate::bausteine::votes(txn, &crate::bausteine::rating_id(txn, e)));
+                out.push_str(&format!("#box(stroke: 0.5pt + luma(150), inset: (x: 3pt, y: 1.5pt), outset: (y: 1pt), radius: 5pt)[#text(size: 0.85em)[#{}]]", typst_str(&format!("+{up} · −{down}"))));
+            }
             XmlOut::Element(e) => out.push_str(&inline_typst(txn, e, depth + 1)),
             XmlOut::Fragment(_) => {}
         }
@@ -425,6 +523,32 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
             out.push_str(&format!("#raw(block: true, {})\n\n", typst_str(&text)));
         }
         "horizontalRule" => out.push_str("#line(length: 100%, stroke: 0.5pt + luma(170))\n\n"),
+        "table" => {
+            let rows: Vec<Vec<(bool, XmlElementRef)>> = el.children(txn).map(|r| row_cells(txn, &r)).filter(|r| !r.is_empty()).collect();
+            let cols = rows.iter().map(|r| r.iter().map(|(_, c)| attr_string(c.get_attribute(txn, "colspan")).and_then(|v| v.parse::<usize>().ok()).unwrap_or(1).clamp(1, 100)).sum::<usize>()).max().unwrap_or(0);
+            if cols == 0 { return; }
+            let header = rows.first().is_some_and(|r| r.iter().all(|(h, _)| *h));
+            let cell = |c: &XmlElementRef, head: bool| {
+                let mut body = String::new();
+                for b in c.children(txn) { block_typst(txn, &b, &mut body, depth + 1); }
+                let body = body.trim_end().to_string();
+                let body = if head { format!("#strong[{body}]") } else { body };
+                let span = |k: &str| attr_string(c.get_attribute(txn, k)).and_then(|v| v.parse::<usize>().ok()).filter(|n| *n > 1 && *n <= 100);
+                match (span("colspan"), span("rowspan")) {
+                    (None, None) => format!("[{body}]"),
+                    (cs, rs) => format!("table.cell(colspan: {}, rowspan: {})[{body}]", cs.unwrap_or(1), rs.unwrap_or(1)),
+                }
+            };
+            out.push_str(&format!("#table(columns: (1fr,) * {cols}, stroke: 0.5pt + luma(150), inset: 5pt, align: left{},\n", if header { ", fill: (_, y) => if y == 0 { luma(235) }" } else { "" }));
+            for (i, r) in rows.iter().enumerate() {
+                let cells: Vec<String> = r.iter().map(|(h, c)| cell(c, *h || (header && i == 0))).collect();
+                if header && i == 0 { out.push_str(&format!("  table.header({}),\n", cells.join(", "))); } else { out.push_str(&format!("  {},\n", cells.join(", "))); }
+            }
+            out.push_str(")\n\n");
+        }
+        "tableOfContents" => {
+            if !doc_headings(txn).is_empty() { out.push_str("#outline(title: [Inhaltsverzeichnis], depth: 4)\n\n"); }
+        }
         _ => { let body = inline_typst(txn, el, 0); if !body.is_empty() { out.push_str(&body); out.push_str("\n\n"); } }
     }
 }
@@ -448,6 +572,8 @@ pub struct Marks {
     pub color: Option<String>,
     pub font_size: Option<String>,
     pub author: Option<String>,
+    /// Lauf ist eine Bewertung (Kennung, Stimmen) statt Text
+    pub rating: Option<(String, Vec<(String, i8)>)>,
 }
 
 impl Marks {
@@ -482,6 +608,10 @@ pub enum Block {
     List { ordered: bool, items: Vec<Vec<Block>> },
     /// Aufgabenliste: je Eintrag erledigt ja/nein und Inhalt
     TaskList { items: Vec<(bool, Vec<Block>)> },
+    /// Tabelle: Zeilen aus Zellen (Kopfzelle?, Inhalt)
+    Table { rows: Vec<Vec<(bool, Vec<Block>)>> },
+    /// Inhaltsverzeichnis (Inhalt entsteht beim Anzeigen)
+    Toc,
 }
 
 fn style_props(style: &str) -> (Option<String>, Option<String>) {
@@ -506,7 +636,7 @@ fn collect_inline(el: ElementRef, marks: &Marks, runs: &mut Vec<(String, Marks)>
                     // Whitespace zwischen Blöcken (Zeilenumbrüche im Export) verwerfen,
                     // Whitespace zwischen Inline-Elementen behalten
                     let is_block = |n: Option<ego_tree::NodeRef<Node>>| n.and_then(|n| match n.value() {
-                        Node::Element(e) => Some(matches!(e.name().to_ascii_lowercase().as_str(), "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li" | "blockquote" | "pre" | "br" | "hr")),
+                        Node::Element(e) => Some(matches!(e.name().to_ascii_lowercase().as_str(), "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li" | "blockquote" | "pre" | "br" | "hr" | "table" | "tr" | "td" | "th" | "nav")),
                         _ => None,
                     }).unwrap_or(true);
                     if is_block(child.prev_sibling()) || is_block(child.next_sibling()) || runs.is_empty() { continue; }
@@ -516,6 +646,13 @@ fn collect_inline(el: ElementRef, marks: &Marks, runs: &mut Vec<(String, Marks)>
             Node::Element(e) => {
                 let cel = ElementRef::wrap(child).unwrap();
                 let name = e.name().to_ascii_lowercase();
+                if name == "span" && e.attr("data-type") == Some("rating") {
+                    if let Some(id) = e.attr("data-rating").and_then(crate::bausteine::clean_id) {
+                        let votes = crate::bausteine::parse_votes_attr(e.attr("data-votes").unwrap_or(""));
+                        runs.push((String::new(), Marks { rating: Some((id, votes)), ..marks.clone() }));
+                    }
+                    continue;
+                }
                 let mut m = marks.clone();
                 match name.as_str() {
                     "b" | "strong" => m.bold = true,
@@ -540,7 +677,7 @@ fn collect_inline(el: ElementRef, marks: &Marks, runs: &mut Vec<(String, Marks)>
                         if let Some(v) = c.strip_prefix("color:") { m.color = safe_color(v); }
                     }
                 }
-                if matches!(name.as_str(), "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li" | "blockquote" | "pre") {
+                if matches!(name.as_str(), "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li" | "blockquote" | "pre" | "table" | "nav") {
                     // Block innerhalb von Inline: aktuellen Lauf abschließen, Block separat
                     flush_runs(runs, blocks, cur_align.take());
                     blocks.extend(parse_block(cel, &m));
@@ -629,6 +766,31 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
             }
             blocks.push(Block::List { ordered: name == "ol", items });
         }
+        "table" => {
+            // Zeilen auch unter thead/tbody/tfoot; Zellinhalt wie ein Listeneintrag
+            let mut rows = Vec::new();
+            for tr in el.descendants().filter_map(ElementRef::wrap).filter(|e| e.value().name().eq_ignore_ascii_case("tr")) {
+                if tr.ancestors().filter_map(ElementRef::wrap).find(|a| a.value().name().eq_ignore_ascii_case("table")).map(|t| t.id()) != Some(el.id()) { continue; }
+                let mut row = Vec::new();
+                for cell in tr.children().filter_map(ElementRef::wrap) {
+                    let cn = cell.value().name().to_ascii_lowercase();
+                    if cn != "td" && cn != "th" { continue; }
+                    let mut runs = Vec::new();
+                    let mut inner = Vec::new();
+                    let mut a = None;
+                    collect_inline(cell, marks, &mut runs, &mut inner, &mut a);
+                    let mut content = Vec::new();
+                    flush_runs(&mut runs, &mut content, None);
+                    content.extend(inner);
+                    content.retain(|b| !matches!(b, Block::Table { .. } | Block::Toc)); // keine Tabellen in Tabellen
+                    if content.is_empty() { content.push(Block::Para { align: None, runs: vec![] }); }
+                    row.push((cn == "th", content));
+                }
+                if !row.is_empty() { rows.push(row); }
+            }
+            if !rows.is_empty() { blocks.push(Block::Table { rows }); }
+        }
+        "nav" if el.value().attr("data-type") == Some("toc") => blocks.push(Block::Toc),
         "pre" => {
             let text = el.text().collect::<String>();
             blocks.push(Block::Para { align: None, runs: vec![(text, Marks { code: true, ..marks.clone() })] });
@@ -649,11 +811,19 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
 
 fn write_runs(txn: &mut TransactionMut, el: &XmlElementRef, runs: &[(String, Marks)]) {
     if runs.is_empty() { return; }
-    let t: XmlTextRef = el.push_back(txn, XmlTextPrelim::new(""));
-    let mut idx = 0u32;
+    // Text kommt in XmlText-Knoten, eine Bewertung als eigenes Element dazwischen
+    let mut cur: Option<(XmlTextRef, u32)> = None;
     for (s, m) in runs {
-        t.insert_with_attributes(txn, idx, s, m.to_attrs());
-        idx += s.encode_utf16().count() as u32;
+        if let Some((id, votes)) = &m.rating {
+            let r: XmlElementRef = el.push_back(txn, XmlElementPrelim::new("rating", Vec::<XmlIn>::new()));
+            r.insert_attribute(txn, "id", Any::from(id.as_str()));
+            crate::bausteine::write_votes(txn, id, votes);
+            cur = None;
+            continue;
+        }
+        let (t, idx) = cur.get_or_insert_with(|| (el.push_back(txn, XmlTextPrelim::new("")), 0));
+        t.insert_with_attributes(txn, *idx, s, m.to_attrs());
+        *idx += s.encode_utf16().count() as u32;
     }
 }
 
@@ -683,6 +853,24 @@ fn write_block(txn: &mut TransactionMut, parent: &XmlElementRef, b: &Block) {
                 li.insert_attribute(txn, "checked", Any::Bool(*checked));
                 for ib in item { write_block(txn, &li, ib); }
             }
+        }
+        Block::Table { rows } => {
+            let t: XmlElementRef = parent.push_back(txn, XmlElementPrelim::new("table", Vec::<XmlIn>::new()));
+            write_rows(txn, &t, rows);
+        }
+        Block::Toc => { parent.push_back(txn, XmlElementPrelim::new("tableOfContents", Vec::<XmlIn>::new())); }
+    }
+}
+
+/// Zeilen gleich lang machen (ProseMirror verlangt ein Rechteck) und schreiben.
+fn write_rows(txn: &mut TransactionMut, table: &XmlElementRef, rows: &[Vec<(bool, Vec<Block>)>]) {
+    let cols = rows.iter().map(Vec::len).max().unwrap_or(1);
+    for row in rows {
+        let tr: XmlElementRef = table.push_back(txn, XmlElementPrelim::new("tableRow", Vec::<XmlIn>::new()));
+        for i in 0..cols {
+            let (head, content) = row.get(i).map(|(h, c)| (*h, c.clone())).unwrap_or((false, vec![Block::Para { align: None, runs: vec![] }]));
+            let cell: XmlElementRef = tr.push_back(txn, XmlElementPrelim::new(if head { "tableHeader" } else { "tableCell" }, Vec::<XmlIn>::new()));
+            for b in &content { write_block(txn, &cell, b); }
         }
     }
 }
@@ -715,6 +903,11 @@ fn write_block_root(txn: &mut TransactionMut, frag: &XmlFragmentRef, b: &Block) 
                 for ib in item { write_block(txn, &li, ib); }
             }
         }
+        Block::Table { rows } => {
+            let t: XmlElementRef = frag.push_back(txn, XmlElementPrelim::new("table", Vec::<XmlIn>::new()));
+            write_rows(txn, &t, rows);
+        }
+        Block::Toc => { frag.push_back(txn, XmlElementPrelim::new("tableOfContents", Vec::<XmlIn>::new())); }
     }
 }
 
@@ -726,6 +919,7 @@ pub fn write_blocks(txn: &mut TransactionMut, frag: &XmlFragmentRef, blocks: &[B
 fn clear(txn: &mut TransactionMut, frag: &XmlFragmentRef) {
     let n = frag.len(txn);
     if n > 0 { frag.remove_range(txn, 0, n); }
+    crate::bausteine::clear_votes(txn);
 }
 
 /// Ersetzt den Inhalt durch reinen Text (Zeilen → Absätze).
@@ -757,10 +951,73 @@ pub fn set_html(txn: &mut TransactionMut, frag: &XmlFragmentRef, html: &str) {
     // leere Absätze am Ende, die nur vom Parser stammen, entfernen
     while blocks.len() > 1 {
         if let Some(Block::Para { runs, .. }) = blocks.last() {
-            if runs.iter().all(|(s, _)| s.trim().is_empty()) { blocks.pop(); continue; }
+            if runs.iter().all(|(s, m)| s.trim().is_empty() && m.rating.is_none()) { blocks.pop(); continue; }
         }
         break;
     }
     if blocks.is_empty() { blocks.push(Block::Para { align: None, runs: vec![] }); }
     for b in &blocks { write_block_root(txn, frag, b); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use yrs::{Doc, Map, Transact, WriteTxn};
+
+    /// Pad mit Überschriften, Inhaltsverzeichnis, Tabelle und Bewertung – über den eigenen HTML-Import.
+    fn pad() -> Doc {
+        let doc = Doc::new();
+        let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
+        let html = r#"<html><body><h1>Planung</h1><nav data-type="toc"></nav>
+            <p>Idee A <span data-type="rating" data-rating="r1" data-votes="a1:1,b2:1,c3:-1">x</span> gut</p>
+            <h2>Zahlen &amp; Fakten</h2>
+            <table><tr><th>Name</th><th>Wert | Einheit</th></tr><tr><td><p>Tee</p></td><td>3</td></tr><tr><td>nur eine</td></tr></table>
+            <p><span data-type="rating" data-rating="r2" data-votes=""></span></p></body></html>"#;
+        { let mut txn = doc.transact_mut(); set_html(&mut txn, &frag, html); }
+        doc
+    }
+
+    #[test]
+    fn exporte_mit_tabelle_bewertung_und_verzeichnis() {
+        let doc = pad();
+        let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
+        let txn = doc.transact();
+        let html = to_html(&txn, &frag);
+        assert!(html.contains(r#"<h1 id="abschnitt-1">"#) && html.contains(r#"<h2 id="abschnitt-2">"#), "{html}");
+        assert!(html.contains(r##"<a href="#abschnitt-2">Zahlen &amp; Fakten</a>"##), "{html}");
+        assert!(html.contains("<th><p>Name</p>\n</th>") && html.contains("<td><p>Tee</p>\n</td>"), "{html}");
+        assert!(html.contains(r#"data-rating="r1" data-votes="a1:1,b2:1,c3:-1">👍 2 · 👎 1</span>"#), "{html}");
+        assert!(html.contains("<p>Idee A ") && html.contains("</span> gut</p>"), "Text um die Bewertung bleibt: {html}");
+        let md = to_markdown(&txn, &frag);
+        assert!(md.contains("| Name | Wert \\| Einheit |\n| --- | --- |\n| Tee | 3 |\n| nur eine |  |"), "{md}");
+        assert!(md.contains("**Inhaltsverzeichnis**\n\n- Planung\n  - Zahlen &amp; Fakten"), "{md}");
+        assert!(md.contains("Idee A 👍 2 · 👎 1 gut"), "{md}");
+        let text = to_text(&txn, &frag);
+        assert!(text.contains("Name | Wert | Einheit\nTee | 3\n"), "{text}");
+        let typ = to_typst(&txn, &frag);
+        assert!(typ.contains("#outline(") && typ.contains("#table(columns: (1fr,) * 2") && typ.contains("table.header("), "{typ}");
+        assert!(typ.contains("+2 · −1"), "{typ}");
+    }
+
+    #[test]
+    fn html_hin_und_zurueck_behaelt_alles() {
+        let doc = pad();
+        let html = { let frag = doc.get_or_insert_xml_fragment(FRAGMENT); let txn = doc.transact(); to_html(&txn, &frag) };
+        let doc2 = Doc::new();
+        let frag2 = doc2.get_or_insert_xml_fragment(FRAGMENT);
+        { let mut txn = doc2.transact_mut(); txn.get_or_insert_map(crate::bausteine::RATINGS).insert(&mut txn, "alt:x", Any::from(1.0)); set_html(&mut txn, &frag2, &html); }
+        let txn = doc2.transact();
+        assert_eq!(to_html(&txn, &frag2), html);
+        assert!(txn.get_map(crate::bausteine::RATINGS).unwrap().get(&txn, "alt:x").is_none(), "alte Stimmen sind weg");
+    }
+
+    #[test]
+    fn pdf_mit_tabelle_und_verzeichnis() {
+        let doc = pad();
+        let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
+        let body = { let txn = doc.transact(); to_typst(&txn, &frag) };
+        let o = crate::typeset::Options { hsd: false, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "Test", footer: "pad", title: "Test" };
+        let pdf = crate::typeset::pdf(&o, &body).expect("Satz gelingt");
+        assert!(pdf.starts_with(b"%PDF"));
+    }
 }

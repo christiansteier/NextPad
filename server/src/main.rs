@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 mod api;
+mod bausteine;
 mod config;
 mod docs;
 mod ideas;
