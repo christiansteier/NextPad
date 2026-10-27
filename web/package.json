@@ -24,6 +24,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "@tiptap/extension-list": "3.32.0",
+    "@tiptap/extension-table": "3.32.0",
     "y-protocols": "1.0.7",
     "lib0": "0.2.119"
   },

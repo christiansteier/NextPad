@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-10-27
+
+### Added
+
+- Tables: toolbar button inserts a 3 × 3 table with header row; the "Tabelle" menu (active inside a table)
+  adds or deletes rows and columns and toggles the header row. Markdown tables (`| A | B |` with a `| --- |`
+  line) become tables on paste and in the Markdown dialog. Exported as HTML table, GFM table, text and
+  Typst table in the PDF; `setHTML` reads tables back, so Moodle backup and restore keeps them.
+- Rating with thumbs up and thumbs down as an inline block. One vote per person and rating, click again to
+  withdraw. Votes live in the Y.Map `ratings` under `<rating id>:<author>`, so simultaneous votes do not
+  overwrite each other; copied ratings get a new id. Exports show the counts (`👍 3 · 👎 1`, PDF `+3 · −1`);
+  HTML export and `setHTML` carry the votes along. The browser counts the votes, not the server.
+- Table of contents: sidebar in the left margin (toggle "H" on the right of the toolbar, remembered per
+  browser; above the text on narrow screens) and as a block in the text via "Ins Pad einfügen". Both
+  update live; the block exports as linked list (HTML, headings get `id="abschnitt-N"`), list (Markdown,
+  text) and Typst outline with page numbers (PDF).
+
+### Changed
+
+- Task list button uses the icon font like the other buttons instead of the ☑ character.
+
 ## [0.8.2] - 2026-10-26
 
 ### Fixed

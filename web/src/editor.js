@@ -9,6 +9,9 @@ import TextAlign from '@tiptap/extension-text-align'
 import { Markdown } from '@tiptap/markdown'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
 import { batchRemoteUpdates } from './yjs-batch.js'
+import { tableExtensions, addTableTools } from './table-tools.js'
+import { createRating, thumbSvg } from './rating.js'
+import { TableOfContents, createTocSidebar } from './toc.js'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror'
@@ -66,7 +69,7 @@ const names = new Map()
 let showColors = true
 
 // Markdown als Eingabe: eingefügter Klartext, der nach Markdown aussieht, wird als Markdown gelesen.
-const looksLikeMarkdown = t => /^(#{1,6} |[-*+] |\d+\. |> |[-*+] \[[ xX]\] )/m.test(t) || /\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\)|~~[^~]+~~/.test(t)
+const looksLikeMarkdown = t => /^(#{1,6} |[-*+] |\d+\. |> |[-*+] \[[ xX]\] )/m.test(t) || /^\s*\|.*\|\s*\n\s*\|?\s*:?-{3,}/m.test(t) || /\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\)|~~[^~]+~~/.test(t)
 const MarkdownPaste = Extension.create({
   name: 'markdownPaste',
   addProseMirrorPlugins() {
@@ -126,6 +129,8 @@ const editor = new Editor({
     TextStyle, Color, FontSize,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     TaskList, TaskItem.configure({ nested: true }),
+    ...tableExtensions, TableOfContents,
+    createRating({ ydoc, me: cfg.author.id, readonly: cfg.readonly }),
     Markdown, MarkdownPaste,
     AuthorMark, ...(testFlags.has('noauthor') ? [] : [AuthorTagging]),
     Collaboration.configure({ document: ydoc, field: 'default' }),
@@ -137,7 +142,7 @@ const editor = new Editor({
 const tb = document.getElementById('toolbar')
 const sb = document.getElementById('statusbar')
 const edBox = document.getElementById('editorcontainerbox')
-const I = { bold: '', italic: '', underline: '', strike: '', ol: '', ul: '', indent: '', outdent: '', undo: '', redo: '', eye: '', alignL: '', alignC: '', alignR: '', alignJ: '', md: '', history: '', share: '', users: '', cog: '', pdf: '', file: '', code: '', times: '' }
+const I = { tasks: '\ue832', table: '\uf0ce', toc: '\ue82e', bold: '', italic: '', underline: '', strike: '', ol: '', ul: '', indent: '', outdent: '', undo: '', redo: '', eye: '', alignL: '', alignC: '', alignR: '', alignJ: '', md: '', history: '', share: '', users: '', cog: '', pdf: '', file: '', code: '', times: '' }
 function ibtn(parent, icon, title, fn, isActive) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'ib'; b.title = title; b.setAttribute('aria-label', title)
   const i = document.createElement('span'); i.className = 'buttonicon'; i.textContent = icon; i.setAttribute('aria-hidden', 'true'); b.appendChild(i)
@@ -162,7 +167,7 @@ if (!cfg.readonly) {
   sep(menuLeft)
   ibtn(menuLeft, I.ol, 'Nummerierte Liste', () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
   ibtn(menuLeft, I.ul, 'Aufzählung', () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
-  ibtn(menuLeft, '\u2611', 'Aufgabenliste zum Abhaken (Markdown: - [ ] Aufgabe)', () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
+  ibtn(menuLeft, I.tasks, 'Aufgabenliste zum Abhaken (Markdown: - [ ] Aufgabe)', () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
   ibtn(menuLeft, I.indent, 'Einrücken', () => editor.chain().sinkListItem('listItem').run())
   ibtn(menuLeft, I.outdent, 'Ausrücken', () => editor.chain().liftListItem('listItem').run())
   sep(menuLeft)
@@ -184,7 +189,13 @@ if (!cfg.readonly) {
   select(menuLeft, 'Absatzstil', 'Stil', [['p', 'Normal'], ['1', 'Überschrift 1'], ['2', 'Überschrift 2'], ['3', 'Überschrift 3'], ['4', 'Überschrift 4']], v => v === 'p' ? editor.chain().setParagraph().run() : editor.chain().setHeading({ level: +v }).run())
   sep(menuLeft)
   ibtn(menuLeft, I.md, 'Markdown-Text einfügen (auch per Einfügen aus der Zwischenablage)', () => openMarkdownDialog())
+  sep(menuLeft)
+  addTableTools(editor, menuLeft, { ibtn, select, icon: I.table })
+  const rateBtn = ibtn(menuLeft, '', 'Bewertung einfügen (Daumen hoch / runter)', () => editor.chain().focus().insertRating().run())
+  rateBtn.querySelector('.buttonicon').innerHTML = thumbSvg('up', 15)
 }
+const tocBtn = ibtn(menuRight, I.toc, 'Inhaltsverzeichnis ein/aus', () => toc.toggle(), () => toc.open)
+const toc = createTocSidebar(editor, edBox, { readonly: cfg.readonly, onChange: open => { tocBtn.classList.toggle('selected', open); tocBtn.setAttribute('aria-pressed', String(open)) } })
 // Dunkler Modus: eigene Wahl merkt sich der Browser, sonst gilt die Einstellung des Geräts
 const THEME_KEY = 'nextpad.theme'
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)')
