@@ -7,7 +7,7 @@ name = "NextPad"
 description.en = "Collaborative pads with timeline, whiteboard and Moodle login; Etherpad API compatible"
 description.de = "Gemeinsam schreiben und zeichnen mit Zeitleiste und Moodle-Anmeldung; Etherpad-kompatibel"
 
-version = "0.8.2~ynh1"
+version = "0.9.0~ynh1"
 
 maintainers = ["ZWEK der Hochschule Düsseldorf"]
 
@@ -56,8 +56,8 @@ ram.runtime = "100M"
 
 [resources]
     [resources.sources.main]
-    url = "https://github.com/christiansteier/nextpad/releases/download/v0.8.2/nextpad-0.8.2-amd64"
-    sha256 = "d994ba04b375e55e897badfc77088ae8d2086dd31cd63a1f6b6b071554ed07e3"
+    url = "https://github.com/christiansteier/nextpad/releases/download/v0.9.0/nextpad-0.9.0-amd64"
+    sha256 = "a019f4e06206bf89fad336b3c3d450736b52a2bf0659075681a0cc07cd690b0d"
     extract = false
     rename = "nextpad"
 
