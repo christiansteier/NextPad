@@ -60,7 +60,8 @@ pub struct Pad {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct QuizState { pub title: String, pub current: Option<i64>, pub revealed: bool }
+/// `phase`: 0 Vorbereitung (Teams wählen, Raster gesperrt), 1 läuft, 2 beendet (Ergebnis).
+pub struct QuizState { pub title: String, pub current: Option<i64>, pub revealed: bool, pub phase: i64 }
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct QuizField { pub id: i64, pub cat: String, pub points: i64, pub question: String, pub answer: String }
 
@@ -135,7 +136,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   hidden INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS idea_votes (pad_id TEXT NOT NULL, idea_id INTEGER NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, idea_id, author_id));
 CREATE TABLE IF NOT EXISTS idea_prompts (pad_id TEXT PRIMARY KEY, prompt TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', current INTEGER, revealed INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', current INTEGER, revealed INTEGER NOT NULL DEFAULT 0, phase INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS quiz_fields (pad_id TEXT NOT NULL, id INTEGER NOT NULL, cat TEXT NOT NULL, points INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_teams (pad_id TEXT NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_log (pad_id TEXT NOT NULL, seq INTEGER NOT NULL, field INTEGER NOT NULL, team INTEGER, delta INTEGER NOT NULL, PRIMARY KEY (pad_id, seq));
@@ -174,6 +175,9 @@ impl Store {
         // Schema-Ergänzung 26.10.2026: Admin-Recht einer Anmeldung über Moodle
         let has_admin: bool = conn.prepare("SELECT 1 FROM pragma_table_info('logins') WHERE name='admin'")?.exists([])?;
         if !has_admin { conn.execute_batch("ALTER TABLE logins ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;")?; }
+        // Schema-Ergänzung 28.10.2026: Spielphase im Quiz; laufende Spiele bleiben laufend (1)
+        let has_phase: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_state') WHERE name='phase'")?.exists([])?;
+        if !has_phase { conn.execute_batch("ALTER TABLE quiz_state ADD COLUMN phase INTEGER NOT NULL DEFAULT 1;")?; }
         let wconn = Connection::open(path)?;
         wconn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         let (tx, rx) = mpsc::sync_channel::<WriteOp>(65_536);
@@ -336,8 +340,8 @@ impl Store {
 
     // Quiz-Raster: Fragen und Antworten nur hier, nie im Yjs-Dokument
     pub fn quiz_state(&self, pad_id: &str) -> Result<QuizState> {
-        Ok(self.c().query_row("SELECT title, current, revealed FROM quiz_state WHERE pad_id=?1", params![pad_id],
-            |r| Ok(QuizState { title: r.get(0)?, current: r.get(1)?, revealed: r.get(2)? })).optional()?.unwrap_or_default())
+        Ok(self.c().query_row("SELECT title, current, revealed, phase FROM quiz_state WHERE pad_id=?1", params![pad_id],
+            |r| Ok(QuizState { title: r.get(0)?, current: r.get(1)?, revealed: r.get(2)?, phase: r.get(3)? })).optional()?.unwrap_or_default())
     }
     pub fn quiz_fields(&self, pad_id: &str) -> Result<Vec<QuizField>> {
         Ok(self.c().prepare("SELECT id, cat, points, question, answer FROM quiz_fields WHERE pad_id=?1 ORDER BY id")?
@@ -360,7 +364,7 @@ impl Store {
         for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log", "quiz_teams", "quiz_fields"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
         for f in fields { tx.execute("INSERT INTO quiz_fields (pad_id, id, cat, points, question, answer) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, f.id, f.cat, f.points, f.question, f.answer])?; }
         for (i, t) in teams.iter().enumerate() { tx.execute("INSERT INTO quiz_teams (pad_id, id, name) VALUES (?1, ?2, ?3)", params![pad_id, i as i64 + 1, t])?; }
-        tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed) VALUES (?1, ?2, NULL, 0) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0", params![pad_id, title])?;
+        tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed, phase) VALUES (?1, ?2, NULL, 0, 0) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0, phase=0", params![pad_id, title])?;
         tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
         tx.commit()?;
         Ok(())
@@ -393,6 +397,21 @@ impl Store {
         Ok(true)
     }
     /// Letzte Wertung zurücknehmen. false: es gab keine.
+    /// Spielphase setzen; beim Beenden schließt eine offene Frage.
+    pub fn quiz_set_phase(&self, pad_id: &str, phase: i64) -> Result<()> {
+        self.c().execute("INSERT INTO quiz_state (pad_id, phase) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET phase=?2, current=CASE WHEN ?2=1 THEN current ELSE NULL END, revealed=CASE WHEN ?2=1 THEN revealed ELSE 0 END", params![pad_id, phase])?;
+        Ok(())
+    }
+    /// Neues Spiel mit denselben Fragen und Teams: Punkte, gespielte Felder und Buzzer-Drücke weg, zurück in die Vorbereitung.
+    pub fn quiz_new_game(&self, pad_id: &str) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
+        tx.execute("UPDATE quiz_state SET current=NULL, revealed=0, phase=0 WHERE pad_id=?1", params![pad_id])?;
+        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
+        tx.commit()?;
+        Ok(())
+    }
     pub fn quiz_undo(&self, pad_id: &str) -> Result<bool> {
         Ok(self.c().execute("DELETE FROM quiz_log WHERE pad_id=?1 AND seq=(SELECT MAX(seq) FROM quiz_log WHERE pad_id=?1)", params![pad_id])? > 0)
     }

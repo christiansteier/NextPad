@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-10-28
+
+### Added
+
+- Quiz game flow: after saving, the board is locked and phones pick their team (switching allowed). “Spiel starten”
+  unlocks the board and fixes the teams. “Spiel beenden” shows the result at any time, also with open fields.
+  “Neues Spiel” resets points and played fields and keeps questions and teams. “Rückgängig” after ending resumes the
+  game. Quizzes running before the update keep running.
+- Buzzer on the projector: the team that pressed first appears in large type (“gleichauf” when two teams are within
+  50 ms), and a buzzer sound plays at the first press of a question. The sound is generated in the browser, can be
+  switched off in the menu, and plays only after the lead has clicked once on the page (browser rule).
+- Lead tools moved into a “⋯” menu on the right (undo, QR code, full screen, edit questions, buzzer measurement, sound),
+  so the top stays free for the game.
+
 ## [0.13.1] - 2026-10-28
 
 ### Changed

@@ -15,6 +15,7 @@ const url = lead.url(); const id = url.split('/p/')[1]
 check('neues Quiz öffnet Einrichtung für die Leitung', /\/p\/[A-Za-z0-9]{16}$/.test(url) && await lead.isVisible('#lead-tools'))
 await lead.fill('#in-title', 'Probe-Quiz'); await lead.fill('#in-teams', 'Rot, Blau'); await lead.fill('#in-table', table)
 await lead.click('#q-save'); await lead.waitForSelector('.quiz-cell')
+await lead.click('#q-start'); await lead.waitForSelector('.quiz-cell:not(:disabled)')
 check('Raster mit 3 Feldern und 2 Kategorien', await lead.locator('.quiz-cell').count() === 3 && await lead.locator('.quiz-cat').count() === 2)
 
 const view = await (await b.newContext({ viewport: { width: 400, height: 800 } })).newPage()
@@ -71,14 +72,14 @@ check('Export ohne Sitzung abgelehnt oder ohne Antworten', !exp.includes(ANTWORT
 
 await lead.reload(); await lead.waitForSelector('.quiz-cell')
 check('Stand übersteht Neuladen', await lead.locator('.quiz-cell.is-played').count() === 1 && (await lead.textContent('.quiz-score:nth-child(2) strong')) === '-100')
-await lead.click('#q-edit'); await lead.fill('#in-table', '| a | b |')
+await lead.click('#q-menu > summary'); await lead.click('#q-edit'); await lead.fill('#in-table', '| a | b |')
 lead.once('dialog', d => d.accept()); await lead.click('#q-save')
 await lead.waitForSelector('#setup-error:not([hidden])')
 check('falsche Tabelle: Fehlermeldung, Stand bleibt', (await lead.textContent('#setup-error')).includes('vier Spalten') && await lead.locator('.quiz-cell.is-played').count() === 1)
 check('Live-Kanal geöffnet', sse.length > 0)
 
 // Gespielte Felder gesperrt, auch serverseitig
-await lead.click('#q-edit')
+await lead.click('#q-menu > summary'); await lead.click('#q-edit')
 check('gespieltes Feld ist gesperrt', await lead.locator('.quiz-cell.is-played').first().isDisabled())
 const played = await lead.evaluate(async u => { const d = await (await fetch(u + '/quiz')).json(); return d.board.find(f => f.played).id }, url)
 const reopen = await lead.evaluate(async ([u, f]) => (await fetch(u + '/quiz/feld', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: f }) })).status, [url, played])
@@ -86,10 +87,15 @@ check('gespielte Frage lässt sich nicht wieder öffnen (409)', reopen === 409, 
 
 // Während einer Frage nur Aufdecken, Wertung, Vollbild
 await lead.click('.quiz-cell >> text=100 >> nth=0'); await lead.waitForSelector('#question:not([hidden])')
-check('während der Frage: Rückgängig, QR und Bearbeiten ausgeblendet', await lead.isHidden('#q-undo') && await lead.isHidden('#q-qr') && await lead.isHidden('#q-edit') && await lead.isVisible('#q-full'))
+await lead.click('#q-menu > summary')
+check('während der Frage: im Menü nur Vollbild und Ton, kein Rückgängig, QR, Bearbeiten', await lead.isHidden('#q-undo') && await lead.isHidden('#q-qr') && await lead.isHidden('#q-edit') && await lead.isVisible('#q-full') && await lead.isVisible('#q-ton'))
+await lead.click('h1')
+check('Klick daneben schließt das Menü', !(await lead.evaluate(() => document.getElementById('q-menu').open)))
 await lead.click('.quiz-team >> nth=0 >> button.plus'); await lead.waitForSelector('#board:not([hidden])')
 check('geänderter Punktestand wird hervorgehoben', await lead.locator('.quiz-score.is-changed').count() === 1)
+await lead.click('#q-menu > summary')
 check('nach der Frage: Werkzeuge wieder da', await lead.isVisible('#q-undo'))
+await lead.click('#q-menu > summary')
 
 // Letzte Frage: niemand → Abschluss
 await lead.click('.quiz-cell:not(:disabled)'); await lead.waitForSelector('#question:not([hidden])')
