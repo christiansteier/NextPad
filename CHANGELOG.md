@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-10-28
+
+### Changed
+
+- Quiz board: tiles stand out from the background (white with a black frame and edge) and react to mouse and keyboard
+  focus: they invert, lift slightly and get a red edge. No movement with reduced motion.
+
 ## [0.11.0] - 2026-10-28
 
 ### Added
