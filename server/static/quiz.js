@@ -9,6 +9,118 @@
   let busy = false
   let lastScores = {}
   const changedAt = {}
+  // ---- Buzzer (Mitsehende): Team wählen, Uhr laufend mit dem Server abgleichen, drücken ----
+  // Gewertet wird die Druckzeit in Serverzeit, nicht der Eingang; die Reihenfolge rechnet der Server.
+  const now = () => performance.timeOrigin + performance.now()
+  const store = { get: k => { try { return sessionStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { sessionStorage.setItem(k, v) } catch {} } }
+  const teamKey = `nextpad-buzzer-${cfg.urlId}`
+  const dev = store.get('nextpad-geraet') || (() => {
+    const a = new Uint8Array(12); crypto.getRandomValues(a)
+    const d = [...a].map(b => b.toString(36).padStart(2, '0')).join('').slice(0, 20)
+    store.set('nextpad-geraet', d); return d
+  })()
+  let myTeam = Number(store.get(teamKey)) || 0
+  const recent = [] // die letzten drei Abgleiche; der mit der kürzesten Laufzeit gilt
+  let syncing = false, lastQ = null, buzzTimer = 0
+  const pressed = new Set()
+  const bestSync = () => recent.reduce((a, b) => (!a || b.rtt < a.rtt ? b : a), null)
+  async function serie() {
+    const s = []
+    for (let i = 0; i < 5; i++) {
+      const t0 = now()
+      const j = await (await fetch(`${base}/p/${encodeURIComponent(cfg.urlId)}/messung/zeit`, { cache: 'no-store' })).json()
+      const t1 = now()
+      s.push({ rtt: t1 - t0, off: j.t - (t0 + t1) / 2 })
+    }
+    s.sort((a, b) => a.rtt - b.rtt)
+    recent.push(s[0]); if (recent.length > 3) recent.shift()
+  }
+  async function syncLoop() {
+    if (syncing) return
+    syncing = true
+    while (myTeam) {
+      const first = !recent.length
+      try { await serie() } catch {}
+      if (first && data) render()
+      await new Promise(r => setTimeout(r, 3000))
+    }
+    syncing = false
+  }
+  async function wachHalten() { try { await navigator.wakeLock?.request('screen') } catch {} }
+  document.addEventListener('visibilitychange', () => { if (myTeam && document.visibilityState === 'visible') wachHalten() })
+  function chooseTeam(id) {
+    myTeam = id; store.set(teamKey, String(id))
+    if (id) { wachHalten(); syncLoop() }
+    render()
+  }
+  function press() {
+    const q = data?.current
+    if (!q || q.revealed || !myTeam || pressed.has(q.id)) return
+    const t = now()
+    const b = bestSync()
+    if (!b) return
+    pressed.add(q.id)
+    $('buzz-info').textContent = 'Gedrückt.'
+    renderBuzz()
+    post('/buzzer', { dev, team: myTeam, field: q.id, t, off: b.off, rtt: b.rtt })
+      .then(r => { if (!r.neu) $('buzz-info').textContent = 'Schon gedrückt.' })
+      .catch(e => { $('buzz-info').textContent = `Nicht angekommen: ${e.message}` })
+  }
+  // pointerdown statt click: der Druck zählt beim Antippen, nicht beim Loslassen; click bleibt für die Tastatur
+  $('buzz-btn').addEventListener('pointerdown', e => { e.preventDefault(); press() })
+  $('buzz-btn').addEventListener('click', press)
+
+  function renderBuzzWahl() {
+    const w = $('buzz-wahl')
+    if (data.lead || !data.teams.length) { w.hidden = true; return }
+    if (myTeam && !data.teams.some(t => t.id === myTeam)) { myTeam = 0; store.set(teamKey, '') }
+    w.hidden = false; w.innerHTML = ''
+    const l = document.createElement('p'); l.className = 'quiz-buzz-label'
+    l.textContent = myTeam ? 'Buzzer für' : 'Für den Buzzer dein Team wählen:'
+    w.append(l)
+    data.teams.forEach(t => {
+      if (myTeam && t.id !== myTeam) return
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-secondary'; b.textContent = t.name
+      b.setAttribute('aria-pressed', t.id === myTeam ? 'true' : 'false')
+      b.addEventListener('click', () => chooseTeam(t.id)); w.append(b)
+    })
+    if (myTeam) {
+      const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = 'Team wechseln'
+      c.addEventListener('click', () => chooseTeam(0)); w.append(c)
+    }
+  }
+
+  function renderBuzz() {
+    const q = data.current
+    if ((q?.id ?? null) !== lastQ) { pressed.clear(); lastQ = q?.id ?? null; $('buzz-info').textContent = '' }
+    const btnB = $('buzz-btn')
+    const can = !data.lead && myTeam && q && !q.revealed && !pressed.has(q.id)
+    btnB.hidden = !can
+    if (can) {
+      const ready = !!bestSync()
+      btnB.disabled = !ready
+      btnB.textContent = ready ? 'Buzzer' : 'Verbinde …'
+      btnB.setAttribute('aria-label', `Buzzer für ${data.teams.find(t => t.id === myTeam)?.name || ''}`)
+    }
+    const list = $('buzz-reihe'); list.innerHTML = ''
+    const z = data.buzz
+    list.hidden = !(q && z && z.reihe.length)
+    $('buzz-kopf').hidden = list.hidden
+    if (list.hidden) return
+    $('buzz-kopf').textContent = z.fertig ? 'Buzzer' : 'Buzzer: Reihenfolge wird ermittelt …'
+    z.reihe.forEach((r, i) => {
+      const li = document.createElement('li')
+      if (i === 0 && z.fertig && !r.spaet) li.className = 'is-first'
+      const zus = [r.abstand ? `+${Math.round(r.abstand)} ms` : '', r.gleichauf ? 'gleichauf' : '', r.spaet ? 'zu spät' : '', r.unsicher ? 'Zeit unsicher' : ''].filter(Boolean).join(', ')
+      li.append(Object.assign(document.createElement('strong'), { textContent: r.name }))
+      if (zus) li.append(Object.assign(document.createElement('span'), { textContent: ` ${zus}` }))
+      list.append(li)
+    })
+    // während des Sammelfensters noch einmal nachsehen, dann steht die Reihenfolge
+    clearTimeout(buzzTimer)
+    if (!z.fertig) buzzTimer = setTimeout(load, 600)
+  }
+
   const finished = () => data.board.length > 0 && !data.current && data.board.every(f => f.played)
 
   async function post(path, body) {
@@ -72,6 +184,8 @@
     data.teams.forEach(t => {
       const g = document.createElement('div'); g.className = 'quiz-team'
       const n = document.createElement('span'); n.className = 'quiz-team-name'; n.textContent = t.name
+      const first = data.buzz?.fertig && data.buzz.reihe[0] && !data.buzz.reihe[0].spaet && data.buzz.reihe[0].team === t.id
+      if (first) { g.classList.add('is-first'); n.textContent = `1. ${t.name}` }
       g.append(n, btn(`+${q.points}`, 'btn btn-secondary plus', () => post('/wertung', { field: q.id, team: t.id, plus: true })),
         btn(`−${q.points}`, 'btn btn-secondary minus', () => post('/wertung', { field: q.id, team: t.id, plus: false })))
       g.querySelector('.plus').setAttribute('aria-label', `${t.name} plus ${q.points}`)
@@ -144,7 +258,7 @@
     const empty = $('empty')
     empty.hidden = data.board.length > 0 || data.lead
     empty.textContent = 'Die Leitung richtet das Quiz gerade ein.'
-    renderBoard(); renderQuestion(); renderEnde(); renderScores()
+    renderBuzzWahl(); renderBoard(); renderQuestion(); renderBuzz(); renderEnde(); renderScores()
   }
 
   async function load() {

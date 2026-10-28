@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT N
 CREATE TABLE IF NOT EXISTS quiz_fields (pad_id TEXT NOT NULL, id INTEGER NOT NULL, cat TEXT NOT NULL, points INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_teams (pad_id TEXT NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_log (pad_id TEXT NOT NULL, seq INTEGER NOT NULL, field INTEGER NOT NULL, team INTEGER, delta INTEGER NOT NULL, PRIMARY KEY (pad_id, seq));
+CREATE TABLE IF NOT EXISTS quiz_buzz (pad_id TEXT NOT NULL, field INTEGER NOT NULL, dev TEXT NOT NULL, team INTEGER NOT NULL, t_press REAL NOT NULL, ts_ein REAL NOT NULL, flagged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, field, dev));
+CREATE TABLE IF NOT EXISTS quiz_buzz_open (pad_id TEXT PRIMARY KEY, field INTEGER NOT NULL, ts REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS messung_geraet (pad_id TEXT NOT NULL, dev TEXT NOT NULL, nr INTEGER NOT NULL, art TEXT NOT NULL, PRIMARY KEY (pad_id, dev));
 CREATE TABLE IF NOT EXISTS messung_probe (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, ts REAL NOT NULL, rtt REAL NOT NULL, rtt_med REAL NOT NULL, off REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS messung_probe_pad ON messung_probe (pad_id);
@@ -256,7 +258,7 @@ impl Store {
         c.execute("DELETE FROM idea_votes WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM ideas WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM idea_prompts WHERE pad_id=?1", params![id])?;
-        for t in ["quiz_log", "quiz_teams", "quiz_fields", "quiz_state"] { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
+        for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log", "quiz_teams", "quiz_fields", "quiz_state"] { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
         for t in MESS_TABELLEN { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
         c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
@@ -351,7 +353,7 @@ impl Store {
     pub fn quiz_replace(&self, pad_id: &str, title: &str, fields: &[QuizField], teams: &[String]) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        for t in ["quiz_log", "quiz_teams", "quiz_fields"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
+        for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log", "quiz_teams", "quiz_fields"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
         for f in fields { tx.execute("INSERT INTO quiz_fields (pad_id, id, cat, points, question, answer) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, f.id, f.cat, f.points, f.question, f.answer])?; }
         for (i, t) in teams.iter().enumerate() { tx.execute("INSERT INTO quiz_teams (pad_id, id, name) VALUES (?1, ?2, ?3)", params![pad_id, i as i64 + 1, t])?; }
         tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed) VALUES (?1, ?2, NULL, 0) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0", params![pad_id, title])?;
@@ -780,3 +782,37 @@ impl Store {
 }
 
 const MESS_TABELLEN: [&str; 4] = ["messung_marke", "messung_runde", "messung_probe", "messung_geraet"];
+
+/// Ein Buzzer-Druck: `t_press` ist die Druckzeit in Serverzeit (nach Uhrabgleich), `ts_ein` der Eingang beim Server.
+/// `flagged`: Zeit war unplausibel, ersetzt durch Eingang minus halbe Laufzeit.
+#[derive(Debug, Clone, Default)]
+pub struct Buzz { pub team: i64, pub t_press: f64, pub ts_ein: f64, pub flagged: bool }
+
+impl Store {
+    /// Neue Buzzer-Runde für ein Feld: alte Drücke dieses Felds weg, Öffnungszeit merken.
+    pub fn quiz_buzz_start(&self, pad_id: &str, field: i64, ts: f64) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM quiz_buzz WHERE pad_id=?1 AND field=?2", params![pad_id, field])?;
+        tx.execute("INSERT INTO quiz_buzz_open (pad_id, field, ts) VALUES (?1, ?2, ?3) ON CONFLICT(pad_id) DO UPDATE SET field=?2, ts=?3", params![pad_id, field, ts])?;
+        tx.commit()?;
+        Ok(())
+    }
+    /// Feld und Öffnungszeit der laufenden Buzzer-Runde.
+    pub fn quiz_buzz_open(&self, pad_id: &str) -> Result<Option<(i64, f64)>> {
+        Ok(self.c().query_row("SELECT field, ts FROM quiz_buzz_open WHERE pad_id=?1", params![pad_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?)
+    }
+    /// Ein Druck je Gerät und Feld; false, wenn das Gerät schon gedrückt hat oder das Feld voll ist.
+    pub fn quiz_buzz_add(&self, pad_id: &str, field: i64, dev: &str, b: &Buzz, max: i64) -> Result<bool> {
+        let c = self.c();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM quiz_buzz WHERE pad_id=?1 AND field=?2", params![pad_id, field], |r| r.get(0))?;
+        if n >= max { return Ok(false); }
+        Ok(c.execute("INSERT OR IGNORE INTO quiz_buzz (pad_id, field, dev, team, t_press, ts_ein, flagged) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![pad_id, field, dev, b.team, b.t_press, b.ts_ein, b.flagged])? > 0)
+    }
+    pub fn quiz_buzzes(&self, pad_id: &str, field: i64) -> Result<Vec<Buzz>> {
+        Ok(self.c().prepare("SELECT team, t_press, ts_ein, flagged FROM quiz_buzz WHERE pad_id=?1 AND field=?2 ORDER BY ts_ein")?
+            .query_map(params![pad_id, field], |r| Ok(Buzz { team: r.get(0)?, t_press: r.get(1)?, ts_ein: r.get(2)?, flagged: r.get(3)? }))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+}

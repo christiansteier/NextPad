@@ -1,7 +1,7 @@
 //! Quiz-Raster: Raster aus Kategorien und Punktwerten, die Leitung steuert am Beamer, Teams sammeln Punkte.
 //! Fragen und Antworten liegen nur in SQLite, nie im Yjs-Dokument. Eine Antwort verlässt den Server nur zur Leitung
 //! oder nachdem die Leitung sie aufgedeckt hat. Wer nicht leitet, sieht Raster, offene Frage und Punktestand, nur lesend.
-use crate::{store::QuizField, web, AppState};
+use crate::{store::{Buzz, QuizField}, web, AppState};
 use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
@@ -20,6 +20,11 @@ const MAX_CAT: usize = 60;
 const MAX_TEAM: usize = 40;
 const MAX_QUESTION: usize = 500;
 const MAX_ANSWER: usize = 300;
+/// Buzzer: nach dem ersten Eingang so lange sammeln, dann steht die Reihenfolge.
+const BUZZ_FENSTER_MS: f64 = 500.0;
+/// Unter diesem Abstand gelten zwei Teams als gleichauf (Touchscreens streuen selbst so viel).
+const BUZZ_GLEICH_MS: f64 = 50.0;
+const MAX_BUZZ: i64 = 300;
 
 pub const QUIZ_JS: &str = include_str!("../static/quiz.js");
 pub const QUIZ_CSS: &str = include_str!("../static/quiz.css");
@@ -99,6 +104,48 @@ fn played(log: &[(i64, Option<i64>, i64)]) -> HashSet<i64> {
     log.iter().filter(|(_, team, delta)| team.is_none() || *delta > 0).map(|(f, _, _)| *f).collect()
 }
 
+fn jetzt() -> f64 { std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0) }
+
+/// Reihenfolge der Teams: je Team zählt der früheste Druck nach abgeglichener Druckzeit, aber nur Drücke, die bis
+/// `BUZZ_FENSTER_MS` nach dem ersten Eingang angekommen sind. Spätere stehen danach, nach Eingang, als „spät“.
+/// `fertig`: das Fenster ist vorbei, die Reihenfolge ändert sich nicht mehr.
+pub fn buzz_order(buzzes: &[Buzz], teams: &[(i64, String)], now: f64) -> serde_json::Value {
+    let Some(first) = buzzes.iter().map(|b| b.ts_ein).min_by(|a, b| a.total_cmp(b)) else { return serde_json::Value::Null };
+    let window = first + BUZZ_FENSTER_MS;
+    let name = |t: i64| teams.iter().find(|(id, _)| *id == t).map(|(_, n)| n.clone()).unwrap_or_default();
+    let mut best: Vec<(i64, f64, bool)> = Vec::new();
+    for b in buzzes.iter().filter(|b| b.ts_ein <= window) {
+        match best.iter_mut().find(|x| x.0 == b.team) {
+            Some(x) if b.t_press < x.1 => { x.1 = b.t_press; x.2 = b.flagged; }
+            Some(_) => {}
+            None => best.push((b.team, b.t_press, b.flagged)),
+        }
+    }
+    best.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let t0 = best.first().map(|x| x.1).unwrap_or(0.0);
+    let mut out = Vec::new();
+    let mut prev = t0;
+    for (i, (team, t, flagged)) in best.iter().enumerate() {
+        out.push(json!({ "team": team, "name": name(*team), "abstand": ((t - t0) * 10.0).round() / 10.0, "gleichauf": i > 0 && t - prev < BUZZ_GLEICH_MS, "unsicher": flagged, "spaet": false }));
+        prev = *t;
+    }
+    let mut late: Vec<&Buzz> = buzzes.iter().filter(|b| b.ts_ein > window && !best.iter().any(|x| x.0 == b.team)).collect();
+    late.sort_by(|a, b| a.ts_ein.total_cmp(&b.ts_ein));
+    for b in late {
+        if out.iter().any(|o| o["team"] == json!(b.team)) { continue; }
+        out.push(json!({ "team": b.team, "name": name(b.team), "abstand": serde_json::Value::Null, "gleichauf": false, "unsicher": b.flagged, "spaet": true }));
+    }
+    json!({ "fertig": now >= window, "reihe": out })
+}
+
+/// Druckzeit in Serverzeit aus Gerätezeit und Uhrabgleich; unplausibel (nach dem Eingang, vor dem Öffnen oder mehr
+/// als Laufzeit plus 1,5 s vor dem Eingang) wird durch Eingang minus halbe Laufzeit ersetzt und markiert.
+pub fn buzz_time(t: f64, off: f64, rtt: f64, ein: f64, open: f64) -> (f64, bool) {
+    let p = t + off;
+    let ok = rtt >= 0.0 && rtt <= 3000.0 && p <= ein + 20.0 && p >= open - 20.0 && ein - p <= rtt + 1500.0;
+    if ok { (p, false) } else { (ein - rtt.clamp(0.0, 3000.0) / 2.0, true) }
+}
+
 /// Stand für diese Person. Antworten nur für die Leitung oder nach dem Aufdecken.
 pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match viewer(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
@@ -120,7 +167,11 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
         if v.lead || st.revealed { q["answer"] = json!(f.answer); }
         q
     });
-    let mut out = json!({ "title": st.title, "lead": v.lead, "teams": teams_json, "board": board, "current": current });
+    let buzz = match (st.current, state.store.quiz_buzz_open(&v.pad)) {
+        (Some(c), Ok(Some((f, _)))) if c == f => state.store.quiz_buzzes(&v.pad, c).map(|b| buzz_order(&b, &teams, jetzt())).unwrap_or_default(),
+        _ => serde_json::Value::Null,
+    };
+    let mut out = json!({ "title": st.title, "lead": v.lead, "teams": teams_json, "board": board, "current": current, "buzz": buzz });
     if v.lead {
         out["canUndo"] = json!(!log.is_empty());
         out["setup"] = json!({ "title": st.title, "teams": teams.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", "), "table": if fields.is_empty() { String::new() } else { table_text(&fields) } });
@@ -156,8 +207,16 @@ pub async fn open(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
             Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
+    let before = state.store.quiz_state(&v.pad).ok().and_then(|s| s.current);
     match state.store.quiz_open(&v.pad, field, revealed) {
-        Ok(true) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(true) => {
+            // neu geöffnete Frage: neue Buzzer-Runde
+            if let Some(f) = field.filter(|f| !revealed && before != Some(*f)) {
+                if let Err(e) = state.store.quiz_buzz_start(&v.pad, f, jetzt()) { tracing::warn!("Buzzer starten: {e}"); }
+            }
+            state.ideas.notify(&v.pad);
+            Json(json!({ "ok": true })).into_response()
+        }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => { tracing::warn!("Quiz öffnen: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -184,6 +243,32 @@ pub async fn undo(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     match state.store.quiz_undo(&v.pad) {
         Ok(_) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Err(e) => { tracing::warn!("Quiz rückgängig: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+    }
+}
+
+/// Buzzer-Druck von einem Handy: `dev` (Kennung aus dem Browser), `team`, `field`, Druckzeit `t` in Gerätezeit, dazu
+/// Versatz `off` und Laufzeit `rtt` aus dem letzten Uhrabgleich. Nur solange die Frage offen und nicht aufgedeckt ist.
+pub async fn buzzer(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
+    let ein = jetzt();
+    if !web::origin_ok(&state, &headers) || headers.get(header::ORIGIN).is_none() { return StatusCode::FORBIDDEN.into_response(); }
+    let v = match viewer(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
+    let num = |k: &str, max: f64| body.get(k).and_then(|x| x.as_f64()).filter(|x| x.is_finite() && x.abs() <= max);
+    let dev = body.get("dev").and_then(|x| x.as_str()).unwrap_or("");
+    let (Some(team), Some(field), Some(t), Some(off), Some(rtt)) = (body.get("team").and_then(|x| x.as_i64()), body.get("field").and_then(|x| x.as_i64()), num("t", 1e14), num("off", 1e13), num("rtt", 30_000.0))
+        else { return StatusCode::BAD_REQUEST.into_response() };
+    if !(8..=32).contains(&dev.len()) || !dev.chars().all(|c| c.is_ascii_alphanumeric()) { return StatusCode::BAD_REQUEST.into_response(); }
+    let (Ok(st), Ok(teams), Ok(open)) = (state.store.quiz_state(&v.pad), state.store.quiz_teams(&v.pad), state.store.quiz_buzz_open(&v.pad))
+        else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
+    if !teams.iter().any(|(tid, _)| *tid == team) { return (StatusCode::BAD_REQUEST, "Dieses Team gibt es nicht.").into_response(); }
+    let Some((open_field, open_ts)) = open.filter(|(f, _)| st.current == Some(*f) && *f == field && !st.revealed)
+        else { return (StatusCode::CONFLICT, "Der Buzzer ist gerade zu.").into_response() };
+    let (t_press, flagged) = buzz_time(t, off, rtt, ein, open_ts);
+    match state.store.quiz_buzz_add(&v.pad, open_field, dev, &Buzz { team, t_press, ts_ein: ein, flagged }, MAX_BUZZ) {
+        Ok(added) => {
+            if added { state.ideas.notify(&v.pad); }
+            Json(json!({ "ok": true, "neu": added })).into_response()
+        }
+        Err(e) => { tracing::warn!("Buzzer: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
 
@@ -255,9 +340,13 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <p><button type="button" class="btn btn-primary" id="q-save">Speichern und neu beginnen</button> <span class="hint">Punkte beginnen wieder bei null.</span></p>
 </section>
 <aside class="panel quiz-qr" id="qr-box" hidden>{join}</aside>
+<section class="quiz-buzz-wahl" id="buzz-wahl" hidden aria-label="Buzzer"></section>
 <section class="quiz-board" id="board" aria-label="Raster"></section>
 <section class="quiz-question" id="question" hidden aria-live="polite">
 <p class="quiz-meta" id="q-meta"></p><p class="quiz-q" id="q-text"></p><p class="quiz-a" id="q-answer" hidden></p>
+<button type="button" class="quiz-buzzer" id="buzz-btn" hidden>Buzzer</button>
+<p class="hint" id="buzz-info" aria-live="polite"></p>
+<p class="quiz-buzz-kopf" id="buzz-kopf" hidden></p><ol class="quiz-buzz-reihe" id="buzz-reihe" hidden aria-live="polite" aria-labelledby="buzz-kopf"></ol>
 <div class="quiz-actions" id="q-actions"></div>
 </section>
 <section class="quiz-ende" id="ende" hidden aria-live="polite" aria-labelledby="ende-h"></section>
@@ -305,4 +394,31 @@ mod tests {
         let p = played(&[(1, Some(1), -100), (2, Some(2), 200), (3, None, 0)]);
         assert!(!p.contains(&1) && p.contains(&2) && p.contains(&3));
     }
+    #[test]
+    fn buzzer_reihenfolge_nach_druckzeit_im_fenster() {
+        let teams = vec![(1, "Rot".to_string()), (2, "Blau".to_string()), (3, "Grün".to_string())];
+        let b = |team, t_press, ts_ein| Buzz { team, t_press, ts_ein, flagged: false };
+        // Blau kommt zuerst an, Rot hat früher gedrückt (langsames Netz); Grün 30 ms nach Rot: gleichauf; Rot drückt zweimal
+        let v = buzz_order(&[b(2, 1060.0, 1080.0), b(1, 1000.0, 1300.0), b(3, 1030.0, 1200.0), b(1, 1100.0, 1350.0)], &teams, 2000.0);
+        let r = v["reihe"].as_array().unwrap();
+        assert_eq!(r.iter().map(|x| x["name"].as_str().unwrap()).collect::<Vec<_>>(), ["Rot", "Grün", "Blau"]);
+        assert_eq!(r[1]["gleichauf"], json!(true));
+        assert_eq!(r[2]["gleichauf"], json!(true));
+        assert_eq!(r[2]["abstand"], json!(60.0));
+        assert_eq!(v["fertig"], json!(true));
+        // nach dem Fenster angekommen: hinten, als spät
+        let v = buzz_order(&[b(2, 1060.0, 1080.0), b(1, 900.0, 1700.0)], &teams, 1200.0);
+        assert_eq!(v["reihe"][0]["name"], json!("Blau"));
+        assert_eq!(v["reihe"][1]["spaet"], json!(true));
+        assert_eq!(v["fertig"], json!(false));
+    }
+    #[test]
+    fn buzzer_zeit_plausibel_oder_ersetzt() {
+        assert_eq!(buzz_time(500.0, 600.0, 40.0, 1150.0, 900.0), (1100.0, false));
+        // Druck angeblich vor dem Öffnen der Frage
+        assert_eq!(buzz_time(0.0, 600.0, 40.0, 1150.0, 900.0), (1130.0, true));
+        // Druck angeblich nach dem Eingang
+        assert!(buzz_time(1000.0, 600.0, 40.0, 1150.0, 900.0).1);
+    }
+
 }

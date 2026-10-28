@@ -117,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/p/{id}/quiz/feld", axum::routing::post(quiz::open))
         .route("/p/{id}/quiz/wertung", axum::routing::post(quiz::score))
         .route("/p/{id}/quiz/rueckgaengig", axum::routing::post(quiz::undo))
+        .route("/p/{id}/quiz/buzzer", axum::routing::post(quiz::buzzer))
         .route("/static/quiz.js", get(quiz::static_js))
         .route("/static/quiz.css", get(quiz::static_css))
         .route("/p/{id}/messung", get(messung::page))
