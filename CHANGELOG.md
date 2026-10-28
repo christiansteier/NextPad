@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-10-28
+
+### Fixed
+
+- Moodle activities: the QR code on the quiz board, the buzzer measurement and the idea wall was empty. It now leads to
+  the activity in Moodle (`…/mod/lti/view.php?l=<id>`), remembered at each launch from Moodle; scanning means signing in
+  to Moodle and landing in the activity. Without a known address the QR button is hidden.
+
 ## [0.12.1] - 2026-10-28
 
 ### Added
