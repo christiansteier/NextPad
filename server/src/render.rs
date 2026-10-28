@@ -69,6 +69,22 @@ fn attr_string(out: Option<Out>) -> Option<String> {
     }
 }
 
+/// Einrückstufe eines Absatzes oder einer Überschrift (0 bis 8), vom Editor als Attribut `indent` gesetzt.
+fn indent_level<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> usize {
+    attr_string(el.get_attribute(txn, "indent")).and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(8)
+}
+
+/// Stil-Attribut für Ausrichtung und Einrückung, leer ohne beides.
+fn block_style<T: ReadTxn>(txn: &T, el: &XmlElementRef) -> String {
+    let mut st = String::new();
+    if let Some(a) = attr_string(el.get_attribute(txn, "textAlign")).as_deref().and_then(safe_align) {
+        if a != "left" { st.push_str(&format!("text-align:{a};")); }
+    }
+    let n = indent_level(txn, el);
+    if n > 0 { st.push_str(&format!("padding-left:{}em;", n * 2)); }
+    if st.is_empty() { st } else { format!(" style=\"{}\"", st.trim_end_matches(';')) }
+}
+
 fn mark_attr(attrs: &Attrs, mark: &str, key: &str) -> Option<String> {
     match attrs.get(mark) {
         Some(Any::Map(m)) => match m.get(key) {
@@ -142,10 +158,7 @@ fn element_html<T: ReadTxn>(txn: &T, el: &XmlElementRef, out: &mut String, depth
     };
     match tag.as_str() {
         "paragraph" => {
-            match attr_string(el.get_attribute(txn, "textAlign")).as_deref().and_then(safe_align) {
-                Some(a) if a != "left" => out.push_str(&format!("<p style=\"text-align:{a}\">")),
-                _ => out.push_str("<p>"),
-            }
+            out.push_str(&format!("<p{}>", block_style(txn, el)));
             inner(txn, out, cx);
             out.push_str("</p>\n");
         }
@@ -154,9 +167,9 @@ fn element_html<T: ReadTxn>(txn: &T, el: &XmlElementRef, out: &mut String, depth
             // Sprungmarke in derselben Zählung wie bausteine::headings: ohne leere und ohne solche in Tabellen
             if cx.in_table == 0 && !crate::bausteine::plain_text(txn, el).trim().is_empty() {
                 cx.next_heading += 1;
-                out.push_str(&format!("<h{level} id=\"abschnitt-{}\">", cx.next_heading));
+                out.push_str(&format!("<h{level} id=\"abschnitt-{}\"{}>", cx.next_heading, block_style(txn, el)));
             } else {
-                out.push_str(&format!("<h{level}>"));
+                out.push_str(&format!("<h{level}{}>", block_style(txn, el)));
             }
             inner(txn, out, cx);
             out.push_str(&format!("</h{level}>\n"));
@@ -283,6 +296,7 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
                 "hardBreak" => out.push('\n'),
                 "horizontalRule" => out.push_str("----\n"),
                 _ => {
+                    if tag == "paragraph" || tag == "heading" { out.push_str(&"    ".repeat(indent_level(txn, el))); }
                     for c in el.children(txn) {
                         node_text(txn, &c, out, depth + 1, None);
                     }
@@ -475,11 +489,15 @@ fn inline_typst<T: ReadTxn>(txn: &T, el: &XmlElementRef, depth: usize) -> String
 }
 
 fn aligned<T: ReadTxn>(txn: &T, el: &XmlElementRef, body: String) -> String {
-    match attr_string(el.get_attribute(txn, "textAlign")).as_deref().and_then(safe_align) {
+    let body = match attr_string(el.get_attribute(txn, "textAlign")).as_deref().and_then(safe_align) {
         Some("center") => format!("#align(center)[{body}]"),
         Some("right") => format!("#align(right)[{body}]"),
         Some("justify") => format!("#par(justify: true)[{body}]"),
         _ => body,
+    };
+    match indent_level(txn, el) {
+        0 => body,
+        n => format!("#pad(left: {}em)[{body}]", n * 2),
     }
 }
 
@@ -497,7 +515,12 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
             let level = attr_string(el.get_attribute(txn, "level")).and_then(|l| l.parse::<usize>().ok()).unwrap_or(1).clamp(1, 6);
             let body = inline_typst(txn, el, 0);
             if body.is_empty() { return; }
-            out.push_str(&format!("#heading(level: {level})[{body}]\n\n"));
+            let h = format!("#heading(level: {level})[{body}]");
+            match indent_level(txn, el) {
+                0 => out.push_str(&h),
+                n => out.push_str(&format!("#pad(left: {}em)[{h}]", n * 2)),
+            }
+            out.push_str("\n\n");
         }
         "bulletList" | "orderedList" | "taskList" => {
             let marker = if tag == "orderedList" { "+" } else { "-" };
@@ -997,6 +1020,29 @@ mod tests {
         let typ = to_typst(&txn, &frag);
         assert!(typ.contains("#outline(") && typ.contains("#table(columns: (1fr,) * 2") && typ.contains("table.header("), "{typ}");
         assert!(typ.contains("+2 · −1"), "{typ}");
+    }
+
+    #[test]
+    fn eingerueckte_absaetze_in_den_exporten() {
+        let doc = Doc::new();
+        let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
+        {
+            let mut txn = doc.transact_mut();
+            set_html(&mut txn, &frag, "<h2>Titel</h2><p>Zwei</p><p>Normal</p>");
+            let XmlOut::Element(h) = frag.get(&txn, 0).unwrap() else { panic!() };
+            h.insert_attribute(&mut txn, "indent", Any::from(1.0));
+            let XmlOut::Element(p) = frag.get(&txn, 1).unwrap() else { panic!() };
+            p.insert_attribute(&mut txn, "indent", Any::from(2.0));
+            p.insert_attribute(&mut txn, "textAlign", Any::from("center"));
+        }
+        let txn = doc.transact();
+        let html = to_html(&txn, &frag);
+        assert!(html.contains(r#"<h2 id="abschnitt-1" style="padding-left:2em">"#), "{html}");
+        assert!(html.contains(r#"<p style="text-align:center;padding-left:4em">Zwei</p>"#) && html.contains("<p>Normal</p>"), "{html}");
+        let text = to_text(&txn, &frag);
+        assert!(text.contains("    Titel\n") && text.contains("        Zwei\nNormal"), "{text}");
+        let typ = to_typst(&txn, &frag);
+        assert!(typ.contains("#pad(left: 2em)[#heading(level: 2)[") && typ.contains("#pad(left: 4em)[#align(center)[#\"Zwei\"]]"), "{typ}");
     }
 
     #[test]

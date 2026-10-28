@@ -65,6 +65,66 @@ const AuthorTagging = Extension.create({
   },
 })
 
+// Einrücken von Absätzen und Überschriften (wie Tab in Etherpad); Listen rücken weiter über ihre Verschachtelung ein.
+const MAX_INDENT = 8
+const inList = ed => ed.isActive('listItem') || ed.isActive('taskItem')
+const Indent = Extension.create({
+  name: 'indent',
+  addGlobalAttributes() {
+    return [{
+      types: ['paragraph', 'heading'],
+      attributes: {
+        indent: {
+          // null statt 0, damit nicht jeder Absatz im Dokument ein Attribut mitschleppt
+          default: null,
+          parseHTML: el => Math.min(MAX_INDENT, Math.max(0, parseInt(el.getAttribute('data-indent'), 10) || 0)) || null,
+          renderHTML: a => a.indent ? { 'data-indent': a.indent, style: `padding-left: ${a.indent * 2}em` } : {},
+        },
+      },
+    }]
+  },
+  addCommands() {
+    const step = d => () => ({ tr, state, dispatch }) => {
+      const { from, to } = state.selection
+      let changed = false
+      state.doc.nodesBetween(from, to, (node, pos) => {
+        if (node.type.name !== 'paragraph' && node.type.name !== 'heading') return
+        const n = Math.min(MAX_INDENT, Math.max(0, (node.attrs.indent || 0) + d))
+        if (n === (node.attrs.indent || 0)) return false
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: n || null })
+        changed = true
+        return false
+      })
+      if (changed && dispatch) dispatch(tr)
+      return changed
+    }
+    return { indent: step(1), outdent: step(-1) }
+  },
+  // Einrückung gilt nur auf oberster Ebene: wird aus einem eingerückten Absatz ein Listenpunkt, fällt sie weg
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('nextpad-indent'),
+      appendTransaction(trs, _old, state) {
+        if (!trs.some(t => t.docChanged)) return null
+        let tr = null
+        state.doc.descendants((node, pos, parent) => {
+          if (parent === state.doc) return node.type.name !== 'paragraph' && node.type.name !== 'heading'
+          if (node.attrs.indent) (tr ||= state.tr).setNodeMarkup(pos, undefined, { ...node.attrs, indent: null })
+        })
+        return tr
+      },
+    })]
+  },
+  addKeyboardShortcuts() {
+    // in Listen und Tabellen gelten deren eigene Tab-Tasten
+    const free = ed => !inList(ed) && !ed.isActive('table')
+    return {
+      Tab: ({ editor: ed }) => free(ed) && ed.commands.indent(),
+      'Shift-Tab': ({ editor: ed }) => free(ed) && ed.commands.outdent(),
+    }
+  },
+})
+
 const names = new Map()
 let showColors = true
 
@@ -127,7 +187,7 @@ const editor = new Editor({
   extensions: [
     StarterKit.configure({ undoRedo: false, link: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: { levels: [1, 2, 3, 4] } }),
     TextStyle, Color, FontSize,
-    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }), Indent,
     TaskList, TaskItem.configure({ nested: true }),
     ...tableExtensions, TableOfContents,
     createRating({ ydoc, me: cfg.author.id, readonly: cfg.readonly }),
@@ -168,8 +228,8 @@ if (!cfg.readonly) {
   ibtn(menuLeft, I.ol, 'Nummerierte Liste', () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
   ibtn(menuLeft, I.ul, 'Aufzählung', () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
   ibtn(menuLeft, I.tasks, 'Aufgabenliste zum Abhaken (Markdown: - [ ] Aufgabe)', () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
-  ibtn(menuLeft, I.indent, 'Einrücken', () => editor.chain().sinkListItem('listItem').run())
-  ibtn(menuLeft, I.outdent, 'Ausrücken', () => editor.chain().liftListItem('listItem').run())
+  ibtn(menuLeft, I.indent, 'Einrücken (Tab)', () => inList(editor) ? editor.chain().sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem').run() : editor.chain().focus().indent().run())
+  ibtn(menuLeft, I.outdent, 'Ausrücken (Umschalt+Tab)', () => inList(editor) ? editor.chain().liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem').run() : editor.chain().focus().outdent().run())
   sep(menuLeft)
   ibtn(menuLeft, I.undo, 'Rückgängig (Strg+Z)', () => editor.chain().undo().run())
   ibtn(menuLeft, I.redo, 'Wiederholen (Strg+Y)', () => editor.chain().redo().run())
