@@ -404,6 +404,8 @@ impl Store {
         let tx = c.transaction()?;
         let now = ids::now_ms();
         tx.execute("INSERT INTO groups (id, created) VALUES (?1, ?2)", params![group, now])?;
+        // Text-Pads haben keine eigene Art (NULL), wie über die Etherpad-API angelegte
+        let kind = (kind != "pad").then_some(kind);
         tx.execute("INSERT INTO pads (id, group_id, readonly_id, created, last_edited, kind) VALUES (?1, ?2, ?3, ?4, ?4, ?5)", params![pad, group, ids::readonly_id(), now, kind])?;
         tx.execute("INSERT OR REPLACE INTO lti_links (link_key, pad_id) VALUES (?1, ?2)", params![link_key, pad])?;
         tx.commit()?;
