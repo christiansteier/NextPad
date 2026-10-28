@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.3] - 2026-10-28
+
+### Added
+
+- Indenting plain paragraphs and headings, not only list items: Tab and Shift+Tab or the indent and outdent buttons
+  move the paragraph (or all selected paragraphs) by one step, up to eight steps. Lists keep nesting with Tab, tables
+  keep moving between cells. HTML, plain text and PDF exports keep the indentation; Markdown has none.
+
+### Known limitations
+
+- Importing HTML (API `setHTML`, templates) does not read indentation back.
+
 ## [0.12.2] - 2026-10-28
 
 ### Fixed
