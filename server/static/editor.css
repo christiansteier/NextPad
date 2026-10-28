@@ -31,8 +31,13 @@ body { font-family: Quicksand, Cantarell, "Open Sans", "Helvetica Neue", sans-se
 #editor .ProseMirror h2, #timeline .snapshot h2, .print-view h2 { font-size: 1.8em; }
 #editor .ProseMirror h3, #timeline .snapshot h3, .print-view h3 { font-size: 1.5em; }
 #editor .ProseMirror h4, #timeline .snapshot h4, .print-view h4 { font-size: 1.2em; }
-#editor .ProseMirror :is(h1,h2,h3,h4), #timeline .snapshot :is(h1,h2,h3,h4), .print-view :is(h1,h2,h3,h4) { line-height: 1.2; margin: .3em 0 .5em; font-weight: 700; }
+#editor .ProseMirror :is(h1,h2,h3,h4), #timeline .snapshot :is(h1,h2,h3,h4), .print-view :is(h1,h2,h3,h4) { line-height: 1.2; margin: .9em 0 .3em; font-weight: 700; }
+/* Überschrift bindet an den folgenden Text: mehr Luft davor als danach, ganz oben keine. */
+#editor .ProseMirror > :is(h1,h2,h3,h4):first-child, #timeline .snapshot > :is(h1,h2,h3,h4):first-child, .print-view > :is(h1,h2,h3,h4):first-child { margin-top: 0; }
 #editor .ProseMirror ul, #editor .ProseMirror ol { padding-left: 1.4em; margin: 0 0 .35em; }
+/* Listenpunkte ohne Absatzabstand, nur 2 px dazwischen (wie Etherpad und itemsep=2pt in den LaTeX-Vorlagen). */
+#editor .ProseMirror li > p, #timeline .snapshot li > p, .print-view li > p { margin: 0; }
+#editor .ProseMirror li + li, #timeline .snapshot li + li, .print-view li + li { margin-top: 2px; }
 #editor .ProseMirror code { background: var(--light); padding: 0 .25em; border-radius: 2px; }
 #editor.no-colors span.author { background-color: transparent !important; }
 @media (max-width: 1000px) { :root { --gutter: 46px; } #editor .ProseMirror { padding-right: 16px; } }

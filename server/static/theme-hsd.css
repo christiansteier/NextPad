@@ -16,13 +16,10 @@
 .theme-hsd .tsel { font-family: Arial, "Liberation Sans", sans-serif; background-color: #f2f2f2; color: #000; }
 .theme-hsd .separator { background: #d9d9d9; }
 .theme-hsd .toolbar-logo { height: 26px; width: auto; margin: 0 8px 0 6px; display: block; }
-.theme-hsd #editor .ProseMirror { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; line-height: 1.55; color: #000; }
-/* Überschriften: Maße wie Etherpad (2.5/1.8/1.5/1.2 em bei 15 px). HSD Sans nur ab 20 pt (26,7 px) und nur Regular:
-   H1 37,5 px und H2 27 px in HSD Sans, H3 22,5 px und H4 18 px in Arial fett. */
-@font-face { font-family: "HSD Sans"; src: url("../theme/font.ttf") format("truetype"); font-weight: 400; font-style: normal; }
-.theme-hsd #editor .ProseMirror :is(h1,h2,h3,h4), .theme-hsd #timeline .snapshot :is(h1,h2,h3,h4) { color: #000; }
-.theme-hsd #editor .ProseMirror :is(h1,h2), .theme-hsd #timeline .snapshot :is(h1,h2) { font-family: "HSD Sans", Arial, sans-serif; font-weight: 400; letter-spacing: .01em; }
-.theme-hsd #editor .ProseMirror :is(h3,h4), .theme-hsd #timeline .snapshot :is(h3,h4) { font-family: Arial, "Liberation Sans", sans-serif; font-weight: 700; }
+.theme-hsd #editor .ProseMirror, .theme-hsd #timeline .snapshot { font-family: Arial, "Liberation Sans", Helvetica, sans-serif; line-height: 1.4; color: #000; }
+/* Überschriften: Maße wie Etherpad (2.5/1.8/1.5/1.2 em bei 15 px), alle Ebenen in Arial fett wie die HSD-LaTeX-Vorlagen.
+   HSD Sans hat nur Versalien und bleibt der Wortmarke im Kopf der Startseite und Ebene 1 im PDF vorbehalten. */
+.theme-hsd #editor .ProseMirror :is(h1,h2,h3,h4), .theme-hsd #timeline .snapshot :is(h1,h2,h3,h4) { color: #000; font-family: Arial, "Liberation Sans", sans-serif; font-weight: 700; }
 .theme-hsd #editor .ProseMirror > :not(ul):not(ol)::before, .theme-hsd #editor .ProseMirror > ul > li::before, .theme-hsd #editor .ProseMirror > ol > li::before { color: #666; }
 .theme-hsd #editor .ProseMirror a { color: #333; text-decoration: underline; }
 .theme-hsd #statusbar .users { background: var(--tint-blue); color: #000; }
