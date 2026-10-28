@@ -171,7 +171,8 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
         (Some(c), Ok(Some((f, _)))) if c == f => state.store.quiz_buzzes(&v.pad, c).map(|b| buzz_order(&b, &teams, jetzt())).unwrap_or_default(),
         _ => serde_json::Value::Null,
     };
-    let mut out = json!({ "title": st.title, "lead": v.lead, "teams": teams_json, "board": board, "current": current, "buzz": buzz });
+    let mut out = json!({ "title": st.title, "lead": v.lead, "teams": teams_json, "board": board, "current": current, "buzz": buzz,
+        "messung": !v.lead && crate::messung::leitung_misst(&state, &v.pad) });
     if v.lead {
         out["canUndo"] = json!(!log.is_empty());
         out["setup"] = json!({ "title": st.title, "teams": teams.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", "), "table": if fields.is_empty() { String::new() } else { table_text(&fields) } });
@@ -336,7 +337,8 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <button type="button" class="btn btn-secondary" id="q-full">Vollbild</button>
 <button type="button" class="btn btn-secondary" id="q-edit" aria-controls="setup" aria-expanded="false">Fragen bearbeiten</button>
 <a class="btn btn-secondary" id="q-messung" href="{base}/p/{u}/messung">Buzzer-Messung</a>
-</div></div>
+</div>
+<div class="quiz-tools" id="viewer-tools" hidden><a class="btn btn-primary" id="q-mitmessen" href="{base}/p/{u}/messung">An der Messung teilnehmen</a></div></div>
 <section class="panel quiz-setup" id="setup" hidden aria-labelledby="setup-h">
 <h2 id="setup-h">Fragen und Teams</h2>
 <label class="field-label" for="in-title">Titel</label><input id="in-title" maxlength="{MAX_TITLE}" autocomplete="off">

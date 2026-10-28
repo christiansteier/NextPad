@@ -1,6 +1,8 @@
 // Ideensammlung: Beiträge eintragen, abstimmen, moderieren. Der Server prüft alles, hier wird nur angezeigt.
 (() => {
   const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
+  // aus Moodle gestartet: zurück in den Kurs, auch aus der eingebetteten Ansicht heraus
+  if (cfg.course) { const a = document.createElement('a'); a.href = cfg.course; a.target = '_top'; a.textContent = 'Zurück zum Kurs'; document.querySelector('.site-header nav')?.prepend(a) }
   const base = cfg.basePath || ''
   const pad = encodeURIComponent(cfg.urlId)
   const api = `${base}/p/${pad}/ideen`

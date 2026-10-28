@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS messung_runde (pad_id TEXT NOT NULL, runde INTEGER NO
 CREATE TABLE IF NOT EXISTS messung_marke (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, runde INTEGER NOT NULL, t_empfang REAL, t_druck REAL, ts_ein REAL, off REAL NOT NULL, rtt REAL NOT NULL, PRIMARY KEY (pad_id, nr, runde));
 CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_join (pad_id TEXT PRIMARY KEY, url TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pad_kurs (pad_id TEXT PRIMARY KEY, url TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, author_id));
 "#;
@@ -264,6 +265,7 @@ impl Store {
         c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM pad_join WHERE pad_id=?1", params![id])?;
+        c.execute("DELETE FROM pad_kurs WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM snapshots WHERE pad_id=?1", params![id])?;
         Ok(c.execute("DELETE FROM pads WHERE id=?1", params![id])? > 0)
     }
@@ -829,5 +831,13 @@ impl Store {
     }
     pub fn join_url(&self, pad_id: &str) -> Option<String> {
         self.c().query_row("SELECT url FROM pad_join WHERE pad_id=?1", params![pad_id], |r| r.get(0)).optional().ok().flatten()
+    }
+    /// Kursseite in Moodle, aus der die Aktivität gestartet wurde (für „Zurück zum Kurs“).
+    pub fn set_course_url(&self, pad_id: &str, url: &str) -> Result<()> {
+        self.c().execute("INSERT INTO pad_kurs (pad_id, url) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET url=?2", params![pad_id, url])?;
+        Ok(())
+    }
+    pub fn course_url(&self, pad_id: &str) -> Option<String> {
+        self.c().query_row("SELECT url FROM pad_kurs WHERE pad_id=?1", params![pad_id], |r| r.get(0)).optional().ok().flatten()
     }
 }

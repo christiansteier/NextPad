@@ -2,6 +2,8 @@
 // erst nach dem Aufdecken an Mitsehende heraus; hier wird nur angezeigt.
 (() => {
   const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
+  // aus Moodle gestartet: zurück in den Kurs, auch aus der eingebetteten Ansicht heraus
+  if (cfg.course) { const a = document.createElement('a'); a.href = cfg.course; a.target = '_top'; a.textContent = 'Zurück zum Kurs'; document.querySelector('.site-header nav')?.prepend(a) }
   const base = cfg.basePath || ''
   const api = `${base}/p/${encodeURIComponent(cfg.urlId)}/quiz`
   const $ = id => document.getElementById(id)
@@ -244,11 +246,16 @@
     if (data.lead) e.append(el('p', 'hint', '„Rückgängig“ holt die letzte Frage zurück, „Fragen bearbeiten“ beginnt ein neues Spiel.'))
   }
 
+  let messungTimer = 0
   function render() {
     document.title = `${data.title || 'Quiz-Raster'} · NextPad`
     $('quiz-title').textContent = data.title || 'Quiz-Raster'
     $('quiz-kicker').textContent = data.lead ? 'Quiz-Raster · Leitung' : 'Quiz-Raster · Mitsehen'
     $('lead-tools').hidden = !data.lead
+    // Mitmessen nur, solange die Leitung die Messseite offen hat und keine Frage läuft
+    $('viewer-tools').hidden = !data.messung || !!data.current
+    clearTimeout(messungTimer)
+    if (data.messung) messungTimer = setTimeout(load, 15000) // schließt die Leitung die Messseite, verschwindet der Knopf
     if (data.lead) {
       $('q-undo').disabled = !data.canUndo
       // während einer Frage nur Aufdecken, Wertung und Vollbild: der Rest lenkt ab
@@ -267,6 +274,9 @@
     const empty = $('empty')
     empty.hidden = data.board.length > 0 || data.lead
     empty.textContent = 'Die Leitung richtet das Quiz gerade ein.'
+    // Team schon gewählt (Seite neu geladen, zurück von der Messung, neu aus Moodle gestartet): Abgleich hier starten,
+    // sonst wird der Buzzer nie bereit
+    if (!data.lead && myTeam && !syncing) { syncLoop(); wachHalten() }
     renderBuzzWahl(); renderBoard(); renderQuestion(); renderBuzz(); renderEnde(); renderScores()
   }
 

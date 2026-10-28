@@ -84,6 +84,8 @@ Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unte
 - `typ=ideen`: eine Ideensammlung (Details unten).
 - `typ=quiz`: ein Quiz-Raster; Lehrende leiten, der Name der Aktivität wird zum Titel.
 
+Bei jedem Start merkt sich NextPad die Adresse der Aktivität (`<moodle>/mod/lti/view.php?l=<resource_link.id>`, für den QR-Code) und die Kursseite (`<moodle>/course/view.php?id=<context.id>`, für „Zurück zum Kurs“). Beides nur, wenn Moodle Nummern schickt.
+
 ### Ideensammlung als Kursaktivität
 
 Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unter „Mehr anzeigen“ › „Benutzerdefinierte Parameter“ `typ=ideen` eintragen. Der Name der Aktivität wird zur Frage der Sammlung. Alternativ zeigt ein eigener Werkzeugeintrag mit der Tool-URL `<public>/lti/ideen` direkt auf die Sammlung.

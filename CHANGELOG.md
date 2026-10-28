@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-10-28
+
+### Added
+
+- Moodle activities show “Zurück zum Kurs” (back to the course): text pads in the toolbar, quiz and idea collection in
+  the header. The link leads to the Moodle course page (`…/course/view.php?id=<context id>`), remembered at each launch,
+  and opens in the top window when the activity is embedded.
+- Quiz: while the lead has the buzzer measurement open, everyone else sees “An der Messung teilnehmen” in the top
+  right corner of the quiz. This is the way into the measurement from Moodle, where the QR code leads to the quiz.
+  The button disappears about 15 seconds after the lead leaves the measurement page and is hidden during a question.
+
+- Task lists by typing Markdown: “- [ ] ” and “- [x] ” now turn into a task (before, the dash made a bullet point and
+  “[ ]” stayed as text). “[ ] ” at the start of a line and pasted Markdown already worked.
+
+### Fixed
+
+- Quiz buzzer stuck at “Verbinde …” after the page was reloaded with a team already chosen (back from the buzzer
+  measurement, launched again from Moodle, or reloaded by the phone after the screen lock). The clock sync only started
+  when a team was picked; it now also starts when the page loads with a stored team.
+- PDF export shows thumbs up and down for ratings, drawn like in the editor, instead of “+2 · −1”.
+- Indent and outdent buttons always return the focus to the text, also when nothing changes. Before, a following Tab
+  moved the focus to the next button.
+
 ## [0.12.3] - 2026-10-28
 
 ### Added
