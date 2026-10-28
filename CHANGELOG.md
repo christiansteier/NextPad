@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-10-28
+
+### Added
+
+- Quiz board buzzer: viewers pick their team on their phone and get a large buzzer while a question is open and not
+  revealed. Phones sync their clock with the server every few seconds; the server ranks teams by the time of the press,
+  not by arrival, fixes the order half a second after the first press and marks teams less than 50 ms apart as tied.
+  One press per phone and question; implausible times fall back to arrival and are marked. The order is shown on the
+  projector and on the phones, and the first team is marked next to the scoring buttons.
+
 ## [0.11.1] - 2026-10-28
 
 ### Changed
