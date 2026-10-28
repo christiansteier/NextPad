@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-10-28
+
+### Changed
+
+- Quiz on the phone: with a team chosen and no question open, a line says that the buzzer appears as soon as the lead
+  opens a question. Before, the phone showed nothing and the buzzer seemed broken.
+- The team choice is hidden on the end screen.
+- No team change during a running game: once a question is open or played, “Team wechseln” is gone, and the server
+  refuses a press from a device that already pressed for another team in this game. Joining late still works.
+
 ## [0.13.0] - 2026-10-28
 
 ### Added

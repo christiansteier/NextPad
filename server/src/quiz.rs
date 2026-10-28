@@ -263,6 +263,12 @@ pub async fn buzzer(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
     if !teams.iter().any(|(tid, _)| *tid == team) { return (StatusCode::BAD_REQUEST, "Dieses Team gibt es nicht.").into_response(); }
     let Some((open_field, open_ts)) = open.filter(|(f, _)| st.current == Some(*f) && *f == field && !st.revealed)
         else { return (StatusCode::CONFLICT, "Der Buzzer ist gerade zu.").into_response() };
+    // kein Teamwechsel im laufenden Spiel: ein Gerät buzzert immer für das Team, für das es zuerst gedrückt hat
+    match state.store.quiz_buzz_team(&v.pad, dev) {
+        Ok(Some(alt)) if alt != team => return (StatusCode::CONFLICT, "Im laufenden Spiel lässt sich das Team nicht wechseln.").into_response(),
+        Ok(_) => {}
+        Err(e) => { tracing::warn!("Buzzer: {e}"); return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
+    }
     let (t_press, flagged) = buzz_time(t, off, rtt, ein, open_ts);
     match state.store.quiz_buzz_add(&v.pad, open_field, dev, &Buzz { team, t_press, ts_ein: ein, flagged }, MAX_BUZZ) {
         Ok(added) => {
