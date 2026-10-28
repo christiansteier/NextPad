@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-10-28
+
+### Changed
+
+- HSD theme: all editor headings in Arial bold like the HSD LaTeX templates; HSD Sans stays on the start page
+  wordmark and level-1 headings in the PDF. Line height 1.4 instead of 1.55.
+- Tighter spacing in both themes: list items without paragraph gap (2 px between items), headings with more
+  space above than below; also in the timeline and print view.
+
 ## [0.9.0] - 2026-10-27
 
 ### Added
