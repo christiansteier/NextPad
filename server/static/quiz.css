@@ -18,17 +18,29 @@ main.quiz { flex: 1; display: flex; flex-direction: column; gap: var(--space-4);
 .quiz-qr svg { width: 260px; height: 260px; background: #fff; }
 .quiz-qr p { margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
 
-.quiz-board { display: grid; gap: var(--space-2); min-height: min(62vh, 640px); }
+.quiz-board { display: grid; gap: var(--space-3); min-height: min(62vh, 640px); }
 .quiz-cat { display: flex; align-items: flex-end; justify-content: center; text-align: center; font-weight: 700; font-size: clamp(.95rem, 1.8vw, 1.6rem); padding: var(--space-2) var(--space-1); border-bottom: 3px solid var(--hsd-red, #e60028); hyphens: auto; overflow-wrap: anywhere; }
+/* Kacheln: weiß auf grauem Grund mit Rahmen und Kante, damit das Raster als Spielbrett trägt */
 .quiz-cell {
   display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 0;
   font: 700 clamp(1.4rem, 4vw, 3.6rem)/1 var(--font-text); color: var(--color-text-primary);
-  background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 0;
+  background: var(--color-surface); border: 2px solid var(--color-text-primary); border-radius: 0;
+  box-shadow: 0 4px 0 var(--color-text-primary);
 }
-button.quiz-cell { cursor: pointer; }
-button.quiz-cell:not(:disabled):hover { border-color: var(--color-text-primary); }
+button.quiz-cell { cursor: pointer; transition: transform .12s ease-out, box-shadow .12s ease-out, background-color .12s, color .12s; }
+/* Hover und Tastaturfokus: Kachel kippt ins Negativ, hebt sich an, rote Kante darunter */
+button.quiz-cell:not(:disabled):hover, button.quiz-cell:not(:disabled):focus-visible {
+  color: var(--color-surface); background: var(--color-text-primary);
+  transform: translateY(-4px); box-shadow: 0 8px 0 var(--color-accent, #e60028);
+}
+button.quiz-cell:not(:disabled):focus-visible { outline: 3px solid var(--color-accent, #e60028); outline-offset: 4px; }
+button.quiz-cell:not(:disabled):active { transform: translateY(2px); box-shadow: 0 2px 0 var(--color-accent, #e60028); }
 button.quiz-cell:disabled { cursor: default; }
-.quiz-cell.is-played { background: transparent; color: var(--color-text-secondary); border-style: dashed; font-weight: 400; opacity: .55; }
+.quiz-cell.is-played { background: transparent; color: var(--color-text-secondary); border: 2px dashed var(--color-border); box-shadow: none; font-weight: 400; opacity: .55; }
+@media (prefers-reduced-motion: reduce) {
+  button.quiz-cell { transition: none; }
+  button.quiz-cell:not(:disabled):hover, button.quiz-cell:not(:disabled):focus-visible, button.quiz-cell:not(:disabled):active { transform: none; }
+}
 
 .quiz-question { display: flex; flex-direction: column; gap: var(--space-4); min-height: min(62vh, 640px); }
 .quiz-meta { margin: 0; color: var(--color-text-secondary); font-size: clamp(1rem, 1.8vw, 1.5rem); }
