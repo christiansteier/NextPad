@@ -38,6 +38,8 @@ pub struct AppState {
     pub ideas: ideas::Hub,
     /// Erscheinungsbild aus der Verwaltungsseite
     pub look: look::Looks,
+    /// Wann die Leitung je Quiz zuletzt die Buzzer-Messung offen hatte (ms); solange zeigt das Quiz den Knopf zum Mitmessen
+    pub messung_offen: std::sync::Mutex<std::collections::HashMap<String, f64>>,
 }
 
 #[tokio::main]
@@ -69,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.data_dir)?;
     let store = Arc::new(store::Store::open(&config::db_path(&config.data_dir))?);
     let look = std::sync::RwLock::new(look::load(&store));
-    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), ideas: Default::default(), look });
+    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), ideas: Default::default(), look, messung_offen: Default::default() });
     if args.get(1).map(String::as_str) == Some("compact") {
         // einmal zusammenführen (Frist aus NEXTPAD_HISTORY_DAYS)
         state.store.compact(ids::now_ms() - state.config.history_days * 86_400_000);

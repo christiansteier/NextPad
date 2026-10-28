@@ -1,5 +1,5 @@
 // NextPad-Editor: TipTap auf ProseMirror, Yjs-Sync über y-websocket gegen den Rust-Server.
-import { Editor, Mark, Extension } from '@tiptap/core'
+import { Editor, Mark, Extension, InputRule } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
@@ -125,6 +125,21 @@ const Indent = Extension.create({
   },
 })
 
+// Markdown-Aufgabe getippt: „- [ ] “ macht erst einen Listenpunkt, „[ ] “ darin wird dann zur Aufgabe („[x] “ erledigt)
+const TaskShortcut = Extension.create({
+  name: 'taskShortcut',
+  addInputRules() {
+    return [new InputRule({
+      find: /^\[([ xX])\]\s$/,
+      handler: ({ state, range, match, chain }) => {
+        const $f = state.doc.resolve(range.from)
+        if ($f.depth < 2 || $f.node(-1).type.name !== 'listItem') return null
+        chain().deleteRange(range).toggleTaskList().updateAttributes('taskItem', { checked: match[1] !== ' ' }).run()
+      },
+    })]
+  },
+})
+
 const names = new Map()
 let showColors = true
 
@@ -188,7 +203,7 @@ const editor = new Editor({
     StarterKit.configure({ undoRedo: false, link: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: { levels: [1, 2, 3, 4] } }),
     TextStyle, Color, FontSize,
     TextAlign.configure({ types: ['heading', 'paragraph'] }), Indent,
-    TaskList, TaskItem.configure({ nested: true }),
+    TaskList, TaskItem.configure({ nested: true }), TaskShortcut,
     ...tableExtensions, TableOfContents,
     createRating({ ydoc, me: cfg.author.id, readonly: cfg.readonly }),
     Markdown, MarkdownPaste,
@@ -228,8 +243,8 @@ if (!cfg.readonly) {
   ibtn(menuLeft, I.ol, 'Nummerierte Liste', () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
   ibtn(menuLeft, I.ul, 'Aufzählung', () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
   ibtn(menuLeft, I.tasks, 'Aufgabenliste zum Abhaken (Markdown: - [ ] Aufgabe)', () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
-  ibtn(menuLeft, I.indent, 'Einrücken (Tab)', () => inList(editor) ? editor.chain().sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem').run() : editor.chain().focus().indent().run())
-  ibtn(menuLeft, I.outdent, 'Ausrücken (Umschalt+Tab)', () => inList(editor) ? editor.chain().liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem').run() : editor.chain().focus().outdent().run())
+  ibtn(menuLeft, I.indent, 'Einrücken (Tab)', () => { editor.commands.focus(); inList(editor) ? editor.commands.sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.indent() })
+  ibtn(menuLeft, I.outdent, 'Ausrücken (Umschalt+Tab)', () => { editor.commands.focus(); inList(editor) ? editor.commands.liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.outdent() })
   sep(menuLeft)
   ibtn(menuLeft, I.undo, 'Rückgängig (Strg+Z)', () => editor.chain().undo().run())
   ibtn(menuLeft, I.redo, 'Wiederholen (Strg+Y)', () => editor.chain().redo().run())
@@ -272,6 +287,8 @@ darkBtn = ibtn(menuRight, '\u25D0', 'Dunkler Modus ein/aus', () => {
 }, isDark)
 darkQuery.addEventListener('change', () => { if (!storedTheme()) applyTheme() })
 applyTheme()
+// aus Moodle gestartet: zurück in den Kurs, auch aus der eingebetteten Ansicht heraus
+if (cfg.course) { const k = document.createElement('a'); k.className = 'ib'; k.href = cfg.course; k.target = '_top'; k.textContent = 'Zurück zum Kurs'; menuRight.appendChild(k) }
 if (cfg.free) { const home = document.createElement('a'); home.className = 'ib'; home.href = `${cfg.basePath}/`; home.title = 'Startseite'; home.innerHTML = '<span class="buttonicon" aria-hidden="true"></span>'; menuRight.appendChild(home) }
 
 window.nextpad = { editor, provider, ydoc, remoteBatch }

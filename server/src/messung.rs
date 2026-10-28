@@ -141,9 +141,29 @@ fn nur_leitung(state: &AppState, headers: &HeaderMap, id: &str) -> Result<String
 /// Auswertung für die Leitung.
 pub async fn daten(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let pad = match nur_leitung(&state, &headers, &id) { Ok(p) => p, Err(r) => return r };
+    if leitung_da(&state, &pad) { state.ideas.notify(&pad); }
     let (Ok(g), Ok(p), Ok(r), Ok(m)) = (state.store.mess_geraete(&pad), state.store.mess_proben(&pad), state.store.mess_runden(&pad), state.store.mess_marken(&pad))
         else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     no_store(Json(auswerten(&g, &p, &r, &m, jetzt())).into_response())
+}
+
+/// Wie lange der Knopf zum Mitmessen nach der letzten Abfrage der Leitung bleibt (die Messseite fragt alle 2 s).
+const LEITUNG_DA_MS: f64 = 10_000.0;
+
+/// Merkt, dass die Leitung die Messseite offen hat; true, wenn sie eben erst dazukam (dann sollen die Handys neu laden).
+fn leitung_da(state: &AppState, pad: &str) -> bool {
+    let now = jetzt();
+    let mut m = state.messung_offen.lock().unwrap_or_else(|e| e.into_inner());
+    m.retain(|_, t| now - *t < 3_600_000.0);
+    let neu = m.get(pad).map_or(true, |t| now - *t >= LEITUNG_DA_MS);
+    m.insert(pad.to_string(), now);
+    neu
+}
+
+/// Ob die Leitung die Messseite gerade offen hat.
+pub fn leitung_misst(state: &AppState, pad: &str) -> bool {
+    let m = state.messung_offen.lock().unwrap_or_else(|e| e.into_inner());
+    m.get(pad).is_some_and(|t| jetzt() - *t < LEITUNG_DA_MS)
 }
 
 /// Rohdaten als CSV zum Nachrechnen: eine Zeile je Abgleich und je Gerät und Runde. Zeiten in ms, Serverzeit ab Messbeginn.

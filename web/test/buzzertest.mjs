@@ -60,6 +60,19 @@ await lead.click('.quiz-team >> nth=1 >> button.plus'); await lead.waitForSelect
 await lead.click('.quiz-cell:not(:disabled)'); await lead.waitForSelector('#question:not([hidden])')
 await rot.waitForSelector('#buzz-btn:not([hidden]):not([disabled])', { timeout: 8000 })
 check('nächste Frage: neue Runde, Buzzer wieder da, Reihenfolge leer', await lead.isHidden('#buzz-reihe') && await rot.isVisible('#buzz-btn'))
+
+// Seite neu geladen, Team ist gespeichert, Frage läuft schon (z. B. zurück von der Messung oder neu aus Moodle)
+await blau.reload(); await blau.waitForSelector('#buzz-wahl:not([hidden])')
+check('nach dem Neuladen: Team noch gewählt', await blau.locator('#buzz-wahl [aria-pressed="true"]').textContent() === 'Blau')
+await blau.waitForSelector('#buzz-btn:not([hidden]):not([disabled])', { timeout: 8000 }).catch(() => {})
+check('nach dem Neuladen: Buzzer wird bereit, ohne Team neu zu wählen', (await blau.textContent('#buzz-btn')) === 'Buzzer' && await blau.isEnabled('#buzz-btn'), await blau.textContent('#buzz-btn'))
+await blau.tap('#buzz-btn')
+await lead.waitForFunction(() => [...document.querySelectorAll('#buzz-reihe li')].some(li => li.textContent.startsWith('Blau')), null, { timeout: 5000 }).catch(() => {})
+check('nach dem Neuladen: Druck kommt bei der Leitung an', (await lead.locator('#buzz-reihe li').allTextContents()).some(t => t.startsWith('Blau')))
+// Weg über die Messung: Handy geht zur Messung und zurück ins Quiz
+await rot.goto(url + '/messung'); await rot.waitForSelector('#m-handy:not([hidden])'); await rot.goBack(); await rot.waitForSelector('#quiz-title')
+await rot.waitForSelector('#buzz-btn:not([hidden]):not([disabled])', { timeout: 8000 }).catch(() => {})
+check('zurück von der Messung: Buzzer bereit', await rot.isVisible('#buzz-btn') && await rot.isEnabled('#buzz-btn'))
 // Wachhalten: ohne Unterstützung Hinweis, mit Unterstützung keiner
 const ohne = await b.newContext({ viewport: { width: 390, height: 844 } })
 await ohne.addInitScript(() => { Object.defineProperty(Navigator.prototype, 'wakeLock', { get: () => undefined }) })

@@ -477,9 +477,11 @@ fn inline_typst<T: ReadTxn>(txn: &T, el: &XmlElementRef, depth: usize) -> String
             XmlOut::Text(t) => out.push_str(&text_typst(txn, t)),
             XmlOut::Element(e) if e.tag().as_ref() == "hardBreak" => out.push_str("#linebreak()"),
             XmlOut::Element(e) if e.tag().as_ref() == "rating" => {
-                // keine Emoji-Schrift im Satz: Stimmen als „+3 · −1“ in einer Pille
+                // keine Emoji-Schrift im Satz: Daumen als dieselben Linien-Symbole wie im Editor, in einer Pille
                 let (up, down) = crate::bausteine::tally(&crate::bausteine::votes(txn, &crate::bausteine::rating_id(txn, e)));
-                out.push_str(&format!("#box(stroke: 0.5pt + luma(150), inset: (x: 3pt, y: 1.5pt), outset: (y: 1pt), radius: 5pt)[#text(size: 0.85em)[#{}]]", typst_str(&format!("+{up} · −{down}"))));
+                let thumb = |paths: &str| format!("#box(baseline: 0.12em, image(bytes({}), height: 0.95em))", typst_str(&format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{paths}</svg>"#)));
+                out.push_str(&format!("#box(stroke: 0.5pt + luma(150), inset: (x: 3pt, y: 1.5pt), outset: (y: 1pt), radius: 5pt)[#text(size: 0.85em)[{}#h(2pt)#{}#h(5pt){}#h(2pt)#{}]]",
+                    thumb(THUMB_UP), typst_str(&up.to_string()), thumb(THUMB_DOWN), typst_str(&down.to_string())));
             }
             XmlOut::Element(e) => out.push_str(&inline_typst(txn, e, depth + 1)),
             XmlOut::Fragment(_) => {}
@@ -577,6 +579,10 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
 }
 
 /// Pad-Inhalt als Typst-Markup (Inhalte nur als String-Literale, keine Ausführung von Nutzertext).
+// Linien der Daumen wie in web/src/rating.js
+const THUMB_UP: &str = r#"<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>"#;
+const THUMB_DOWN: &str = r#"<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>"#;
+
 pub fn to_typst<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String {
     let mut out = String::new();
     for c in frag.children(txn) { block_typst(txn, &c, &mut out, 0); }
@@ -1019,7 +1025,7 @@ mod tests {
         assert!(text.contains("Name | Wert | Einheit\nTee | 3\n"), "{text}");
         let typ = to_typst(&txn, &frag);
         assert!(typ.contains("#outline(") && typ.contains("#table(columns: (1fr,) * 2") && typ.contains("table.header("), "{typ}");
-        assert!(typ.contains("+2 · −1"), "{typ}");
+        assert!(typ.contains("image(bytes(") && typ.contains(r##"#"2"#h(5pt)"##) && typ.contains(r##"#"1"]]"##), "Daumen als Bild, 2 hoch, 1 runter: {typ}");
     }
 
     #[test]

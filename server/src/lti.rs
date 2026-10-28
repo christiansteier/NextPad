@@ -352,6 +352,10 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
         if !link.id.is_empty() && link.id.len() <= 18 && link.id.chars().all(|c| c.is_ascii_digit()) {
             let _ = state.store.set_join_url(&pad, &format!("{}/mod/lti/view.php?l={}", pl.moodle(), link.id));
         }
+        // „Zurück zum Kurs“: Moodle schickt als Kontext die Kursnummer
+        if !ctx.id.is_empty() && ctx.id.len() <= 18 && ctx.id.chars().all(|c| c.is_ascii_digit()) {
+            let _ = state.store.set_course_url(&pad, &format!("{}/course/view.php?id={}", pl.moodle(), ctx.id));
+        }
         let group = crate::ids::group_of_pad(&pad).unwrap_or("").to_string();
         let sid = match state.store.create_session(&group, &author.id, ids::now_ms() / 1000 + LOGIN_SECONDS) {
             Ok(s) => s,

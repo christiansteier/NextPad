@@ -191,6 +191,13 @@ check('Quiz-Aktivität: Studierende leiten nicht, sehen Teams, keine Antworten',
 check('Quiz-Aktivität: Studierende können nicht werten', (await postQ(quizUrl + '/quiz/feld', sq.sid, { field: 1 })).status === 403)
 const pageQ = await (await fetch(quizUrl, { headers: { cookie: sq.sid } })).text()
 check('Quiz-Aktivität: Seite mit Buzzer und Teamwahl', pageQ.includes('id="buzz-btn"') && pageQ.includes('id="buzz-wahl"'))
+check('ohne Kursnummer kein „Zurück zum Kurs“', pageQ.includes('"course":null'))
+const kursNr = String(4000 + Math.floor(Math.random() * 1000))
+for (const [typ, name] of [['pad', 'Text'], ['quiz', 'Quiz'], ['ideen', 'Ideensammlung']]) {
+  const sk = await startAct(act('43', 'Learner', `rk-${typ}-` + run, { [C + 'context']: { id: kursNr, title: 'Kurs mit Nummer' }, [C + 'custom']: { typ } }))
+  const pk = await (await fetch(base + sk.loc.replace(/^.*?\/p\//, '/p/'), { headers: { cookie: sk.sid } })).text()
+  check(`${name}-Aktivität: „Zurück zum Kurs“ führt auf die Kursseite`, pk.includes(`"course":"${ISS}/course/view.php?id=${kursNr}"`), sk.loc)
+}
 await postQ(quizUrl + '/quiz/feld', tq.sid, { field: 1 })
 const zeitQ = await (await fetch(quizUrl + '/messung/zeit', { headers: { cookie: sq.sid } })).json()
 const buzzQ = await postQ(quizUrl + '/quiz/buzzer', sq.sid, { dev: 'lerngeraet01', team: 2, field: 1, t: zeitQ.t, off: 0, rtt: 20 })
