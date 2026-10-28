@@ -1,0 +1,56 @@
+/* NextPad – Quiz-Raster. Baut auf start.css auf (Hausfarben, Abstände, Schaltflächen).
+   Für den Beamer: große Ziffern, harte Kanten, Rot nur als Linie; gespielte Felder gestrichelt und blass, nicht nur farbig. */
+main.quiz { flex: 1; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4) var(--space-5) var(--space-6); max-width: 1600px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.quiz-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-3); border-bottom: 3px solid var(--hsd-red, #e60028); padding-bottom: var(--space-2); }
+.quiz-top h1 { margin: 0; font-family: var(--font-text); font-weight: 700; font-size: clamp(1.5rem, 3vw, 2.25rem); line-height: 1.2; overflow-wrap: anywhere; }
+.quiz .kicker { margin: 0 0 var(--space-1); font-size: var(--text-small); font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .06em; }
+.quiz-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.quiz-tools[hidden], .quiz [hidden] { display: none !important; }
+
+.quiz-setup input, .quiz-setup textarea {
+  display: block; width: 100%; box-sizing: border-box; padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3);
+  font: inherit; color: var(--color-text-primary); background: var(--color-surface); border: 1px solid var(--color-border-control); border-radius: var(--radius-control);
+}
+.quiz-setup textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9rem; resize: vertical; }
+.quiz-setup h2 { margin-top: 0; }
+
+.quiz-qr { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
+.quiz-qr svg { width: 260px; height: 260px; background: #fff; }
+.quiz-qr p { margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
+
+.quiz-board { display: grid; gap: var(--space-2); min-height: min(62vh, 640px); }
+.quiz-cat { display: flex; align-items: flex-end; justify-content: center; text-align: center; font-weight: 700; font-size: clamp(.95rem, 1.8vw, 1.6rem); padding: var(--space-2) var(--space-1); border-bottom: 3px solid var(--hsd-red, #e60028); hyphens: auto; overflow-wrap: anywhere; }
+.quiz-cell {
+  display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 0;
+  font: 700 clamp(1.4rem, 4vw, 3.6rem)/1 var(--font-text); color: var(--color-text-primary);
+  background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 0;
+}
+button.quiz-cell { cursor: pointer; }
+button.quiz-cell:hover { border-color: var(--color-text-primary); }
+.quiz-cell.is-played { background: transparent; color: var(--color-text-secondary); border-style: dashed; font-weight: 400; opacity: .55; }
+
+.quiz-question { display: flex; flex-direction: column; gap: var(--space-4); min-height: min(62vh, 640px); }
+.quiz-meta { margin: 0; color: var(--color-text-secondary); font-size: clamp(1rem, 1.8vw, 1.5rem); }
+.quiz-q { margin: 0; flex: 1; display: flex; align-items: center; font-weight: 700; font-size: clamp(1.6rem, 4.2vw, 4rem); line-height: 1.2; overflow-wrap: anywhere; }
+.quiz-a { margin: 0; font-size: clamp(1.3rem, 3.2vw, 3rem); border-left: 8px solid var(--color-success, #2e7d46); padding: var(--space-2) var(--space-4); overflow-wrap: anywhere; }
+.quiz-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.quiz-teams { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); flex-basis: 100%; }
+.quiz-team { display: flex; align-items: center; gap: var(--space-1); }
+.quiz-team-name { font-weight: 700; margin-right: var(--space-1); }
+.quiz-team .minus { color: var(--color-text-secondary); }
+
+.quiz-scores { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-5); border-top: 1px solid var(--color-border); padding-top: var(--space-3); font-size: clamp(1rem, 1.8vw, 1.6rem); }
+.quiz-score { display: flex; gap: var(--space-2); align-items: baseline; }
+.quiz-score strong { font-size: 1.25em; }
+.quiz-score.is-lead strong { text-decoration: underline; text-decoration-color: var(--hsd-red, #e60028); text-decoration-thickness: 3px; text-underline-offset: 4px; }
+.quiz-scores .hint { margin: 0 0 0 auto; }
+.quiz-export { margin: 0; }
+
+/* Vollbild für den Beamer: Kopf und Fuß der Seite ausblenden */
+:fullscreen .site-header, :fullscreen .site-footer, :fullscreen .quiz-export { display: none; }
+:fullscreen main.quiz { max-width: none; padding: var(--space-3) var(--space-5); }
+@media (max-width: 640px) {
+  main.quiz { padding: var(--space-3) var(--space-3) var(--space-5); }
+  .quiz-board, .quiz-question { min-height: 0; }
+  .quiz-cell { min-height: 48px; }
+}

@@ -4,6 +4,7 @@ mod bausteine;
 mod config;
 mod docs;
 mod ideas;
+mod quiz;
 mod ids;
 mod look;
 mod lti;
@@ -109,6 +110,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/p/{id}/ideen/{n}/stimme", axum::routing::post(ideas::vote))
         .route("/p/{id}/ideen/{n}/moderation", axum::routing::post(ideas::moderate))
         .route("/p/{id}/leinwand", get(ideas::wall))
+        .route("/p/{id}/quiz", get(quiz::get))
+        .route("/p/{id}/quiz/live", get(quiz::live))
+        .route("/p/{id}/quiz/fragen", axum::routing::post(quiz::setup))
+        .route("/p/{id}/quiz/feld", axum::routing::post(quiz::open))
+        .route("/p/{id}/quiz/wertung", axum::routing::post(quiz::score))
+        .route("/p/{id}/quiz/rueckgaengig", axum::routing::post(quiz::undo))
+        .route("/static/quiz.js", get(quiz::static_js))
+        .route("/static/quiz.css", get(quiz::static_css))
         .route("/static/ideen.js", get(ideas::static_js))
         .route("/static/ideen-wand.js", get(ideas::static_wand))
         .route("/static/ideen.css", get(ideas::static_css))

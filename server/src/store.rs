@@ -59,6 +59,11 @@ pub struct Pad {
     pub last_edited: i64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct QuizState { pub title: String, pub current: Option<i64>, pub revealed: bool }
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct QuizField { pub id: i64, pub cat: String, pub points: i64, pub question: String, pub answer: String }
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Idea {
     pub id: i64,
@@ -130,6 +135,10 @@ CREATE TABLE IF NOT EXISTS ideas (
   hidden INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS idea_votes (pad_id TEXT NOT NULL, idea_id INTEGER NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, idea_id, author_id));
 CREATE TABLE IF NOT EXISTS idea_prompts (pad_id TEXT PRIMARY KEY, prompt TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', current INTEGER, revealed INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS quiz_fields (pad_id TEXT NOT NULL, id INTEGER NOT NULL, cat TEXT NOT NULL, points INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY (pad_id, id));
+CREATE TABLE IF NOT EXISTS quiz_teams (pad_id TEXT NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY (pad_id, id));
+CREATE TABLE IF NOT EXISTS quiz_log (pad_id TEXT NOT NULL, seq INTEGER NOT NULL, field INTEGER NOT NULL, team INTEGER, delta INTEGER NOT NULL, PRIMARY KEY (pad_id, seq));
 CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, author_id));
@@ -242,6 +251,7 @@ impl Store {
         c.execute("DELETE FROM idea_votes WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM ideas WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM idea_prompts WHERE pad_id=?1", params![id])?;
+        for t in ["quiz_log", "quiz_teams", "quiz_fields", "quiz_state"] { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
         c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM snapshots WHERE pad_id=?1", params![id])?;
@@ -264,6 +274,7 @@ impl Store {
     }
     pub fn is_board(&self, pad_id: &str) -> bool { self.kind(pad_id).as_deref() == Some("board") }
     pub fn is_ideas(&self, pad_id: &str) -> bool { self.kind(pad_id).as_deref() == Some("ideas") }
+    pub fn is_quiz(&self, pad_id: &str) -> bool { self.kind(pad_id).as_deref() == Some("quiz") }
 
     // Ideensammlung: Beiträge ohne Namen, eine Stimme je Person und Beitrag
     pub fn ideas(&self, pad_id: &str) -> Result<Vec<Idea>> {
@@ -309,6 +320,69 @@ impl Store {
         if let Some(h) = hidden { n = c.execute("UPDATE ideas SET hidden=?3 WHERE pad_id=?1 AND id=?2", params![pad_id, idea_id, h])?; }
         if let Some(d) = done { n = c.execute("UPDATE ideas SET done=?3 WHERE pad_id=?1 AND id=?2", params![pad_id, idea_id, d])?; }
         Ok(n > 0)
+    }
+
+    // Quiz-Raster: Fragen und Antworten nur hier, nie im Yjs-Dokument
+    pub fn quiz_state(&self, pad_id: &str) -> Result<QuizState> {
+        Ok(self.c().query_row("SELECT title, current, revealed FROM quiz_state WHERE pad_id=?1", params![pad_id],
+            |r| Ok(QuizState { title: r.get(0)?, current: r.get(1)?, revealed: r.get(2)? })).optional()?.unwrap_or_default())
+    }
+    pub fn quiz_fields(&self, pad_id: &str) -> Result<Vec<QuizField>> {
+        Ok(self.c().prepare("SELECT id, cat, points, question, answer FROM quiz_fields WHERE pad_id=?1 ORDER BY id")?
+            .query_map(params![pad_id], |r| Ok(QuizField { id: r.get(0)?, cat: r.get(1)?, points: r.get(2)?, question: r.get(3)?, answer: r.get(4)? }))?
+            .collect::<std::result::Result<_, _>>()?)
+    }
+    pub fn quiz_teams(&self, pad_id: &str) -> Result<Vec<(i64, String)>> {
+        Ok(self.c().prepare("SELECT id, name FROM quiz_teams WHERE pad_id=?1 ORDER BY id")?
+            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?)
+    }
+    /// Wertungen in Reihenfolge: (Feld, Team oder None für „niemand“, Punkte)
+    pub fn quiz_log(&self, pad_id: &str) -> Result<Vec<(i64, Option<i64>, i64)>> {
+        Ok(self.c().prepare("SELECT field, team, delta FROM quiz_log WHERE pad_id=?1 ORDER BY seq")?
+            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<std::result::Result<_, _>>()?)
+    }
+    /// Neue Fragen und Teams: Wertungen und offene Frage fallen weg.
+    pub fn quiz_replace(&self, pad_id: &str, title: &str, fields: &[QuizField], teams: &[String]) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        for t in ["quiz_log", "quiz_teams", "quiz_fields"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
+        for f in fields { tx.execute("INSERT INTO quiz_fields (pad_id, id, cat, points, question, answer) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, f.id, f.cat, f.points, f.question, f.answer])?; }
+        for (i, t) in teams.iter().enumerate() { tx.execute("INSERT INTO quiz_teams (pad_id, id, name) VALUES (?1, ?2, ?3)", params![pad_id, i as i64 + 1, t])?; }
+        tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed) VALUES (?1, ?2, NULL, 0) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0", params![pad_id, title])?;
+        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn quiz_set_title(&self, pad_id: &str, title: &str) -> Result<()> {
+        self.c().execute("INSERT INTO quiz_state (pad_id, title) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET title=?2", params![pad_id, title])?;
+        Ok(())
+    }
+    /// Offene Frage setzen (None: zurück zum Raster). false: Feld gibt es nicht.
+    pub fn quiz_open(&self, pad_id: &str, field: Option<i64>, revealed: bool) -> Result<bool> {
+        let c = self.c();
+        if let Some(f) = field {
+            if c.query_row("SELECT 1 FROM quiz_fields WHERE pad_id=?1 AND id=?2", params![pad_id, f], |_| Ok(())).optional()?.is_none() { return Ok(false); }
+        }
+        c.execute("INSERT INTO quiz_state (pad_id, current, revealed) VALUES (?1, ?2, ?3) ON CONFLICT(pad_id) DO UPDATE SET current=?2, revealed=?3", params![pad_id, field, field.is_some() && revealed])?;
+        Ok(true)
+    }
+    /// Wertung eintragen. Plus oder „niemand“ schließt das Feld und führt zurück zum Raster. false: Feld oder Team gibt es nicht.
+    pub fn quiz_score(&self, pad_id: &str, field: i64, team: Option<i64>, delta: i64) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let ok_field = tx.query_row("SELECT 1 FROM quiz_fields WHERE pad_id=?1 AND id=?2", params![pad_id, field], |_| Ok(())).optional()?.is_some();
+        let ok_team = match team { Some(t) => tx.query_row("SELECT 1 FROM quiz_teams WHERE pad_id=?1 AND id=?2", params![pad_id, t], |_| Ok(())).optional()?.is_some(), None => true };
+        if !ok_field || !ok_team { return Ok(false); }
+        let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM quiz_log WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
+        tx.execute("INSERT INTO quiz_log (pad_id, seq, field, team, delta) VALUES (?1, ?2, ?3, ?4, ?5)", params![pad_id, seq, field, team, delta])?;
+        if delta > 0 || team.is_none() { tx.execute("UPDATE quiz_state SET current=NULL, revealed=0 WHERE pad_id=?1", params![pad_id])?; }
+        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
+        tx.commit()?;
+        Ok(true)
+    }
+    /// Letzte Wertung zurücknehmen. false: es gab keine.
+    pub fn quiz_undo(&self, pad_id: &str) -> Result<bool> {
+        Ok(self.c().execute("DELETE FROM quiz_log WHERE pad_id=?1 AND seq=(SELECT MAX(seq) FROM quiz_log WHERE pad_id=?1)", params![pad_id])? > 0)
     }
     // Aktivitäten aus Moodle (LTI): je Ressourcen-Link eine eigene Gruppe mit einem Pad
     pub fn pad_for_link(&self, link_key: &str) -> Result<Option<String>> {
