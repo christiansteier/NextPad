@@ -183,6 +183,11 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         let resp = crate::ideas::page(&state, &id, cfg);
         return with_cookie(resp, access.set_cookie.clone());
     }
+    if state.store.is_quiz(&access.pad.id) {
+        let join = crate::quiz::join_svg(&state, &headers, access.free, &id, &access.pad.id);
+        let resp = crate::quiz::page(&state, &id, cfg, &join);
+        return with_cookie(resp, access.set_cookie.clone());
+    }
     if state.store.is_board(&access.pad.id) {
         let icons = icon_links();
         let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Zeichenbrett</title>
@@ -269,6 +274,9 @@ async fn export_inner(State(state): State<Arc<AppState>>, Path((id, format)): Pa
         Ok(a) => a,
         Err((s, m)) => return error_page(s, m),
     };
+    if state.store.is_quiz(&access.pad.id) {
+        return crate::quiz::export(&state, &access.pad.id, &format).unwrap_or_else(|| error_page(StatusCode::NOT_FOUND, "Quiz-Raster lassen sich als Markdown oder Text sichern (nur der Punktestand)."));
+    }
     if state.store.is_ideas(&access.pad.id) {
         return crate::ideas::export(&state, &access.pad.id, &format).unwrap_or_else(|| error_page(StatusCode::NOT_FOUND, "Ideensammlungen lassen sich als Markdown, Text oder CSV sichern."));
     }
@@ -382,6 +390,7 @@ pub async fn new_pad(State(state): State<Arc<AppState>>, Query(q): Query<HashMap
     let kind = match (q.get("typ").map(String::as_str), q.get("vorlage").map(String::as_str)) {
         (Some("zeichenbrett"), _) => Some("board"),
         (Some("ideen"), _) | (_, Some("ideen")) => Some("ideas"),
+        (Some("quiz"), _) => Some("quiz"),
         _ => None,
     };
     if let Some(k) = kind {
@@ -723,6 +732,7 @@ fn start_page_hsd(state: &AppState, headers: &HeaderMap) -> Response {
 <li><a class="template" data-tint="blue" href="{base}/new?vorlage=gruppenarbeit"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3 3 0 0 1 0 5.6M18 14.3c1.8.9 3 2.8 3 5.7"/></svg><span class="template-name">Gruppenarbeit</span><span class="template-desc">Aufgabe, wer macht was, Ergebnisse</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" data-tint="green" href="{base}/new?vorlage=protokoll"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg><span class="template-name">Protokoll</span><span class="template-desc">Tagesordnung, Beschlüsse, Aufgaben</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" data-tint="yellow" href="{base}/new?typ=ideen"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="template-name">Ideensammlung</span><span class="template-desc">Ideen und Fragen sammeln, abstimmen</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
+<li><a class="template" data-tint="blue" href="{base}/new?typ=quiz"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="template-name">Quiz-Raster</span><span class="template-desc">Fragen nach Punkten, Teams, Beamer</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" href="{base}/new?typ=zeichenbrett"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3M4 20h16"/></svg><span class="template-name">Zeichenbrett</span><span class="template-desc">Gemeinsam skizzieren</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 </ul>
 </details>
@@ -762,6 +772,7 @@ pub async fn help(State(state): State<Arc<AppState>>) -> Response {
 <p>NextPad ist der Nachfolger von Etherpad an der Hochschule Düsseldorf. Mehrere Personen schreiben dort gleichzeitig am selben Text. Alle sehen die Änderungen der anderen sofort.</p>
 <h2>Einem Pad beitreten</h2><p>Den Namen des Pads eingeben und „Öffnen oder anlegen“ wählen. Gleicher Name bedeutet gleiches Pad. Gibt es den Namen noch nicht, legt NextPad ein neues, leeres Pad an. Erlaubt sind Buchstaben, Ziffern, Leerzeichen und die Zeichen - _ . ( ) , bis 50 Zeichen.</p>
 <h2>Mit Vorlage beginnen</h2><p>Die Vorlagen legen ein Pad mit zufälligem Namen an und bringen eine Gliederung für Gruppenarbeit oder Protokoll mit. Über „Teilen“ im Pad lässt sich der Link kopieren und an die Gruppe schicken.</p>
+<h2>Quiz-Raster</h2><p>„Quiz-Raster“ legt ein Quiz nach Kategorien und Punktwerten an. Wer es anlegt, leitet: Fragen als Tabelle <code>Kategorie | Punkte | Frage | Antwort</code> einfügen, Teams eintragen, am Beamer ein Feld wählen, die Antwort aufdecken und Punkte vergeben. Wer den Link oder den QR-Code hat, sieht Raster, Frage und Punktestand mit, aber nicht die Antworten, bevor sie aufgedeckt sind. Tasten für die Leitung: Leertaste deckt auf, Esc führt zurück zum Raster, Z nimmt die letzte Wertung zurück.</p>
 <h2>Ideensammlung</h2><p>„Ideensammlung“ legt eine Liste an, in die alle ohne Namen Ideen oder Fragen eintragen und für Beiträge stimmen. Jede Person hat je Beitrag eine Stimme. Wer die Sammlung angelegt hat, kann oben die Frage setzen, Beiträge als erledigt markieren oder ausblenden. „Link zum Mitmachen kopieren“ holt die Adresse für die Gruppe. „Leinwand öffnen“ zeigt die beliebtesten Beiträge groß für den Beamer, bei freien Sammlungen mit QR-Code zum Mitmachen. Gesichert wird als Markdown oder CSV. Im Moodle-Kurs gibt es die Ideensammlung auch als Aktivität: Dann kommen nur Kursmitglieder hinein, und Lehrende moderieren.</p>
 <h2>Zeichenbrett</h2><p>„Zeichenbrett“ legt eine gemeinsame Zeichenfläche an: Formen, Pfeile, Freihand und Text, alle sehen die Zeiger der anderen. Gesichert wird über das Menü links oben als PNG, SVG oder Excalidraw-Datei. Bilder einfügen ist noch nicht möglich. Die Zeichenfläche ist mit Screenreadern kaum nutzbar; für zugängliche Zusammenarbeit eignet sich ein Text-Pad.</p>
 <h2>Name und Profilbild</h2><p>Ohne Anmeldung heißt man im Pad „Gast“. Unter „Teilnehmende“ lässt sich ein eigener Name eintragen. Wer sich über Moodle anmeldet, erscheint mit Namen und Profilbild aus Moodle.</p>

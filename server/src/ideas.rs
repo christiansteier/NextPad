@@ -35,7 +35,7 @@ pub fn version() -> &'static str {
 pub struct Hub(Mutex<HashMap<String, broadcast::Sender<()>>>);
 
 impl Hub {
-    fn subscribe(&self, pad: &str) -> broadcast::Receiver<()> {
+    pub fn subscribe(&self, pad: &str) -> broadcast::Receiver<()> {
         let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
         m.retain(|_, tx| tx.receiver_count() > 0);
         m.entry(pad.to_string()).or_insert_with(|| broadcast::channel(16).0).subscribe()

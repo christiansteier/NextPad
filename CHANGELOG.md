@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-10-28
+
+### Added
+
+- Quiz board: a new pad kind for a review quiz in class. The lead pastes a table (category, points,
+  question, answer), names the teams and runs the board on the projector; everyone else follows live
+  on their phone via QR code. Answers reach viewers only after they are revealed. Points per team,
+  undo, keyboard control (Space, Esc, Z) and a score export. Available from the start page and via LTI.
+
 ## [0.9.3] - 2026-10-28
 
 0.9.2 was built but not released; its fixes are part of this release.

@@ -10,7 +10,7 @@ const g = await (await b.newContext()).newPage()
 
 await a.goto(base + '/')
 check('Startseite ohne „Leeres Pad“', !(await a.textContent('.templates')).includes('Leeres Pad'))
-check('vier Kacheln', (await a.locator('.templates li').count()) === 4)
+check('fünf Kacheln (mit Quiz-Raster)', (await a.locator('.templates li').count()) === 5)
 await a.click('a[href$="/new?typ=ideen"]')
 await a.waitForSelector('#add-form:not([hidden])')
 const url = a.url()

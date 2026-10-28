@@ -206,6 +206,7 @@ impl Claims {
     fn activity(&self) -> Option<&'static str> {
         let typ = self.custom.as_ref().and_then(|c| c.get("typ")).and_then(|v| v.as_str()).map(str::trim);
         let by_target = self.target_link_uri.as_deref().map(|u| u.split(['?', '#']).next().unwrap_or("").trim_end_matches('/').ends_with("/lti/ideen")).unwrap_or(false);
+        if typ == Some("quiz") { return Some("quiz"); }
         (typ == Some("ideen") || by_target).then_some("ideas")
     }
     /// Admins von NextPad: Administration der Moodle-Instanz oder in NEXTPAD_ADMINS (Mailadressen).
@@ -324,7 +325,9 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
             Ok(None) => match state.store.create_link_pad(&key, kind) {
                 Ok(p) => {
                     let title: String = link.title.as_deref().unwrap_or("").chars().filter(|c| !c.is_control()).take(200).collect();
-                    if !title.trim().is_empty() { let _ = state.store.set_idea_prompt(&p, title.trim()); }
+                    if !title.trim().is_empty() {
+                        let _ = if kind == "quiz" { state.store.quiz_set_title(&p, title.trim()) } else { state.store.set_idea_prompt(&p, title.trim()) };
+                    }
                     tracing::info!("Kursaktivität über {} angelegt", pl.name);
                     p
                 }
