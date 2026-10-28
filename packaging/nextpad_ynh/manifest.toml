@@ -57,7 +57,7 @@ ram.runtime = "100M"
 [resources]
     [resources.sources.main]
     url = "https://github.com/christiansteier/nextpad/releases/download/v0.12.0/nextpad-0.12.0-amd64"
-    sha256 = "c0280514540cdaa61e3c2dfe6da6c244a355b3f5b6aedc653af6eda7d92fa817"
+    sha256 = "50bd32843327ed920b65b8abe4fda414fc3a46499c47b107a77d46955c74494f"
     extract = false
     rename = "nextpad"
 

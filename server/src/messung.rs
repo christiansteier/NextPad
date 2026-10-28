@@ -312,6 +312,7 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
 <p>Diese Seite misst, wie schnell das WLAN im Raum Signale zustellt. Es gibt keine Punkte und es wird kein Name gespeichert, nur Zeiten und die Art des Geräts (iOS, Android, andere).</p>
 <p><button type="button" class="btn btn-primary" id="m-start">Mitmessen</button></p>
 <p class="hint" id="m-status" aria-live="polite">Bitte die Seite offen und den Bildschirm an lassen.</p>
+<p class="notice" id="m-wach" role="status" hidden>Der Bildschirm bleibt nicht von selbst an. Bitte die automatische Sperre kurz ausschalten (iPhone: Einstellungen › Anzeige &amp; Helligkeit › Automatische Sperre; Android: Einstellungen › Display › Bildschirm-Timeout).</p>
 <button type="button" class="messung-buzzer" id="m-buzzer" disabled>Warten auf das Signal</button>
 <p class="messung-reaktion" id="m-reaktion" aria-live="polite"></p>
 </section>

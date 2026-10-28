@@ -341,6 +341,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 </section>
 <aside class="panel quiz-qr" id="qr-box" hidden>{join}</aside>
 <section class="quiz-buzz-wahl" id="buzz-wahl" hidden aria-label="Buzzer"></section>
+<p class="notice quiz-wach" id="buzz-wach" role="status" hidden>Der Bildschirm bleibt nicht von selbst an. Bitte die automatische Sperre kurz ausschalten (iPhone: Einstellungen › Anzeige &amp; Helligkeit › Automatische Sperre; Android: Einstellungen › Display › Bildschirm-Timeout).</p>
 <section class="quiz-board" id="board" aria-label="Raster"></section>
 <section class="quiz-question" id="question" hidden aria-live="polite">
 <p class="quiz-meta" id="q-meta"></p><p class="quiz-q" id="q-text"></p><p class="quiz-a" id="q-answer" hidden></p>

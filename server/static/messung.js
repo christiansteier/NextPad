@@ -51,8 +51,11 @@
       await new Promise(r => setTimeout(r, 3000))
     }
   }
+  // Bildschirm anlassen; erzwingen lässt es sich nicht. Lehnt der Browser ab oder kann es nicht, steht ein Hinweis da.
   async function wachHalten() {
-    try { wake = await navigator.wakeLock?.request('screen') } catch {}
+    wake = null
+    try { if (navigator.wakeLock) wake = await navigator.wakeLock.request('screen') } catch {}
+    $('m-wach').hidden = !!wake
   }
   document.addEventListener('visibilitychange', () => { if (started && document.visibilityState === 'visible') wachHalten() })
 

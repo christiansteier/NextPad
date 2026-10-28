@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-10-28
+
+### Added
+
+- Buzzer and buzzer measurement: if the browser cannot keep the screen on (no Screen Wake Lock or request refused),
+  the phone shows how to turn off auto-lock for the session.
+
 ## [0.12.0] - 2026-10-28
 
 ### Added

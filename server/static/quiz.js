@@ -46,7 +46,12 @@
     }
     syncing = false
   }
-  async function wachHalten() { try { await navigator.wakeLock?.request('screen') } catch {} }
+  // Bildschirm anlassen; erzwingen lässt es sich nicht. Lehnt der Browser ab oder kann es nicht, steht ein Hinweis da.
+  async function wachHalten() {
+    let ok = false
+    try { if (navigator.wakeLock) { await navigator.wakeLock.request('screen'); ok = true } } catch {}
+    $('buzz-wach').hidden = ok
+  }
   document.addEventListener('visibilitychange', () => { if (myTeam && document.visibilityState === 'visible') wachHalten() })
   function chooseTeam(id) {
     myTeam = id; store.set(teamKey, String(id))
@@ -84,6 +89,7 @@
       b.setAttribute('aria-pressed', t.id === myTeam ? 'true' : 'false')
       b.addEventListener('click', () => chooseTeam(t.id)); w.append(b)
     })
+    if (!myTeam) $('buzz-wach').hidden = true
     if (myTeam) {
       const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = 'Team wechseln'
       c.addEventListener('click', () => chooseTeam(0)); w.append(c)
