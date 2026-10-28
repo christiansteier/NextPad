@@ -1,4 +1,4 @@
-// Startseite: Feldprüfung (leer, ungültig, g.-Präfix), gültiger Name öffnet das Pad, Vorlagen und Zeichenbrett legen Pads an,
+// Startseite: leeres Feld legt ein Pad mit Zufallsname an, Feldprüfung (ungültig, g.-Präfix), gültiger Name öffnet das Pad, Vorlagen und Zeichenbrett legen Pads an,
 // Fehlerseite des Servers mit Weg zurück. node test/startform.mjs <basis-url>
 import { chromium } from 'playwright'
 const base = process.argv[2] || 'http://127.0.0.1:5093'
@@ -7,8 +7,9 @@ const check = (n, ok, x = '') => { ok ? pass++ : fail++; console.log(`${ok ? 'ok
 const b = await chromium.launch(); const p = await (await b.newContext()).newPage()
 await p.goto(base + '/')
 check('Fehlerfeld anfangs unsichtbar', await p.locator('#padname-error').isHidden())
-await p.click('button[type=submit]')
-check('leer: Meldung, Feld markiert, Seite bleibt', (await p.textContent('#padname-error')).includes('Namen') && await p.getAttribute('#padname', 'aria-invalid') === 'true' && p.url() === base + '/')
+await Promise.all([p.waitForURL(/\/p\/[^/]+$/), p.click('button[type=submit]')])
+check('leer: Pad mit Zufallsname angelegt', /\/p\/[A-Za-z0-9]{16}$/.test(p.url()) && await p.locator('.ProseMirror').count() === 1, p.url())
+await p.goto(base + '/')
 await p.fill('#padname', 'a/b<c>'); await p.press('#padname', 'Enter')
 check('ungültige Zeichen: Meldung', (await p.textContent('#padname-error')).includes('Erlaubt'))
 await p.fill('#padname', 'g.test'); await p.press('#padname', 'Enter')

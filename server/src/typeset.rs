@@ -16,6 +16,8 @@ const LIB_REGULAR: &[u8] = include_bytes!("../static/fonts/LiberationSans-Regula
 const LIB_BOLD: &[u8] = include_bytes!("../static/fonts/LiberationSans-Bold.ttf");
 const LIB_ITALIC: &[u8] = include_bytes!("../static/fonts/LiberationSans-Italic.ttf");
 const LIB_BOLDITALIC: &[u8] = include_bytes!("../static/fonts/LiberationSans-BoldItalic.ttf");
+// Emoji (👍, 👎 der Bewertung und alles andere, was Arial nicht hat), einfarbig: Noto Emoji, OFL
+const EMOJI: &[u8] = include_bytes!("../static/fonts/NotoEmoji.ttf");
 
 struct Fonts { book: LazyHash<FontBook>, fonts: Vec<Font> }
 
@@ -29,7 +31,7 @@ fn fonts(theme_dir: Option<&std::path::Path>) -> &'static Fonts {
     static F: OnceLock<Fonts> = OnceLock::new();
     F.get_or_init(|| {
         let mut fonts: Vec<Font> = Vec::new();
-        for data in [LIB_REGULAR, LIB_BOLD, LIB_ITALIC, LIB_BOLDITALIC] { fonts.extend(Font::iter(Bytes::new(data))); }
+        for data in [LIB_REGULAR, LIB_BOLD, LIB_ITALIC, LIB_BOLDITALIC, EMOJI] { fonts.extend(Font::iter(Bytes::new(data))); }
         if let Some(dir) = theme_dir {
             if let Ok(rd) = std::fs::read_dir(dir) {
                 for e in rd.flatten() {
@@ -82,17 +84,17 @@ fn template(o: &Options, logo: Option<&str>, body: &str) -> String {
     use crate::render::typst_str as q;
     let head_left = match logo { Some(path) if o.hsd => format!("image({}, height: 11mm)", q(path)), _ => format!("text(size: 13pt, weight: \"bold\")[#{}]", q(o.product)) };
     let accent = if o.hsd { format!("rgb({})", q(o.accent)) } else { "luma(160)".to_string() };
-    let h1 = if o.hsd { "#show heading.where(level: 1): set text(font: (\"HSD Sans\", \"Arial\", \"Liberation Sans\"), weight: \"regular\", size: 22pt)" } else { "#show heading.where(level: 1): set text(size: 20pt)" };
+    let h1 = if o.hsd { "#show heading.where(level: 1): set text(font: (\"HSD Sans\", \"Arial\", \"Liberation Sans\", \"Noto Emoji\"), weight: \"regular\", size: 22pt)" } else { "#show heading.where(level: 1): set text(size: 20pt)" };
     format!(r#"#set document(title: {title}, author: "NextPad")
 #set page(paper: "a4", margin: (top: 34mm, bottom: 24mm, left: 25mm, right: 22mm),
   header: [#grid(columns: (1fr, auto), align: (left + horizon, right + horizon), {head_left}, text(size: 8pt, fill: luma(80))[#{header}])
     #v(-1.5mm) #line(length: 100%, stroke: 0.8pt + {accent})],
   footer: context [#set text(size: 8pt, fill: luma(80)); #{footer} #h(1fr) Seite #counter(page).display() von #counter(page).final().first()])
-#set text(font: ("Arial", "Liberation Sans"), size: 10.5pt, lang: "de", region: "de", hyphenate: true)
+#set text(font: ("Arial", "Liberation Sans", "Noto Emoji"), size: 10.5pt, lang: "de", region: "de", hyphenate: true)
 #set par(leading: 0.62em, spacing: 0.9em, justify: false)
 #set list(indent: 0.6em, body-indent: 0.5em, marker: ([•], [–], [·]))
 #set enum(indent: 0.6em, body-indent: 0.5em)
-#show heading: set text(font: ("Arial", "Liberation Sans"), weight: "bold", hyphenate: false)
+#show heading: set text(font: ("Arial", "Liberation Sans", "Noto Emoji"), weight: "bold", hyphenate: false)
 #show heading: set block(above: 1.3em, below: 0.6em)
 {h1}
 #show heading.where(level: 2): set text(size: 14pt)
@@ -139,5 +141,12 @@ mod tests {
         let svg = include_bytes!("../static/logo.svg").to_vec();
         let o = Options { hsd: true, theme_dir: None, logo: Some((svg, "image/svg+xml")), accent: "#007a96", product: "Pads", header: "Kopf", footer: "Fuß", title: "Test" };
         assert!(pdf(&o, "Text").expect("PDF").starts_with(b"%PDF"));
+    }
+    #[test]
+    fn emoji_aus_eingebauter_schrift() {
+        let o = Options { hsd: true, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "Kopf", footer: "Fuß", title: "Test" };
+        let body = format!("#heading(level: 1)[#{}]\n\n#{}\n", crate::render::typst_str("Abstimmung 👍"), crate::render::typst_str("Stimmen: 👍 15 · 👎 2"));
+        let p = pdf(&o, &body).expect("PDF");
+        assert!(p.windows(9).any(|w| w == b"NotoEmoji"), "Noto Emoji fehlt im PDF");
     }
 }

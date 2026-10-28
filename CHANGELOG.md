@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-10-28
+
+0.9.2 was built but not released; its fixes are part of this release.
+
+### Added
+
+- "Open or create" without a name creates a pad with a random name, like "New pad".
+
+### Fixed
+
+- Emoji in the PDF (such as the thumbs of ratings) were empty boxes; the PDF now embeds the monochrome
+  Noto Emoji font (SIL Open Font License 1.1) as fallback.
+- The tighter spacing from 0.9.1 now actually ships: it was only in the generated stylesheet, which the
+  release build overwrites, and is now in the source stylesheet of the editor bundle.
+- The cache-busting version of the editor stylesheets now also covers the HSD theme stylesheet, so browsers
+  load a changed theme instead of keeping the old one for up to a year.
+
 ## [0.9.1] - 2026-10-28
 
 ### Changed
