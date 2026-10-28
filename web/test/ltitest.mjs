@@ -167,6 +167,18 @@ check('Aktivität: zweite Aktivität eigene Sammlung', s2.r.status === 303 && s2
 check('Aktivität: Cookie hält beide Sitzungen', s2.sid.includes(',') && (await fetch(apiT, { headers: { cookie: s2.sid } })).ok)
 const s3 = await startAct({ ...act('43', 'Learner', 'rl3-' + run, { [C + 'custom']: {} }), [C + 'target_link_uri']: `${PUBLIC}/lti/ideen` })
 check('Aktivität: auch über die Zieladresse …/lti/ideen', s3.r.status === 303 && s3.loc.includes('aktivitaet'))
+// Text-Pad als Kursaktivität
+const tp = await startAct(act('42', 'Instructor', 'rl5-' + run, { [C + 'custom']: { typ: 'pad' } }))
+check('Text-Pad-Aktivität: Lehrende landen im Pad', tp.r.status === 303 && /%24aktivitaet$/.test(tp.loc) && tp.loc !== t.loc, tp.loc)
+const padUrl = base + tp.loc.replace(/^.*?\/p\//, '/p/')
+const padPage = await (await fetch(padUrl, { headers: { cookie: tp.sid } })).text()
+check('Text-Pad-Aktivität: Editor, keine Sammlung und kein Quiz', padPage.includes('nextpad-config') && !padPage.includes('ideen.js') && !padPage.includes('quiz.js'))
+const sp = await startAct(act('43', 'Learner', 'rl5-' + run, { [C + 'custom']: { typ: 'pad' } }))
+check('Text-Pad-Aktivität: Studierende im selben Pad, mit Schreibrecht', sp.loc === tp.loc && !(await (await fetch(padUrl, { headers: { cookie: sp.sid } })).text()).includes('"readonly":true'))
+check('Text-Pad-Aktivität: ohne Start aus Moodle kein Zugang', (await fetch(padUrl)).status === 403)
+check('Text-Pad-Aktivität: Export mit Sitzung', (await fetch(padUrl + '/export/md', { headers: { cookie: sp.sid } })).ok)
+const tp2 = await startAct({ ...act('43', 'Learner', 'rl6-' + run, { [C + 'custom']: {} }), [C + 'target_link_uri']: `${PUBLIC}/lti/pad` })
+check('Text-Pad-Aktivität: auch über die Zieladresse …/lti/pad', tp2.r.status === 303 && tp2.loc.includes('aktivitaet') && tp2.loc !== tp.loc)
 const s4 = await startAct({ ...act('43', 'Learner', 'x'), [C + 'resource_link']: undefined })
 check('Aktivität ohne Ressourcen-Link 400', s4.r.status === 400, `Status ${s4.r.status}`)
 

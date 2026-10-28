@@ -13,6 +13,8 @@ All notable changes to this project are documented in this file. The format is b
   not by arrival, fixes the order half a second after the first press and marks teams less than 50 ms apart as tied.
   One press per phone and question; implausible times fall back to arrival and are marked. The order is shown on the
   projector and on the phones, and the first team is marked next to the scoring buttons.
+- Plain text pad as a Moodle course activity: custom parameter `typ=pad` (or tool URL `…/lti/pad`) opens a pad of
+  its own for each activity, like an Etherpad group pad; only people who start it from Moodle get in.
 
 ## [0.11.1] - 2026-10-28
 

@@ -76,6 +76,14 @@ In Moodle (Website-Administration › Plugins › Externes Tool › Tools verwal
 
 Danach eine Aktivität mit diesem Werkzeug auf der Moodle-Startseite anlegen. Ihre Adresse `mod/lti/launch.php?id=<cmid>` ist `start_url`.
 
+### Pad, Ideensammlung oder Quiz als Kursaktivität
+
+Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unter „Mehr anzeigen“ › „Benutzerdefinierte Parameter“ eintragen, was entstehen soll:
+
+- `typ=pad`: ein gemeinsames Text-Pad (wie ein Etherpad-Gruppenpad). Alternativ Tool-URL `<public>/lti/pad`.
+- `typ=ideen`: eine Ideensammlung (Details unten).
+- `typ=quiz`: ein Quiz-Raster; Lehrende leiten, der Name der Aktivität wird zum Titel.
+
 ### Ideensammlung als Kursaktivität
 
 Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unter „Mehr anzeigen“ › „Benutzerdefinierte Parameter“ `typ=ideen` eintragen. Der Name der Aktivität wird zur Frage der Sammlung. Alternativ zeigt ein eigener Werkzeugeintrag mit der Tool-URL `<public>/lti/ideen` direkt auf die Sammlung.

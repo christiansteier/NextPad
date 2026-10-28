@@ -9,9 +9,10 @@
 //!    nonce, Deployment und Nachrichtentyp, legt die Person als Autor an und setzt
 //!    ein Anmelde-Cookie. Danach erscheinen Name und Profilbild aus Moodle in freien Pads.
 //!
-//! Als Kursaktivität (Parameter `typ=ideen` in der Werkzeugkonfiguration oder Zieladresse
-//! `…/lti/ideen`): je Ressourcen-Link eine eigene Gruppe mit einer Ideensammlung. Zugang nur
-//! über den Start aus Moodle (Sitzung wie bei Etherpad-Gruppenpads), Lehrende moderieren.
+//! Als Kursaktivität (Parameter `typ=pad`, `typ=ideen` oder `typ=quiz` in der Werkzeugkonfiguration,
+//! oder Zieladresse `…/lti/pad` bzw. `…/lti/ideen`): je Ressourcen-Link eine eigene Gruppe mit einem
+//! Text-Pad, einer Ideensammlung oder einem Quiz-Raster. Zugang nur über den Start aus Moodle (Sitzung wie
+//! bei Etherpad-Gruppenpads), Lehrende moderieren bzw. leiten.
 use crate::{ids, AppState};
 use axum::{
     body::Bytes,
@@ -205,9 +206,15 @@ impl Claims {
     /// Pad-Typ der Kursaktivität; None: nur anmelden.
     fn activity(&self) -> Option<&'static str> {
         let typ = self.custom.as_ref().and_then(|c| c.get("typ")).and_then(|v| v.as_str()).map(str::trim);
-        let by_target = self.target_link_uri.as_deref().map(|u| u.split(['?', '#']).next().unwrap_or("").trim_end_matches('/').ends_with("/lti/ideen")).unwrap_or(false);
-        if typ == Some("quiz") { return Some("quiz"); }
-        (typ == Some("ideen") || by_target).then_some("ideas")
+        let target = self.target_link_uri.as_deref().map(|u| u.split(['?', '#']).next().unwrap_or("").trim_end_matches('/').to_string()).unwrap_or_default();
+        match typ {
+            Some("quiz") => Some("quiz"),
+            Some("ideen") => Some("ideas"),
+            Some("pad" | "text") => Some("pad"),
+            _ if target.ends_with("/lti/ideen") => Some("ideas"),
+            _ if target.ends_with("/lti/pad") => Some("pad"),
+            _ => None,
+        }
     }
     /// Admins von NextPad: Administration der Moodle-Instanz oder in NEXTPAD_ADMINS (Mailadressen).
     fn administers(&self, admins: &[String]) -> bool {
@@ -326,7 +333,11 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
                 Ok(p) => {
                     let title: String = link.title.as_deref().unwrap_or("").chars().filter(|c| !c.is_control()).take(200).collect();
                     if !title.trim().is_empty() {
-                        let _ = if kind == "quiz" { state.store.quiz_set_title(&p, title.trim()) } else { state.store.set_idea_prompt(&p, title.trim()) };
+                        let _ = match kind {
+                            "quiz" => state.store.quiz_set_title(&p, title.trim()),
+                            "ideas" => state.store.set_idea_prompt(&p, title.trim()),
+                            _ => Ok(()),
+                        };
                     }
                     tracing::info!("Kursaktivität über {} angelegt", pl.name);
                     p
