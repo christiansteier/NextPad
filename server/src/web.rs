@@ -22,7 +22,7 @@ pub fn bundle_version() -> &'static str {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {
         let mut h: u64 = 1469598103934665603;
-        for b in EDITOR_JS.bytes().chain(EDITOR_CSS.bytes()) { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
+        for b in EDITOR_JS.bytes().chain(EDITOR_CSS.bytes()).chain(THEME_HSD_CSS.bytes()) { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
         format!("{h:016x}")
     })
 }
@@ -421,6 +421,8 @@ fn template(name: &str) -> Option<&'static str> {
 pub async fn open_pad(State(state): State<Arc<AppState>>, Query(q): Query<HashMap<String, String>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> Response {
     if !state.config.allow_free_pads { return error_page(StatusCode::FORBIDDEN, "Freie Pads sind auf diesem Server nicht eingeschaltet."); }
     let name = q.get("padname").map(|s| s.trim().to_string()).unwrap_or_default();
+    // ohne Namen wie „Neues Pad“: Zufallsname (Weiterleitung, damit Neuladen kein zweites Pad anlegt)
+    if name.is_empty() { return (StatusCode::SEE_OTHER, [(header::LOCATION, format!("{}/new", state.config.base_path))]).into_response(); }
     if !valid_free_pad_name(&name) { return error_page(StatusCode::BAD_REQUEST, "Pad-Name: 1 bis 50 Zeichen aus Buchstaben, Ziffern, Leerzeichen und - _ . ( ) ,"); }
     if state.store.get_pad(&name).ok().flatten().is_none() {
         if let Err((s, m)) = create_free_pad(&state, &name, crate::net::client_ip(&state, &headers, peer)) { return error_page(s, m); }
@@ -459,7 +461,7 @@ p.hint{{font-size:13px;margin:26px 0 0;color:#fff;opacity:.9}} p.hint a{{color:#
 <body><div id="wrapper"><div id="inner">
 <a id="button" href="{base}/new">Neues Pad</a>
 <form class="open" action="{base}/open" method="get"><label id="label" for="padname" style="flex-basis:100%">oder ein Pad mit folgendem Namen erstellen/öffnen:</label>
-<input type="text" id="padname" name="padname" maxlength="50" autofocus required><button type="submit">OK</button></form>
+<input type="text" id="padname" name="padname" maxlength="50" autofocus><button type="submit">OK</button></form>
 {account}<p class="hint">NextPad{site}. Wer den Namen eines Pads kennt, kann es lesen und schreiben. Kurse nutzen die Aktivität „Etherpad Lite“ in Moodle.</p>
 </div></div></body></html>"#, account = account_block(&state, &headers, "colibris"), site = site_suffix(&state));
         let mut resp = Html(body).into_response();
@@ -710,9 +712,9 @@ fn start_page_hsd(state: &AppState, headers: &HeaderMap) -> Response {
 <p class="lead">Der gemeinsame Schreibraum für Studium, Lehre und Zusammenarbeit. Im Browser, ohne Konto.</p>
 <form class="join" action="{base}/open" method="get" novalidate>
 <label class="field-label" for="padname">Name des Pads</label>
-<div class="field-row"><input type="text" id="padname" name="padname" maxlength="50" required placeholder="z. B. gruppe-3" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" aria-describedby="padname-hint padname-access padname-error"><button class="btn btn-primary" type="submit">Öffnen oder anlegen</button></div>
+<div class="field-row"><input type="text" id="padname" name="padname" maxlength="50" placeholder="z. B. gruppe-3" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" aria-describedby="padname-hint padname-access padname-error"><button class="btn btn-primary" type="submit">Öffnen oder anlegen</button></div>
 <p class="field-error" id="padname-error" role="alert" hidden></p>
-<p class="hint" id="padname-hint">Gibt es das Pad schon, öffnet es sich. Sonst wird es neu angelegt.</p>
+<p class="hint" id="padname-hint">Gibt es das Pad schon, öffnet es sich. Sonst wird es neu angelegt. Ohne Namen entsteht ein Pad mit Zufallsnamen.</p>
 <p class="access" id="padname-access">Kein Passwortschutz: Wer den Namen oder Link kennt, kann mitlesen und mitschreiben.</p>
 </form>
 <details class="new-pad" open>

@@ -7,7 +7,7 @@
   const input = document.getElementById('padname')
   const err = document.getElementById('padname-error')
   function problem(v) {
-    if (!v) return 'Bitte einen Namen für das Pad eingeben.'
+    if (!v) return '' // leer: der Server legt ein Pad mit Zufallsname an
     if ([...v].length > 50) return 'Der Name ist zu lang: höchstens 50 Zeichen.'
     if (/^[gr]\./.test(v)) return 'Namen dürfen nicht mit „g.“ oder „r.“ beginnen.'
     if (!/^[\p{L}\p{N} ._(),-]+$/u.test(v)) return 'Erlaubt sind Buchstaben, Ziffern, Leerzeichen und die Zeichen - _ . ( ) ,'
