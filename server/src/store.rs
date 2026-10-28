@@ -14,11 +14,33 @@ pub struct Store {
 pub enum WriteOp {
     Append { pad: String, seq: i64, ts: i64, author: Option<String>, bytes: Vec<u8> },
     Exec(Box<dyn FnOnce(&Connection) -> rusqlite::Result<()> + Send>),
-    Flush(mpsc::Sender<()>),
+    Flush(mpsc::Sender<bool>),
+}
+
+/// Ein Yjs-Update, wie es in die Tabelle `updates` geht; bleibt erhalten, bis es geschrieben ist.
+struct Pending { pad: String, seq: i64, ts: i64, author: Option<String>, bytes: Vec<u8> }
+
+fn write_updates(conn: &Connection, ups: &[Pending]) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let mut touched: std::collections::HashMap<&str, i64> = Default::default();
+    {
+        let mut ins = tx.prepare_cached(
+            "INSERT OR IGNORE INTO updates (pad_id, seq, ts, author_id, bytes) SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM pads WHERE id=?1)")?;
+        for u in ups { ins.execute(params![u.pad, u.seq, u.ts, u.author, u.bytes])?; touched.insert(&u.pad, u.ts); }
+    }
+    for (pad, ts) in touched { tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1 AND last_edited < ?2", params![pad, ts])?; }
+    tx.commit()
 }
 
 /// Bündelt Updates: wartet nach dem ersten Auftrag höchstens 5 ms oder bis 512 Aufträge, schreibt alles in einer Transaktion.
+/// Scheitert die Transaktion, versucht der Thread es mit wachsender Pause erneut, bis sie gelingt: die Updates sind schon
+/// bei den Verbundenen angekommen und dürfen nicht verloren gehen. Solange staut sich die Warteschlange (Gegendruck).
+/// Wartungsaufträge laufen danach je in eigener Transaktion; scheitert einer, kommt er beim nächsten Lauf wieder.
 fn writer_loop(conn: Connection, rx: mpsc::Receiver<WriteOp>) {
+    writer_loop_with(conn, rx, Duration::from_millis(50), Duration::from_secs(5))
+}
+
+fn writer_loop_with(conn: Connection, rx: mpsc::Receiver<WriteOp>, first_pause: Duration, max_pause: Duration) {
     while let Ok(first) = rx.recv() {
         let mut batch = vec![first];
         let deadline = Instant::now() + Duration::from_millis(5);
@@ -27,26 +49,30 @@ fn writer_loop(conn: Connection, rx: mpsc::Receiver<WriteOp>) {
             if left.is_zero() { break; }
             match rx.recv_timeout(left) { Ok(op) => batch.push(op), Err(_) => break }
         }
-        let mut flushes = Vec::new();
-        let res: rusqlite::Result<()> = (|| {
-            let tx = conn.unchecked_transaction()?;
-            let mut touched: std::collections::HashMap<String, i64> = Default::default();
-            {
-                let mut ins = tx.prepare_cached(
-                    "INSERT OR IGNORE INTO updates (pad_id, seq, ts, author_id, bytes) SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM pads WHERE id=?1)")?;
-                for op in batch {
-                    match op {
-                        WriteOp::Append { pad, seq, ts, author, bytes } => { ins.execute(params![pad, seq, ts, author, bytes])?; touched.insert(pad, ts); }
-                        WriteOp::Exec(f) => { if let Err(e) = f(&tx) { tracing::warn!("Schreib-Thread, Wartung: {e}"); } }
-                        WriteOp::Flush(s) => flushes.push(s),
-                    }
-                }
+        let (mut ups, mut jobs, mut flushes) = (Vec::new(), Vec::new(), Vec::new());
+        for op in batch {
+            match op {
+                WriteOp::Append { pad, seq, ts, author, bytes } => ups.push(Pending { pad, seq, ts, author, bytes }),
+                WriteOp::Exec(f) => jobs.push(f),
+                WriteOp::Flush(s) => flushes.push(s),
             }
-            for (pad, ts) in touched { tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1 AND last_edited < ?2", params![pad, ts])?; }
-            tx.commit()
-        })();
-        if let Err(e) = res { tracing::error!("Schreib-Thread: Updates nicht gespeichert: {e}"); }
-        for s in flushes { let _ = s.send(()); }
+        }
+        if !ups.is_empty() {
+            let mut pause = first_pause;
+            let mut tries = 0u32;
+            while let Err(e) = write_updates(&conn, &ups) {
+                tries += 1;
+                tracing::error!("Schreib-Thread: {} Updates nicht gespeichert (Versuch {tries}), neuer Versuch in {} ms: {e}", ups.len(), pause.as_millis());
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(max_pause);
+            }
+            if tries > 0 { tracing::warn!("Schreib-Thread: {} Updates nach {} Fehlversuchen gespeichert", ups.len(), tries); }
+        }
+        for f in jobs {
+            let res = conn.unchecked_transaction().and_then(|tx| { f(&tx)?; tx.commit() });
+            if let Err(e) = res { tracing::warn!("Schreib-Thread, Wartung: {e}"); }
+        }
+        for s in flushes { let _ = s.send(true); }
     }
 }
 
@@ -61,7 +87,8 @@ pub struct Pad {
 
 #[derive(Debug, Clone, Default)]
 /// `phase`: 0 Vorbereitung (Teams wählen, Raster gesperrt), 1 läuft, 2 beendet (Ergebnis).
-pub struct QuizState { pub title: String, pub current: Option<i64>, pub revealed: bool, pub phase: i64 }
+/// `sekunden`: Countdown je Frage, 0 = ohne.
+pub struct QuizState { pub title: String, pub current: Option<i64>, pub revealed: bool, pub phase: i64, pub sekunden: i64 }
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct QuizField { pub id: i64, pub cat: String, pub points: i64, pub question: String, pub answer: String }
 
@@ -136,11 +163,11 @@ CREATE TABLE IF NOT EXISTS ideas (
   hidden INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS idea_votes (pad_id TEXT NOT NULL, idea_id INTEGER NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, idea_id, author_id));
 CREATE TABLE IF NOT EXISTS idea_prompts (pad_id TEXT PRIMARY KEY, prompt TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', current INTEGER, revealed INTEGER NOT NULL DEFAULT 0, phase INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', current INTEGER, revealed INTEGER NOT NULL DEFAULT 0, phase INTEGER NOT NULL DEFAULT 1, sekunden INTEGER NOT NULL DEFAULT 10);
 CREATE TABLE IF NOT EXISTS quiz_fields (pad_id TEXT NOT NULL, id INTEGER NOT NULL, cat TEXT NOT NULL, points INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_teams (pad_id TEXT NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_log (pad_id TEXT NOT NULL, seq INTEGER NOT NULL, field INTEGER NOT NULL, team INTEGER, delta INTEGER NOT NULL, PRIMARY KEY (pad_id, seq));
-CREATE TABLE IF NOT EXISTS quiz_buzz (pad_id TEXT NOT NULL, field INTEGER NOT NULL, dev TEXT NOT NULL, team INTEGER NOT NULL, t_press REAL NOT NULL, ts_ein REAL NOT NULL, flagged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, field, dev));
+CREATE TABLE IF NOT EXISTS quiz_buzz (pad_id TEXT NOT NULL, field INTEGER NOT NULL, dev TEXT NOT NULL, team INTEGER NOT NULL, t_press REAL NOT NULL, ts_ein REAL NOT NULL, flagged INTEGER NOT NULL DEFAULT 0, reaktion REAL, PRIMARY KEY (pad_id, field, dev));
 CREATE TABLE IF NOT EXISTS quiz_buzz_open (pad_id TEXT PRIMARY KEY, field INTEGER NOT NULL, ts REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS messung_geraet (pad_id TEXT NOT NULL, dev TEXT NOT NULL, nr INTEGER NOT NULL, art TEXT NOT NULL, PRIMARY KEY (pad_id, dev));
 CREATE TABLE IF NOT EXISTS messung_probe (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, ts REAL NOT NULL, rtt REAL NOT NULL, rtt_med REAL NOT NULL, off REAL NOT NULL);
@@ -178,6 +205,11 @@ impl Store {
         // Schema-Ergänzung 28.10.2026: Spielphase im Quiz; laufende Spiele bleiben laufend (1)
         let has_phase: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_state') WHERE name='phase'")?.exists([])?;
         if !has_phase { conn.execute_batch("ALTER TABLE quiz_state ADD COLUMN phase INTEGER NOT NULL DEFAULT 1;")?; }
+        // Schema-Ergänzung 28.10.2026: Countdown je Frage und Reaktionszeit je Buzzer-Druck
+        let has_sek: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_state') WHERE name='sekunden'")?.exists([])?;
+        if !has_sek { conn.execute_batch("ALTER TABLE quiz_state ADD COLUMN sekunden INTEGER NOT NULL DEFAULT 10;")?; }
+        let has_reak: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_buzz') WHERE name='reaktion'")?.exists([])?;
+        if !has_reak { conn.execute_batch("ALTER TABLE quiz_buzz ADD COLUMN reaktion REAL;")?; }
         let wconn = Connection::open(path)?;
         wconn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         let (tx, rx) = mpsc::sync_channel::<WriteOp>(65_536);
@@ -340,8 +372,9 @@ impl Store {
 
     // Quiz-Raster: Fragen und Antworten nur hier, nie im Yjs-Dokument
     pub fn quiz_state(&self, pad_id: &str) -> Result<QuizState> {
-        Ok(self.c().query_row("SELECT title, current, revealed, phase FROM quiz_state WHERE pad_id=?1", params![pad_id],
-            |r| Ok(QuizState { title: r.get(0)?, current: r.get(1)?, revealed: r.get(2)?, phase: r.get(3)? })).optional()?.unwrap_or_default())
+        Ok(self.c().query_row("SELECT title, current, revealed, phase, sekunden FROM quiz_state WHERE pad_id=?1", params![pad_id],
+            |r| Ok(QuizState { title: r.get(0)?, current: r.get(1)?, revealed: r.get(2)?, phase: r.get(3)?, sekunden: r.get(4)? })).optional()?
+            .unwrap_or(QuizState { sekunden: 10, ..Default::default() }))
     }
     pub fn quiz_fields(&self, pad_id: &str) -> Result<Vec<QuizField>> {
         Ok(self.c().prepare("SELECT id, cat, points, question, answer FROM quiz_fields WHERE pad_id=?1 ORDER BY id")?
@@ -358,13 +391,13 @@ impl Store {
             .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<std::result::Result<_, _>>()?)
     }
     /// Neue Fragen und Teams: Wertungen und offene Frage fallen weg.
-    pub fn quiz_replace(&self, pad_id: &str, title: &str, fields: &[QuizField], teams: &[String]) -> Result<()> {
+    pub fn quiz_replace(&self, pad_id: &str, title: &str, fields: &[QuizField], teams: &[String], sekunden: i64) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
         for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log", "quiz_teams", "quiz_fields"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
         for f in fields { tx.execute("INSERT INTO quiz_fields (pad_id, id, cat, points, question, answer) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, f.id, f.cat, f.points, f.question, f.answer])?; }
         for (i, t) in teams.iter().enumerate() { tx.execute("INSERT INTO quiz_teams (pad_id, id, name) VALUES (?1, ?2, ?3)", params![pad_id, i as i64 + 1, t])?; }
-        tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed, phase) VALUES (?1, ?2, NULL, 0, 0) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0, phase=0", params![pad_id, title])?;
+        tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed, phase, sekunden) VALUES (?1, ?2, NULL, 0, 0, ?3) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0, phase=0, sekunden=?3", params![pad_id, title, sekunden])?;
         tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
         tx.commit()?;
         Ok(())
@@ -608,9 +641,13 @@ impl Store {
         if self.writer.send(op).is_err() { tracing::error!(pad = %pad_id, "Schreib-Thread beendet, Update verloren"); }
     }
     /// Wartet, bis alle bisher übergebenen Aufträge geschrieben sind (vor dem Laden eines Pads, beim Beenden).
-    pub fn flush(&self) {
+    /// false, wenn das nach 30 s nicht geschafft ist (Datenbank scheitert dauerhaft, der Schreib-Thread versucht es weiter).
+    pub fn flush(&self) -> bool {
         let (tx, rx) = mpsc::channel();
-        if self.writer.send(WriteOp::Flush(tx)).is_ok() { let _ = rx.recv_timeout(Duration::from_secs(30)); }
+        if self.writer.send(WriteOp::Flush(tx)).is_err() { tracing::error!("Schreib-Thread beendet"); return false; }
+        let ok = rx.recv_timeout(Duration::from_secs(30)).unwrap_or(false);
+        if !ok { tracing::error!("Schreib-Thread: Warteschlange nach 30 s nicht geschrieben"); }
+        ok
     }
     /// Altbestand zusammenführen: Einzelschritte vor `cutoff_ms`, die ein Vollstand abdeckt, löschen;
     /// Vollstände vor `cutoff_ms` auf den letzten je Tag ausdünnen. Läuft im Schreib-Thread.
@@ -811,7 +848,8 @@ const MESS_TABELLEN: [&str; 4] = ["messung_marke", "messung_runde", "messung_pro
 /// Ein Buzzer-Druck: `t_press` ist die Druckzeit in Serverzeit (nach Uhrabgleich), `ts_ein` der Eingang beim Server.
 /// `flagged`: Zeit war unplausibel, ersetzt durch Eingang minus halbe Laufzeit.
 #[derive(Debug, Clone, Default)]
-pub struct Buzz { pub team: i64, pub t_press: f64, pub ts_ein: f64, pub flagged: bool }
+/// `reaktion`: Druckzeit minus Öffnen der Frage (ms); fehlt bei Drücken aus älteren Versionen.
+pub struct Buzz { pub team: i64, pub t_press: f64, pub ts_ein: f64, pub flagged: bool, pub reaktion: Option<f64> }
 
 impl Store {
     /// Neue Buzzer-Runde für ein Feld: alte Drücke dieses Felds weg, Öffnungszeit merken.
@@ -832,16 +870,22 @@ impl Store {
         let c = self.c();
         let n: i64 = c.query_row("SELECT COUNT(*) FROM quiz_buzz WHERE pad_id=?1 AND field=?2", params![pad_id, field], |r| r.get(0))?;
         if n >= max { return Ok(false); }
-        Ok(c.execute("INSERT OR IGNORE INTO quiz_buzz (pad_id, field, dev, team, t_press, ts_ein, flagged) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![pad_id, field, dev, b.team, b.t_press, b.ts_ein, b.flagged])? > 0)
+        Ok(c.execute("INSERT OR IGNORE INTO quiz_buzz (pad_id, field, dev, team, t_press, ts_ein, flagged, reaktion) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![pad_id, field, dev, b.team, b.t_press, b.ts_ein, b.flagged, b.reaktion])? > 0)
     }
     /// Team, für das ein Gerät in diesem Spiel schon gedrückt hat (ein neues Spiel leert die Drücke).
     pub fn quiz_buzz_team(&self, pad_id: &str, dev: &str) -> Result<Option<i64>> {
         Ok(self.c().query_row("SELECT team FROM quiz_buzz WHERE pad_id=?1 AND dev=?2 LIMIT 1", params![pad_id, dev], |r| r.get(0)).optional()?)
     }
     pub fn quiz_buzzes(&self, pad_id: &str, field: i64) -> Result<Vec<Buzz>> {
-        Ok(self.c().prepare("SELECT team, t_press, ts_ein, flagged FROM quiz_buzz WHERE pad_id=?1 AND field=?2 ORDER BY ts_ein")?
-            .query_map(params![pad_id, field], |r| Ok(Buzz { team: r.get(0)?, t_press: r.get(1)?, ts_ein: r.get(2)?, flagged: r.get(3)? }))?
+        Ok(self.c().prepare("SELECT team, t_press, ts_ein, flagged, reaktion FROM quiz_buzz WHERE pad_id=?1 AND field=?2 ORDER BY ts_ein")?
+            .query_map(params![pad_id, field], |r| Ok(Buzz { team: r.get(0)?, t_press: r.get(1)?, ts_ein: r.get(2)?, flagged: r.get(3)?, reaktion: r.get(4)? }))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+    /// Für die Statistik am Ende: je Feld und Team die schnellste sichere Reaktion (ms).
+    pub fn quiz_reaktionen(&self, pad_id: &str) -> Result<Vec<(i64, f64)>> {
+        Ok(self.c().prepare("SELECT team, MIN(reaktion) FROM quiz_buzz WHERE pad_id=?1 AND flagged=0 AND reaktion IS NOT NULL GROUP BY field, team")?
+            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?)
     }
 }
@@ -862,5 +906,35 @@ impl Store {
     }
     pub fn course_url(&self, pad_id: &str) -> Option<String> {
         self.c().query_row("SELECT url FROM pad_kurs WHERE pad_id=?1", params![pad_id], |r| r.get(0)).optional().ok().flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Gesperrte Datenbank: der Stapel wird nicht verworfen, sondern geschrieben, sobald die Sperre weg ist.
+    #[test]
+    fn schreibfehler_werden_wiederholt() {
+        let dir = std::env::temp_dir().join(format!("nextpad-test-{}-{}", std::process::id(), ids::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.sqlite");
+        let store = Store::open(&path).unwrap();
+        store.create_pad("p1", None).unwrap();
+        // eigener Schreib-Thread ohne Wartezeit bei Sperre, damit der Fehler sofort kommt
+        let wconn = Connection::open(&path).unwrap();
+        wconn.execute_batch("PRAGMA busy_timeout=0;").unwrap();
+        let (tx, rx) = mpsc::sync_channel::<WriteOp>(16);
+        std::thread::spawn(move || writer_loop_with(wconn, rx, Duration::from_millis(20), Duration::from_millis(100)));
+        let sperre = Connection::open(&path).unwrap();
+        sperre.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+        tx.send(WriteOp::Append { pad: "p1".into(), seq: 1, ts: 1, author: None, bytes: vec![1, 2, 3] }).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        sperre.execute_batch("COMMIT;").unwrap();
+        let (ftx, frx) = mpsc::channel();
+        tx.send(WriteOp::Flush(ftx)).unwrap();
+        assert!(frx.recv_timeout(Duration::from_secs(5)).unwrap());
+        assert_eq!(store.updates_since("p1", 0).unwrap(), vec![(1, vec![1, 2, 3])]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

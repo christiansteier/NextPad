@@ -25,6 +25,8 @@ const BUZZ_FENSTER_MS: f64 = 500.0;
 /// Unter diesem Abstand gelten zwei Teams als gleichauf (Touchscreens streuen selbst so viel).
 const BUZZ_GLEICH_MS: f64 = 50.0;
 const MAX_BUZZ: i64 = 300;
+/// Längster Countdown je Frage in Sekunden.
+const MAX_SEKUNDEN: i64 = 120;
 
 pub const QUIZ_JS: &str = include_str!("../static/quiz.js");
 pub const QUIZ_CSS: &str = include_str!("../static/quiz.css");
@@ -113,20 +115,22 @@ pub fn buzz_order(buzzes: &[Buzz], teams: &[(i64, String)], now: f64) -> serde_j
     let Some(first) = buzzes.iter().map(|b| b.ts_ein).min_by(|a, b| a.total_cmp(b)) else { return serde_json::Value::Null };
     let window = first + BUZZ_FENSTER_MS;
     let name = |t: i64| teams.iter().find(|(id, _)| *id == t).map(|(_, n)| n.clone()).unwrap_or_default();
-    let mut best: Vec<(i64, f64, bool)> = Vec::new();
+    let mut best: Vec<(i64, f64, bool, Option<f64>)> = Vec::new();
     for b in buzzes.iter().filter(|b| b.ts_ein <= window) {
         match best.iter_mut().find(|x| x.0 == b.team) {
-            Some(x) if b.t_press < x.1 => { x.1 = b.t_press; x.2 = b.flagged; }
+            Some(x) if b.t_press < x.1 => { x.1 = b.t_press; x.2 = b.flagged; x.3 = b.reaktion; }
             Some(_) => {}
-            None => best.push((b.team, b.t_press, b.flagged)),
+            None => best.push((b.team, b.t_press, b.flagged, b.reaktion)),
         }
     }
     best.sort_by(|a, b| a.1.total_cmp(&b.1));
     let t0 = best.first().map(|x| x.1).unwrap_or(0.0);
     let mut out = Vec::new();
     let mut prev = t0;
-    for (i, (team, t, flagged)) in best.iter().enumerate() {
-        out.push(json!({ "team": team, "name": name(*team), "abstand": ((t - t0) * 10.0).round() / 10.0, "gleichauf": i > 0 && t - prev < BUZZ_GLEICH_MS, "unsicher": flagged, "spaet": false }));
+    for (i, (team, t, flagged, reaktion)) in best.iter().enumerate() {
+        // Reaktionszeit nur, wenn die Druckzeit sicher ist
+        let reaktion = reaktion.filter(|_| !flagged).map(|r| r.round());
+        out.push(json!({ "team": team, "name": name(*team), "abstand": ((t - t0) * 10.0).round() / 10.0, "gleichauf": i > 0 && t - prev < BUZZ_GLEICH_MS, "unsicher": flagged, "spaet": false, "reaktion": reaktion }));
         prev = *t;
     }
     let mut late: Vec<&Buzz> = buzzes.iter().filter(|b| b.ts_ein > window && !best.iter().any(|x| x.0 == b.team)).collect();
@@ -136,6 +140,19 @@ pub fn buzz_order(buzzes: &[Buzz], teams: &[(i64, String)], now: f64) -> serde_j
         out.push(json!({ "team": b.team, "name": name(b.team), "abstand": serde_json::Value::Null, "gleichauf": false, "unsicher": b.flagged, "spaet": true }));
     }
     json!({ "fertig": now >= window, "reihe": out })
+}
+
+/// Statistik fürs Ergebnis: schnellste Reaktion des Spiels und je Team der Mittelwert der Reaktionen (ms).
+pub fn statistik(reaktionen: &[(i64, f64)], teams: &[(i64, String)]) -> serde_json::Value {
+    let name = |t: i64| teams.iter().find(|(id, _)| *id == t).map(|(_, n)| n.clone()).unwrap_or_default();
+    let Some(&(st, sms)) = reaktionen.iter().filter(|(t, _)| teams.iter().any(|(id, _)| id == t)).min_by(|a, b| a.1.total_cmp(&b.1)) else { return serde_json::Value::Null };
+    let mut je: Vec<_> = teams.iter().filter_map(|(id, n)| {
+        let r: Vec<f64> = reaktionen.iter().filter(|(t, _)| t == id).map(|(_, r)| *r).collect();
+        (!r.is_empty()).then(|| (n.clone(), r.iter().sum::<f64>() / r.len() as f64, r.len()))
+    }).collect();
+    je.sort_by(|a, b| a.1.total_cmp(&b.1));
+    json!({ "schnellste": { "name": name(st), "ms": sms.round() },
+            "teams": je.iter().map(|(n, m, k)| json!({ "name": n, "mittel": m.round(), "anzahl": k })).collect::<Vec<_>>() })
 }
 
 /// Druckzeit in Serverzeit aus Gerätezeit und Uhrabgleich; unplausibel (nach dem Eingang, vor dem Öffnen oder mehr
@@ -167,16 +184,33 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
         if v.lead || st.revealed { q["answer"] = json!(f.answer); }
         q
     });
-    let buzz = match (st.current, state.store.quiz_buzz_open(&v.pad)) {
-        (Some(c), Ok(Some((f, _)))) if c == f => state.store.quiz_buzzes(&v.pad, c).map(|b| buzz_order(&b, &teams, jetzt())).unwrap_or_default(),
-        _ => serde_json::Value::Null,
+    let open = state.store.quiz_buzz_open(&v.pad).ok().flatten().filter(|(f, _)| st.current == Some(*f));
+    let mut buzz = match open {
+        Some((c, _)) => state.store.quiz_buzzes(&v.pad, c).map(|b| buzz_order(&b, &teams, jetzt())).unwrap_or_default(),
+        None => serde_json::Value::Null,
     };
+    // Teams, die zu dieser Frage schon falsch geantwortet haben: dran ist das nächste in der Reihenfolge
+    if let (Some(c), Some(reihe)) = (st.current, buzz.get_mut("reihe").and_then(|r| r.as_array_mut())) {
+        for r in reihe.iter_mut() {
+            let falsch = r["team"].as_i64().is_some_and(|t| log.iter().any(|(f, lt, d)| *f == c && *lt == Some(t) && *d < 0));
+            r["falsch"] = json!(falsch);
+        }
+    }
+    let current = current.map(|mut q| {
+        q["sekunden"] = json!(st.sekunden);
+        // Restzeit bis zum Ende des Countdowns; null ohne Countdown oder nach dem Aufdecken
+        if let Some((_, ts)) = open.filter(|_| st.sekunden > 0 && !st.revealed) {
+            q["restMs"] = json!((ts + st.sekunden as f64 * 1000.0 - jetzt()).max(0.0).round());
+        }
+        q
+    });
+    let statistik = statistik(&state.store.quiz_reaktionen(&v.pad).unwrap_or_default(), &teams);
     let phase = match st.phase { 0 => "vorbereitung", 2 => "ende", _ => "laeuft" };
-    let mut out = json!({ "title": st.title, "lead": v.lead, "phase": phase, "teams": teams_json, "board": board, "current": current, "buzz": buzz,
+    let mut out = json!({ "title": st.title, "lead": v.lead, "phase": phase, "teams": teams_json, "board": board, "current": current, "buzz": buzz, "statistik": statistik,
         "messung": !v.lead && crate::messung::leitung_misst(&state, &v.pad) });
     if v.lead {
         out["canUndo"] = json!(!log.is_empty());
-        out["setup"] = json!({ "title": st.title, "teams": teams.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", "), "table": if fields.is_empty() { String::new() } else { table_text(&fields) } });
+        out["setup"] = json!({ "sekunden": st.sekunden, "title": st.title, "teams": teams.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", "), "table": if fields.is_empty() { String::new() } else { table_text(&fields) } });
     }
     no_store(Json(out).into_response())
 }
@@ -190,7 +224,9 @@ pub async fn setup(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
     if teams.is_empty() { return (StatusCode::BAD_REQUEST, "Bitte mindestens ein Team eintragen.").into_response(); }
     if teams.len() > MAX_TEAMS { return (StatusCode::BAD_REQUEST, format!("Höchstens {MAX_TEAMS} Teams.")).into_response(); }
     let title = clean(&s("title"), MAX_TITLE);
-    match state.store.quiz_replace(&v.pad, &title, &fields, &teams) {
+    let sekunden = body.get("sekunden").and_then(|x| x.as_i64()).unwrap_or(10);
+    if !(0..=MAX_SEKUNDEN).contains(&sekunden) { return (StatusCode::BAD_REQUEST, format!("Zeit je Frage: 0 bis {MAX_SEKUNDEN} Sekunden.")).into_response(); }
+    match state.store.quiz_replace(&v.pad, &title, &fields, &teams, sekunden) {
         Ok(()) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true, "fields": fields.len() })).into_response() }
         Err(e) => { tracing::warn!("Quiz einrichten: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -233,6 +269,12 @@ pub async fn open(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
 pub async fn score(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
     let v = match lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     let Some(field) = body.get("field").and_then(|x| x.as_i64()) else { return StatusCode::BAD_REQUEST.into_response() };
+    // gewertet wird nur die gerade offene Frage im laufenden Spiel
+    match state.store.quiz_state(&v.pad) {
+        Ok(st) if st.phase != 1 || st.current != Some(field) => return (StatusCode::CONFLICT, "Gewertet wird nur die offene Frage.").into_response(),
+        Ok(_) => {}
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
     let team = body.get("team").and_then(|x| x.as_i64());
     let plus = body.get("plus").and_then(|x| x.as_bool()).unwrap_or(true);
     let points = match state.store.quiz_fields(&v.pad) { Ok(f) => f.iter().find(|f| f.id == field).map(|f| f.points), Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
@@ -294,7 +336,13 @@ pub async fn buzzer(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
         Err(e) => { tracing::warn!("Buzzer: {e}"); return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
     }
     let (t_press, flagged) = buzz_time(t, off, rtt, ein, open_ts);
-    match state.store.quiz_buzz_add(&v.pad, open_field, dev, &Buzz { team, t_press, ts_ein: ein, flagged }, MAX_BUZZ) {
+    // Countdown: gedrückt nach Ablauf zählt nicht; etwas Spielraum für den Weg durchs Netz
+    if st.sekunden > 0 {
+        let frist = open_ts + st.sekunden as f64 * 1000.0;
+        if t_press > frist + 50.0 || ein > frist + 1500.0 { return (StatusCode::CONFLICT, "Die Zeit ist um.").into_response(); }
+    }
+    let reaktion = Some(t_press - open_ts).filter(|r| *r >= 0.0);
+    match state.store.quiz_buzz_add(&v.pad, open_field, dev, &Buzz { team, t_press, ts_ein: ein, flagged, reaktion }, MAX_BUZZ) {
         Ok(added) => {
             if added { state.ideas.notify(&v.pad); }
             Json(json!({ "ok": true, "neu": added })).into_response()
@@ -380,6 +428,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <h2 id="setup-h">Fragen und Teams</h2>
 <label class="field-label" for="in-title">Titel</label><input id="in-title" maxlength="{MAX_TITLE}" autocomplete="off">
 <label class="field-label" for="in-teams">Teams, durch Komma getrennt</label><input id="in-teams" autocomplete="off" placeholder="Team 1, Team 2, Team 3">
+<label class="field-label" for="in-sek">Zeit je Frage in Sekunden (0 = ohne Countdown)</label><input id="in-sek" type="number" min="0" max="{MAX_SEKUNDEN}" step="1" inputmode="numeric" value="10">
 <label class="field-label" for="in-table">Fragen als Tabelle: Kategorie | Punkte | Frage | Antwort</label>
 <textarea id="in-table" rows="12" spellcheck="false" aria-describedby="table-hint setup-error"></textarea>
 <p class="hint" id="table-hint">Eine Zeile je Frage, als Markdown-Tabelle oder aus einem Tabellenprogramm kopiert. Bis {MAX_CATS} Kategorien und {MAX_FIELDS} Fragen. Die Antworten sieht nur die Leitung, bis sie aufgedeckt werden.</p>
@@ -392,7 +441,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <p class="notice quiz-phase" id="q-phase" role="status" hidden></p>
 <section class="quiz-board" id="board" aria-label="Raster"></section>
 <section class="quiz-question" id="question" hidden aria-live="polite">
-<p class="quiz-meta" id="q-meta"></p><p class="quiz-q" id="q-text"></p><p class="quiz-a" id="q-answer" hidden></p>
+<p class="quiz-meta" id="q-meta"></p><p class="quiz-countdown" id="q-countdown" hidden></p><p class="quiz-q" id="q-text"></p><p class="quiz-a" id="q-answer" hidden></p>
 <p class="quiz-erster" id="buzz-erster" hidden aria-live="assertive"></p>
 <button type="button" class="quiz-buzzer" id="buzz-btn" hidden>Buzzer</button>
 <p class="hint" id="buzz-info" aria-live="polite"></p>
@@ -447,7 +496,7 @@ mod tests {
     #[test]
     fn buzzer_reihenfolge_nach_druckzeit_im_fenster() {
         let teams = vec![(1, "Rot".to_string()), (2, "Blau".to_string()), (3, "Grün".to_string())];
-        let b = |team, t_press, ts_ein| Buzz { team, t_press, ts_ein, flagged: false };
+        let b = |team, t_press, ts_ein| Buzz { team, t_press, ts_ein, flagged: false, reaktion: None };
         // Blau kommt zuerst an, Rot hat früher gedrückt (langsames Netz); Grün 30 ms nach Rot: gleichauf; Rot drückt zweimal
         let v = buzz_order(&[b(2, 1060.0, 1080.0), b(1, 1000.0, 1300.0), b(3, 1030.0, 1200.0), b(1, 1100.0, 1350.0)], &teams, 2000.0);
         let r = v["reihe"].as_array().unwrap();

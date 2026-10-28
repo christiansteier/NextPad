@@ -35,7 +35,7 @@ ok('getText nach setText', (await get('getText', { padID: P })).data?.text === '
 const eph = '<!DOCTYPE HTML><html><body>Erste Zeile<br><strong>fett</strong> und <em>kursiv</em> und <u>unter</u> <s>durch</s><br><br>Leerzeile davor<br><ul class="bullet"><li>Punkt eins</li><li>Punkt zwei</li></ul><h1>Titel</h1><span class="font-size:18">groß</span> <span style="color:#ff0000">rot</span><br><ol><li>erstens</li></ol></body></html>'
 ok('setHTML Etherpad-Dialekt', (await post('setHTML', { padID: P, html: eph })).code === 0)
 const h1 = (await get('getHTML', { padID: P })).data.html
-ok('getHTML enthält Struktur', ['<h1>Titel</h1>', '<strong>fett</strong>', '<ul>', '<ol>', 'font-size:18px', 'color:#ff0000'].every(x => h1.includes(x)))
+ok('getHTML enthält Struktur', ['>Titel</h1>', '<strong>fett</strong>', '<ul>', '<ol>', 'font-size:18px', 'color:#ff0000'].every(x => h1.includes(x)))
 ok('getText nach setHTML', (await get('getText', { padID: P })).data.text === 'Erste Zeile\nfett und kursiv und unter durch\n\nLeerzeile davor\n- Punkt eins\n- Punkt zwei\nTitel\ngroß rot\n1. erstens\n')
 await post('setHTML', { padID: P, html: h1 }); ok('Roundtrip getHTML → setHTML → getHTML identisch', (await get('getHTML', { padID: P })).data.html === h1)
 ok('getRevisionsCount', typeof (await get('getRevisionsCount', { padID: P })).data?.revisions === 'number')

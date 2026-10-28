@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-10-28
+
+### Added
+
+- Quiz countdown: the time per question is set when creating the quiz (default 10 seconds, 0 turns it off). It runs in
+  large type on the projector from the moment a question opens; afterwards the buzzer takes no more presses.
+- The projector shows the reaction time of the first team (time from opening the question to the press).
+- After a wrong answer (minus points) the question stays open and the projector shows “Jetzt dran” with the next team
+  in the buzz order; the order marks the wrong answer.
+- End screen statistics: fastest team and mean reaction time per team.
+
+### Fixed
+
+- A failed SQLite write batch (for example a locked database) is retried with growing pauses instead of being dropped.
+  Loading a pad and the history export now wait for pending writes and report an error if they cannot be stored.
+- Scoring is only accepted for the question that is currently open in a running game.
+
 ## [0.14.0] - 2026-10-28
 
 ### Added

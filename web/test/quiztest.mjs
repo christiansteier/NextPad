@@ -84,6 +84,12 @@ check('gespieltes Feld ist gesperrt', await lead.locator('.quiz-cell.is-played')
 const played = await lead.evaluate(async u => { const d = await (await fetch(u + '/quiz')).json(); return d.board.find(f => f.played).id }, url)
 const reopen = await lead.evaluate(async ([u, f]) => (await fetch(u + '/quiz/feld', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: f }) })).status, [url, played])
 check('gespielte Frage lässt sich nicht wieder öffnen (409)', reopen === 409, String(reopen))
+const wertungZu = await lead.evaluate(async u => {
+  const q = await (await fetch(u + '/quiz', { cache: 'no-store' })).json()
+  const zu = q.board.find(f => !f.played)
+  return (await fetch(u + '/quiz/wertung', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: zu.id, team: 1, plus: true }) })).status
+}, url)
+check('nicht geöffnete Frage lässt sich nicht werten (409)', wertungZu === 409, String(wertungZu))
 
 // Während einer Frage nur Aufdecken, Wertung, Vollbild
 await lead.click('.quiz-cell >> text=100 >> nth=0'); await lead.waitForSelector('#question:not([hidden])')
