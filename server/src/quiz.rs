@@ -34,9 +34,9 @@ pub fn version() -> &'static str {
 }
 
 /// `lead`: darf leiten (wer das freie Quiz angelegt hat, in Kursen die Lehrenden).
-struct Viewer { pad: String, lead: bool }
+pub(crate) struct Viewer { pub pad: String, pub lead: bool }
 
-fn viewer(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
+pub(crate) fn viewer(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
     let access = web::check_access(state, headers, id).map_err(|(s, m)| (s, m).into_response())?;
     if !state.store.is_quiz(&access.pad.id) { return Err((StatusCode::NOT_FOUND, "Das ist kein Quiz-Raster.").into_response()); }
     let author = access.author.map(|a| a.0);
@@ -46,7 +46,7 @@ fn viewer(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Res
 }
 
 /// Schreibende Aufrufe: nur die Leitung, nur von der eigenen Seite (Origin).
-fn lead(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
+pub(crate) fn lead(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
     if !web::origin_ok(state, headers) || headers.get(header::ORIGIN).is_none() { return Err(StatusCode::FORBIDDEN.into_response()); }
     let v = viewer(state, headers, id)?;
     if !v.lead { return Err((StatusCode::FORBIDDEN, "Nur die Leitung des Quiz darf das.").into_response()); }
@@ -106,7 +106,15 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
         else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     let done = played(&log);
     let teams_json: Vec<_> = teams.iter().map(|(tid, name)| json!({ "id": tid, "name": name, "score": log.iter().filter(|(_, t, _)| *t == Some(*tid)).map(|(_, _, d)| d).sum::<i64>() })).collect();
-    let board: Vec<_> = fields.iter().map(|f| json!({ "id": f.id, "cat": f.cat, "points": f.points, "played": done.contains(&f.id) })).collect();
+    // Gespielte Fragen kennen alle schon; „schwer“ = niemand gelöst oder mit Abzug, für die Nachbesprechung am Ende
+    let board: Vec<_> = fields.iter().map(|f| {
+        let mut b = json!({ "id": f.id, "cat": f.cat, "points": f.points, "played": done.contains(&f.id) });
+        if done.contains(&f.id) {
+            b["question"] = json!(f.question);
+            b["schwer"] = json!(log.iter().any(|(fid, t, d)| *fid == f.id && (t.is_none() || *d < 0)));
+        }
+        b
+    }).collect();
     let current = st.current.and_then(|c| fields.iter().find(|f| f.id == c)).map(|f| {
         let mut q = json!({ "id": f.id, "cat": f.cat, "points": f.points, "question": f.question, "revealed": st.revealed });
         if v.lead || st.revealed { q["answer"] = json!(f.answer); }
@@ -140,6 +148,14 @@ pub async fn open(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     let v = match lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     let field = body.get("field").and_then(|x| x.as_i64());
     let revealed = body.get("revealed").and_then(|x| x.as_bool()).unwrap_or(false);
+    // Gespielte Fragen nicht versehentlich wieder öffnen; zurück holt sie nur „Rückgängig“
+    if let Some(f) = field {
+        match state.store.quiz_log(&v.pad) {
+            Ok(log) if played(&log).contains(&f) => return (StatusCode::CONFLICT, "Diese Frage ist schon gespielt. „Rückgängig“ holt sie zurück.").into_response(),
+            Ok(_) => {}
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    }
     match state.store.quiz_open(&v.pad, field, revealed) {
         Ok(true) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
@@ -202,14 +218,15 @@ pub fn export(state: &AppState, pad: &str, format: &str) -> Option<Response> {
 }
 
 /// QR-Code zum Mitsehen: nur bei freien Quiz über den Link selbst (nicht den Leselink, der Rechte hätte ohnehin keine).
-pub fn join_svg(state: &AppState, headers: &HeaderMap, free: bool, url_id: &str, pad_id: &str) -> String {
+/// `suffix`: Unterseite, auf die der Code führt (leer: das Quiz selbst).
+pub fn join_svg(state: &AppState, headers: &HeaderMap, free: bool, url_id: &str, pad_id: &str, suffix: &str) -> String {
     if !free || url_id.starts_with("r.") { return String::new(); }
     let base = &state.config.base_path;
     let origin = state.config.public_url.clone().unwrap_or_else(|| {
         let host = headers.get("x-forwarded-host").or_else(|| headers.get(header::HOST)).and_then(|v| v.to_str().ok()).unwrap_or("localhost");
         format!("https://{host}{base}")
     });
-    let url = format!("{}/p/{}", origin.trim_end_matches('/'), web::urlencoding(pad_id));
+    let url = format!("{}/p/{}{suffix}", origin.trim_end_matches('/'), web::urlencoding(pad_id));
     let qr = qrcode::QrCode::new(url.as_bytes()).map(|c| c.render::<qrcode::render::svg::Color>().min_dimensions(320, 320).quiet_zone(true).build()).unwrap_or_default();
     let qr = qr.split_once("<svg").map(|(_, r)| format!(r#"<svg role="img" aria-label="QR-Code zum Mitsehen"{r}"#)).unwrap_or_default();
     format!(r#"{qr}<p>Mitsehen auf dem Handy:<br><strong>{}</strong></p>"#, html_escape::encode_text(&url))
@@ -225,6 +242,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <button type="button" class="btn btn-secondary" id="q-qr" aria-controls="qr-box" aria-expanded="false">QR-Code</button>
 <button type="button" class="btn btn-secondary" id="q-full">Vollbild</button>
 <button type="button" class="btn btn-secondary" id="q-edit" aria-controls="setup" aria-expanded="false">Fragen bearbeiten</button>
+<a class="btn btn-secondary" id="q-messung" href="{base}/p/{u}/messung">Buzzer-Messung</a>
 </div></div>
 <section class="panel quiz-setup" id="setup" hidden aria-labelledby="setup-h">
 <h2 id="setup-h">Fragen und Teams</h2>
@@ -242,6 +260,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <p class="quiz-meta" id="q-meta"></p><p class="quiz-q" id="q-text"></p><p class="quiz-a" id="q-answer" hidden></p>
 <div class="quiz-actions" id="q-actions"></div>
 </section>
+<section class="quiz-ende" id="ende" hidden aria-live="polite" aria-labelledby="ende-h"></section>
 <p class="hint quiz-empty" id="empty" hidden></p>
 <section class="quiz-scores" id="scores" aria-label="Punktestand"></section>
 <noscript><p class="notice">Das Quiz-Raster braucht JavaScript.</p></noscript>

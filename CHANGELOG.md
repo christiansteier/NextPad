@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-10-28
+
+### Added
+
+- Buzzer measurement for the quiz board: phones join via QR code, sync their clock with the server every few seconds
+  and press on a signal from the lead. The lead sees round-trip times, remaining clock error, signal delay and how often
+  the first press by arrival differs from the first press by corrected time, plus a verdict and a CSV export. Stores
+  only times and the device type (iOS, Android, other), no names.
+
+### Changed
+
+- Quiz board: played fields are locked (the server refuses to reopen them; undo brings a question back), the changed
+  score is highlighted briefly (static outline with reduced motion), and during a question only reveal, scoring and
+  full screen are shown.
+- Quiz board: after the last question an end screen shows the ranking, the winner (or a tie) and, for discussion, the
+  questions nobody solved or that were solved only after a wrong answer.
+
 ## [0.10.0] - 2026-10-28
 
 ### Added

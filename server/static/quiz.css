@@ -26,7 +26,8 @@ main.quiz { flex: 1; display: flex; flex-direction: column; gap: var(--space-4);
   background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 0;
 }
 button.quiz-cell { cursor: pointer; }
-button.quiz-cell:hover { border-color: var(--color-text-primary); }
+button.quiz-cell:not(:disabled):hover { border-color: var(--color-text-primary); }
+button.quiz-cell:disabled { cursor: default; }
 .quiz-cell.is-played { background: transparent; color: var(--color-text-secondary); border-style: dashed; font-weight: 400; opacity: .55; }
 
 .quiz-question { display: flex; flex-direction: column; gap: var(--space-4); min-height: min(62vh, 640px); }
@@ -47,6 +48,21 @@ button.quiz-cell:hover { border-color: var(--color-text-primary); }
 .quiz-export { margin: 0; }
 
 /* Vollbild für den Beamer: Kopf und Fuß der Seite ausblenden */
+.quiz-score { padding: 0 var(--space-1); }
+.quiz-score.is-changed { animation: quiz-geaendert 1.6s ease-out; }
+@keyframes quiz-geaendert { from { background: var(--color-text-primary); color: var(--color-canvas); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .quiz-score.is-changed { animation: none; outline: 2px solid var(--color-text-primary); } }
+
+.quiz-ende { display: flex; flex-direction: column; gap: var(--space-2); }
+.quiz-ende h2 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.5rem); }
+.quiz-sieg { margin: 0; font-weight: 700; font-size: clamp(1.8rem, 5vw, 4rem); line-height: 1.1; border-left: 8px solid var(--color-accent, #e60028); padding-left: var(--space-3); }
+.quiz-rang { margin: 0; padding-left: 1.6em; font-size: clamp(1.1rem, 2.2vw, 2rem); }
+.quiz-rang li span { margin-right: var(--space-3); }
+.quiz-ende h3 { margin: var(--space-3) 0 0; }
+.quiz-nach { margin: 0; padding-left: 1.2em; font-size: clamp(1rem, 1.8vw, 1.5rem); }
+.quiz-nach li { margin-bottom: var(--space-1); }
+.quiz-meta-klein { color: var(--color-text-secondary); margin-right: var(--space-2); white-space: nowrap; }
+
 :fullscreen .site-header, :fullscreen .site-footer, :fullscreen .quiz-export { display: none; }
 :fullscreen main.quiz { max-width: none; padding: var(--space-3) var(--space-5); }
 @media (max-width: 640px) {

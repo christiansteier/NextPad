@@ -4,6 +4,7 @@ mod bausteine;
 mod config;
 mod docs;
 mod ideas;
+mod messung;
 mod quiz;
 mod ids;
 mod look;
@@ -118,6 +119,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/p/{id}/quiz/rueckgaengig", axum::routing::post(quiz::undo))
         .route("/static/quiz.js", get(quiz::static_js))
         .route("/static/quiz.css", get(quiz::static_css))
+        .route("/p/{id}/messung", get(messung::page))
+        .route("/p/{id}/messung/zeit", get(messung::zeit))
+        .route("/p/{id}/messung/stand", get(messung::stand))
+        .route("/p/{id}/messung/daten", get(messung::daten))
+        .route("/p/{id}/messung/export.csv", get(messung::export))
+        .route("/p/{id}/messung/probe", axum::routing::post(messung::probe))
+        .route("/p/{id}/messung/empfang", axum::routing::post(messung::empfang))
+        .route("/p/{id}/messung/druck", axum::routing::post(messung::druck))
+        .route("/p/{id}/messung/signal", axum::routing::post(messung::signal))
+        .route("/p/{id}/messung/loeschen", axum::routing::post(messung::loeschen))
+        .route("/static/messung.js", get(messung::static_js))
+        .route("/static/messung.css", get(messung::static_css))
         .route("/static/ideen.js", get(ideas::static_js))
         .route("/static/ideen-wand.js", get(ideas::static_wand))
         .route("/static/ideen.css", get(ideas::static_css))
