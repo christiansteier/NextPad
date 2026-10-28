@@ -305,16 +305,24 @@ pub fn export(state: &AppState, pad: &str, format: &str) -> Option<Response> {
 /// QR-Code zum Mitsehen: nur bei freien Quiz über den Link selbst (nicht den Leselink, der Rechte hätte ohnehin keine).
 /// `suffix`: Unterseite, auf die der Code führt (leer: das Quiz selbst).
 pub fn join_svg(state: &AppState, headers: &HeaderMap, free: bool, url_id: &str, pad_id: &str, suffix: &str) -> String {
-    if !free || url_id.starts_with("r.") { return String::new(); }
+    // Moodle-Aktivität: der Code führt zur Aktivität in Moodle (Anmeldung dort), nicht direkt ins Pad
+    if !free {
+        return state.store.join_url(pad_id).map(|u| qr_block(&u, "Mitmachen über Moodle:")).unwrap_or_default();
+    }
+    if url_id.starts_with("r.") { return String::new(); }
     let base = &state.config.base_path;
     let origin = state.config.public_url.clone().unwrap_or_else(|| {
         let host = headers.get("x-forwarded-host").or_else(|| headers.get(header::HOST)).and_then(|v| v.to_str().ok()).unwrap_or("localhost");
         format!("https://{host}{base}")
     });
     let url = format!("{}/p/{}{suffix}", origin.trim_end_matches('/'), web::urlencoding(pad_id));
+    qr_block(&url, "Mitsehen auf dem Handy:")
+}
+
+pub fn qr_block(url: &str, label: &str) -> String {
     let qr = qrcode::QrCode::new(url.as_bytes()).map(|c| c.render::<qrcode::render::svg::Color>().min_dimensions(320, 320).quiet_zone(true).build()).unwrap_or_default();
-    let qr = qr.split_once("<svg").map(|(_, r)| format!(r#"<svg role="img" aria-label="QR-Code zum Mitsehen"{r}"#)).unwrap_or_default();
-    format!(r#"{qr}<p>Mitsehen auf dem Handy:<br><strong>{}</strong></p>"#, html_escape::encode_text(&url))
+    let qr = qr.split_once("<svg").map(|(_, r)| format!(r#"<svg role="img" aria-label="QR-Code: {}"{r}"#, html_escape::encode_double_quoted_attribute(label.trim_end_matches(':')))).unwrap_or_default();
+    format!(r#"{qr}<p>{}<br><strong>{}</strong></p>"#, html_escape::encode_text(label), html_escape::encode_text(url))
 }
 
 /// Seite des Quiz; Leitung und Mitsehende bekommen dieselbe Seite, das Skript zeigt je nach Rolle.

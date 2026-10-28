@@ -347,6 +347,11 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
             Err(e) => { tracing::error!("Kursaktivität suchen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
         };
         if claims.moderates() { let _ = state.store.add_moderator(&pad, &author.id); }
+        // QR-Code am Beamer: Moodle zählt Ressourcen-Links mit der Nummer der LTI-Instanz, die Aktivität ist dann
+        // <Moodle>/mod/lti/view.php?l=<Nummer>; wer scannt, meldet sich in Moodle an und startet die Aktivität
+        if !link.id.is_empty() && link.id.len() <= 18 && link.id.chars().all(|c| c.is_ascii_digit()) {
+            let _ = state.store.set_join_url(&pad, &format!("{}/mod/lti/view.php?l={}", pl.moodle(), link.id));
+        }
         let group = crate::ids::group_of_pad(&pad).unwrap_or("").to_string();
         let sid = match state.store.create_session(&group, &author.id, ids::now_ms() / 1000 + LOGIN_SECONDS) {
             Ok(s) => s,

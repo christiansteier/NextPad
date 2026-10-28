@@ -147,6 +147,7 @@ CREATE INDEX IF NOT EXISTS messung_probe_pad ON messung_probe (pad_id);
 CREATE TABLE IF NOT EXISTS messung_runde (pad_id TEXT NOT NULL, runde INTEGER NOT NULL, ts REAL NOT NULL, PRIMARY KEY (pad_id, runde));
 CREATE TABLE IF NOT EXISTS messung_marke (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, runde INTEGER NOT NULL, t_empfang REAL, t_druck REAL, ts_ein REAL, off REAL NOT NULL, rtt REAL NOT NULL, PRIMARY KEY (pad_id, nr, runde));
 CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pad_join (pad_id TEXT PRIMARY KEY, url TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, author_id));
 "#;
@@ -262,6 +263,7 @@ impl Store {
         for t in MESS_TABELLEN { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
         c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
+        c.execute("DELETE FROM pad_join WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM snapshots WHERE pad_id=?1", params![id])?;
         Ok(c.execute("DELETE FROM pads WHERE id=?1", params![id])? > 0)
     }
@@ -816,5 +818,16 @@ impl Store {
         Ok(self.c().prepare("SELECT team, t_press, ts_ein, flagged FROM quiz_buzz WHERE pad_id=?1 AND field=?2 ORDER BY ts_ein")?
             .query_map(params![pad_id, field], |r| Ok(Buzz { team: r.get(0)?, t_press: r.get(1)?, ts_ein: r.get(2)?, flagged: r.get(3)? }))?
             .collect::<rusqlite::Result<_>>()?)
+    }
+}
+
+impl Store {
+    /// Adresse, über die man in eine Moodle-Aktivität hineinkommt (für den QR-Code am Beamer).
+    pub fn set_join_url(&self, pad_id: &str, url: &str) -> Result<()> {
+        self.c().execute("INSERT INTO pad_join (pad_id, url) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET url=?2", params![pad_id, url])?;
+        Ok(())
+    }
+    pub fn join_url(&self, pad_id: &str) -> Option<String> {
+        self.c().query_row("SELECT url FROM pad_join WHERE pad_id=?1", params![pad_id], |r| r.get(0)).optional().ok().flatten()
     }
 }

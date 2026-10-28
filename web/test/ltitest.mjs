@@ -198,6 +198,16 @@ check('Quiz-Aktivität: Studierende buzzern', buzzQ.ok && (await buzzQ.json()).n
 const leadQ = await (await fetch(quizUrl + '/quiz', { headers: { cookie: tq.sid } })).json()
 check('Quiz-Aktivität: Leitung sieht die Reihenfolge', leadQ.buzz && leadQ.buzz.reihe[0]?.name === 'Blau', JSON.stringify(leadQ.buzz))
 check('Quiz-Aktivität: ohne Start aus Moodle kein Buzzer', (await fetch(quizUrl + '/quiz/buzzer', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}' })).status === 403)
+// QR-Code einer Moodle-Aktivität führt zur Aktivität in Moodle
+const nr = String(Date.now() % 1000000)
+const tm = await startAct(act('42', 'Instructor', nr, { [C + 'custom']: { typ: 'quiz' } }))
+const qrPage = await (await fetch(base + tm.loc.replace(/^.*?\/p\//, '/p/'), { headers: { cookie: tm.sid } })).text()
+check('Moodle-Quiz: QR-Code zeigt auf die Aktivität in Moodle', qrPage.includes(`${ISS}/mod/lti/view.php?l=${nr}`) && qrPage.includes('Mitmachen über Moodle') && qrPage.includes('<svg'))
+const qrMess = await (await fetch(base + tm.loc.replace(/^.*?\/p\//, '/p/') + '/messung', { headers: { cookie: tm.sid } })).text()
+check('Moodle-Quiz: auch auf der Messseite', qrMess.includes(`${ISS}/mod/lti/view.php?l=${nr}`))
+const ti = await startAct(act('42', 'Instructor', String(Number(nr) + 1)))
+const wall = await (await fetch(base + ti.loc.replace(/^.*?\/p\//, '/p/') + '/leinwand', { headers: { cookie: ti.sid } })).text()
+check('Moodle-Ideensammlung: Leinwand mit QR zur Aktivität', wall.includes(`${ISS}/mod/lti/view.php?l=${Number(nr) + 1}`))
 const s4 = await startAct({ ...act('43', 'Learner', 'x'), [C + 'resource_link']: undefined })
 check('Aktivität ohne Ressourcen-Link 400', s4.r.status === 400, `Status ${s4.r.status}`)
 

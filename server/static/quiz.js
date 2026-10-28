@@ -8,6 +8,7 @@
   let data = null
   let busy = false
   let lastScores = {}
+  const hasQr = !!$('qr-box').textContent.trim()
   const changedAt = {}
   // ---- Buzzer (Mitsehende): Team wählen, Uhr laufend mit dem Server abgleichen, drücken ----
   // Gewertet wird die Druckzeit in Serverzeit, nicht der Eingang; die Reihenfolge rechnet der Server.
@@ -252,6 +253,8 @@
       $('q-undo').disabled = !data.canUndo
       // während einer Frage nur Aufdecken, Wertung und Vollbild: der Rest lenkt ab
       for (const id of ['q-undo', 'q-qr', 'q-edit', 'q-messung']) $(id).hidden = !!data.current
+      // ohne Code (Moodle-Aktivität, die noch nie aus Moodle gestartet wurde) kein QR-Knopf
+      if (!hasQr) $('q-qr').hidden = true
       if (data.current) $('qr-box').hidden = true
       const setup = $('setup')
       // Formular nur füllen, wenn es zu ist: sonst überschreibt ein Live-Update die Eingabe
@@ -293,7 +296,6 @@
   $('q-undo').addEventListener('click', () => act(() => post('/rueckgaengig')))
   $('q-qr').addEventListener('click', () => { const b = $('qr-box'); b.hidden = !b.hidden; $('q-qr').setAttribute('aria-expanded', b.hidden ? 'false' : 'true') })
   $('q-full').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() })
-  if (!$('qr-box').textContent.trim()) $('q-qr').hidden = true
 
   // Tasten für die Leitung: Leertaste deckt auf, Esc zurück zum Raster, Z nimmt die letzte Wertung zurück
   document.addEventListener('keydown', e => {

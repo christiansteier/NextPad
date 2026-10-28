@@ -242,7 +242,10 @@ pub async fn wall(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         let qr = qr.split_once("<svg").map(|(_, r)| format!(r#"<svg role="img" aria-label="QR-Code zum Mitmachen"{r}"#)).unwrap_or_default();
         format!(r#"<aside class="wall-join">{qr}<p>Mitmachen:<br><strong>{}</strong></p></aside>"#, html_escape::encode_text(&url))
     } else if !access.free {
-        r#"<aside class="wall-join"><p>Mitmachen über die Aktivität im Moodle-Kurs.</p></aside>"#.to_string()
+        match state.store.join_url(&access.pad.id) {
+            Some(u) => format!(r#"<aside class="wall-join">{}</aside>"#, crate::quiz::qr_block(&u, "Mitmachen über Moodle:")),
+            None => r#"<aside class="wall-join"><p>Mitmachen über die Aktivität im Moodle-Kurs.</p></aside>"#.to_string(),
+        }
     } else { String::new() };
     let brand = if state.config.theme == "hsd" && web::has_logo(&state) { format!(r#"<img class="wall-logo" src="{}" alt="{}">"#, web::theme_url(&state, "logo.png"), html_escape::encode_double_quoted_attribute(crate::look::get(&state).institution())) } else { format!(r#"<span class="wall-brand">{}{}</span>"#, web::logo_mark("wall-mark"), html_escape::encode_text(crate::look::get(&state).product())) };
     let cfg = json!({ "urlId": id, "basePath": base });
