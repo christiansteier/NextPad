@@ -171,7 +171,8 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
         (Some(c), Ok(Some((f, _)))) if c == f => state.store.quiz_buzzes(&v.pad, c).map(|b| buzz_order(&b, &teams, jetzt())).unwrap_or_default(),
         _ => serde_json::Value::Null,
     };
-    let mut out = json!({ "title": st.title, "lead": v.lead, "teams": teams_json, "board": board, "current": current, "buzz": buzz,
+    let phase = match st.phase { 0 => "vorbereitung", 2 => "ende", _ => "laeuft" };
+    let mut out = json!({ "title": st.title, "lead": v.lead, "phase": phase, "teams": teams_json, "board": board, "current": current, "buzz": buzz,
         "messung": !v.lead && crate::messung::leitung_misst(&state, &v.pad) });
     if v.lead {
         out["canUndo"] = json!(!log.is_empty());
@@ -200,8 +201,13 @@ pub async fn open(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     let v = match lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     let field = body.get("field").and_then(|x| x.as_i64());
     let revealed = body.get("revealed").and_then(|x| x.as_bool()).unwrap_or(false);
-    // Gespielte Fragen nicht versehentlich wieder öffnen; zurück holt sie nur „Rückgängig“
+    // Fragen nur im laufenden Spiel; gespielte nicht versehentlich wieder öffnen, zurück holt sie nur „Rückgängig“
     if let Some(f) = field {
+        match state.store.quiz_state(&v.pad) {
+            Ok(st) if st.phase != 1 => return (StatusCode::CONFLICT, "Das Spiel läuft nicht. Erst „Spiel starten“.").into_response(),
+            Ok(_) => {}
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
         match state.store.quiz_log(&v.pad) {
             Ok(log) if played(&log).contains(&f) => return (StatusCode::CONFLICT, "Diese Frage ist schon gespielt. „Rückgängig“ holt sie zurück.").into_response(),
             Ok(_) => {}
@@ -239,8 +245,26 @@ pub async fn score(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
     }
 }
 
+/// Spielablauf: `aktion` "start" (Raster frei, Teams fest), "ende" (Ergebnis zeigen, auch mit offenen Feldern)
+/// oder "neu" (Punkte und Felder zurück, Fragen und Teams bleiben, wieder Vorbereitung).
+pub async fn spiel(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap, Json(body): Json<serde_json::Value>) -> Response {
+    let v = match lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
+    let r = match body.get("aktion").and_then(|x| x.as_str()) {
+        Some("start") => state.store.quiz_set_phase(&v.pad, 1),
+        Some("ende") => state.store.quiz_set_phase(&v.pad, 2),
+        Some("neu") => state.store.quiz_new_game(&v.pad),
+        _ => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match r {
+        Ok(()) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Err(e) => { tracing::warn!("Quiz Spielablauf: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+    }
+}
+
 pub async fn undo(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
+    // nach „Spiel beenden“ macht Rückgängig auch das Beenden rückgängig: das Spiel läuft weiter
+    if state.store.quiz_state(&v.pad).is_ok_and(|s| s.phase == 2) { let _ = state.store.quiz_set_phase(&v.pad, 1); }
     match state.store.quiz_undo(&v.pad) {
         Ok(_) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Err(e) => { tracing::warn!("Quiz rückgängig: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
@@ -338,11 +362,18 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
     let content = format!(r#"<main id="inhalt" class="quiz" tabindex="-1">
 <div class="quiz-top"><div><p class="kicker" id="quiz-kicker">Quiz-Raster</p><h1 id="quiz-title">Quiz-Raster</h1></div>
 <div class="quiz-tools" id="lead-tools" hidden>
+<button type="button" class="btn btn-primary" id="q-start" hidden>Spiel starten</button>
+<button type="button" class="btn btn-primary" id="q-neu" hidden>Neues Spiel</button>
+<button type="button" class="btn btn-secondary" id="q-stop" hidden>Spiel beenden</button>
+<details class="quiz-menu" id="q-menu"><summary class="btn btn-secondary" title="Weitere Funktionen" aria-label="Weitere Funktionen">⋯</summary>
+<div class="quiz-menu-list">
 <button type="button" class="btn btn-secondary" id="q-undo">Rückgängig</button>
 <button type="button" class="btn btn-secondary" id="q-qr" aria-controls="qr-box" aria-expanded="false">QR-Code</button>
 <button type="button" class="btn btn-secondary" id="q-full">Vollbild</button>
 <button type="button" class="btn btn-secondary" id="q-edit" aria-controls="setup" aria-expanded="false">Fragen bearbeiten</button>
 <a class="btn btn-secondary" id="q-messung" href="{base}/p/{u}/messung">Buzzer-Messung</a>
+<button type="button" class="btn btn-secondary" id="q-ton" aria-pressed="true">Buzzer-Ton an</button>
+</div></details>
 </div>
 <div class="quiz-tools" id="viewer-tools" hidden><a class="btn btn-primary" id="q-mitmessen" href="{base}/p/{u}/messung">An der Messung teilnehmen</a></div></div>
 <section class="panel quiz-setup" id="setup" hidden aria-labelledby="setup-h">
@@ -358,9 +389,11 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value, join: &str) 
 <aside class="panel quiz-qr" id="qr-box" hidden>{join}</aside>
 <section class="quiz-buzz-wahl" id="buzz-wahl" hidden aria-label="Buzzer"></section>
 <p class="notice quiz-wach" id="buzz-wach" role="status" hidden>Der Bildschirm bleibt nicht von selbst an. Bitte die automatische Sperre kurz ausschalten (iPhone: Einstellungen › Anzeige &amp; Helligkeit › Automatische Sperre; Android: Einstellungen › Display › Bildschirm-Timeout).</p>
+<p class="notice quiz-phase" id="q-phase" role="status" hidden></p>
 <section class="quiz-board" id="board" aria-label="Raster"></section>
 <section class="quiz-question" id="question" hidden aria-live="polite">
 <p class="quiz-meta" id="q-meta"></p><p class="quiz-q" id="q-text"></p><p class="quiz-a" id="q-answer" hidden></p>
+<p class="quiz-erster" id="buzz-erster" hidden aria-live="assertive"></p>
 <button type="button" class="quiz-buzzer" id="buzz-btn" hidden>Buzzer</button>
 <p class="hint" id="buzz-info" aria-live="polite"></p>
 <p class="quiz-buzz-kopf" id="buzz-kopf" hidden></p><ol class="quiz-buzz-reihe" id="buzz-reihe" hidden aria-live="polite" aria-labelledby="buzz-kopf"></ol>

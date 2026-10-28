@@ -96,15 +96,35 @@
     if (!myTeam) $('buzz-wach').hidden = true
     if (myTeam) {
       // wechseln nur vor dem Spiel; läuft es (Frage offen oder schon gespielt), bleibt das Team
-      const laeuft = !!data.current || data.board.some(f => f.played)
+      const laeuft = data.phase !== 'vorbereitung'
       if (!laeuft) {
         const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = 'Team wechseln'
         c.addEventListener('click', () => chooseTeam(0)); w.append(c)
       }
       // ohne offene Frage kein Buzzer: sagen, worauf das Handy wartet
-      if (!data.current) w.append(Object.assign(document.createElement('p'), { className: 'hint quiz-buzz-warten', textContent: 'Bereit. Der Buzzer erscheint, sobald die Leitung eine Frage öffnet.' }))
+      if (!data.current) w.append(Object.assign(document.createElement('p'), { className: 'hint quiz-buzz-warten', textContent: data.phase === 'vorbereitung' ? 'Bereit. Das Spiel beginnt gleich.' : 'Bereit. Der Buzzer erscheint, sobald die Leitung eine Frage öffnet.' }))
     }
   }
+
+  // Buzzer-Ton, erzeugt statt geladen; Browser erlauben Ton erst nach einer Bedienung, darum entsteht er beim ersten Klick
+  let audio = null, tonFrage = null
+  let tonAn = (() => { try { return localStorage.getItem('nextpad-quiz-ton') !== 'aus' } catch { return true } })()
+  document.addEventListener('pointerdown', () => {
+    if (!data?.lead || audio) return
+    try { audio = new (window.AudioContext || window.webkitAudioContext)() } catch {}
+  }, { capture: true })
+  function buzzerTon() {
+    if (!tonAn || !audio) return
+    try {
+      if (audio.state === 'suspended') audio.resume()
+      const t = audio.currentTime, g = audio.createGain(), f = audio.createBiquadFilter()
+      f.type = 'lowpass'; f.frequency.value = 1400
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.02); g.gain.setValueAtTime(0.25, t + 0.5); g.gain.linearRampToValueAtTime(0, t + 0.62)
+      for (const hz of [150, 157]) { const o = audio.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz; o.connect(f); o.start(t); o.stop(t + 0.65) }
+      f.connect(g); g.connect(audio.destination)
+    } catch {}
+  }
+  function zeigeTon() { $('q-ton').textContent = tonAn ? 'Buzzer-Ton an' : 'Buzzer-Ton aus'; $('q-ton').setAttribute('aria-pressed', tonAn ? 'true' : 'false') }
 
   function renderBuzz() {
     const q = data.current
@@ -118,8 +138,24 @@
       btnB.textContent = ready ? 'Buzzer' : 'Verbinde …'
       btnB.setAttribute('aria-label', `Buzzer für ${data.teams.find(t => t.id === myTeam)?.name || ''}`)
     }
-    const list = $('buzz-reihe'); list.innerHTML = ''
     const z = data.buzz
+    // Wer zuerst gedrückt hat, groß; erst wenn die Reihenfolge feststeht (Sammelfenster vorbei)
+    const erster = $('buzz-erster'), r0 = z?.reihe?.[0]
+    const zeigen = !!(q && !q.revealed && z && z.fertig && r0 && !r0.spaet)
+    if (zeigen) {
+      const gleich = z.reihe.filter((r, i) => i > 0 && r.gleichauf && !r.spaet).map(r => r.name)
+      const text = gleich.length ? `${[r0.name, ...gleich].join(' und ')} gleichauf` : r0.name
+      if (erster.dataset.text !== text) {
+        erster.dataset.text = text
+        erster.innerHTML = ''
+        erster.append(Object.assign(document.createElement('small'), { textContent: gleich.length ? 'Gleichzeitig gedrückt' : 'Zuerst gedrückt' }), Object.assign(document.createElement('strong'), { textContent: text }))
+      }
+    } else { erster.dataset.text = ''; erster.innerHTML = '' }
+    erster.hidden = !zeigen
+    // Ton bei der Leitung (Beamer), sobald der erste Druck einer Frage ankommt
+    const n = q && z ? z.reihe.length : 0
+    if (data.lead && q && n > 0 && tonFrage !== q.id) { tonFrage = q.id; buzzerTon() }
+    const list = $('buzz-reihe'); list.innerHTML = ''
     list.hidden = !(q && z && z.reihe.length)
     $('buzz-kopf').hidden = list.hidden
     if (list.hidden) return
@@ -137,7 +173,8 @@
     if (!z.fertig) buzzTimer = setTimeout(load, 600)
   }
 
-  const finished = () => data.board.length > 0 && !data.current && data.board.every(f => f.played)
+  // Ergebnis: beendet über „Spiel beenden“ oder alle Felder gespielt
+  const finished = () => data.phase === 'ende' || (data.board.length > 0 && !data.current && data.board.every(f => f.played))
 
   async function post(path, body) {
     const r = await fetch(api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
@@ -160,6 +197,7 @@
     const cats = [...new Set(data.board.map(f => f.cat))]
     if (!cats.length) { b.hidden = true; return }
     b.hidden = !!data.current || finished()
+    b.classList.toggle('is-gesperrt', data.phase === 'vorbereitung')
     const cols = cats.map(c => data.board.filter(f => f.cat === c).sort((x, y) => x.points - y.points))
     const rows = Math.max(...cols.map(c => c.length))
     b.style.gridTemplateColumns = `repeat(${cats.length}, minmax(0, 1fr))`
@@ -173,7 +211,7 @@
         if (data.lead) {
           // gespielte Felder gesperrt: ein Fehlklick öffnet keine alte Frage, zurück geht es mit „Rückgängig“
           const cell = btn(String(f.points), 'quiz-cell' + (f.played ? ' is-played' : ''), () => post('/feld', { field: f.id }))
-          cell.disabled = !!f.played
+          cell.disabled = !!f.played || data.phase !== 'laeuft' // vor dem Start ist das Raster gesperrt
           cell.setAttribute('aria-label', label); b.append(cell)
         } else {
           const cell = document.createElement('div'); cell.className = 'quiz-cell' + (f.played ? ' is-played' : '')
@@ -250,7 +288,7 @@
     const ul = el('ul', 'quiz-nach')
     schwer.forEach(f => { const li = el('li'); li.append(el('span', 'quiz-meta-klein', `${f.cat} · ${f.points}`), el('span', '', f.question || '')); ul.append(li) })
     e.append(h, sieg, ol, h3, hint, ul)
-    if (data.lead) e.append(el('p', 'hint', '„Rückgängig“ holt die letzte Frage zurück, „Fragen bearbeiten“ beginnt ein neues Spiel.'))
+    if (data.lead) e.append(el('p', 'hint', '„Neues Spiel“ setzt Punkte und Felder zurück, Fragen und Teams bleiben. „Rückgängig“ holt die letzte Wertung zurück und setzt das Spiel fort.'))
   }
 
   let messungTimer = 0
@@ -259,12 +297,20 @@
     $('quiz-title').textContent = data.title || 'Quiz-Raster'
     $('quiz-kicker').textContent = data.lead ? 'Quiz-Raster · Leitung' : 'Quiz-Raster · Mitsehen'
     $('lead-tools').hidden = !data.lead
+    // Spielablauf: Vorbereitung (Teams wählen) → läuft → Ergebnis
+    const ph = $('q-phase')
+    // nur für die Leitung; die Handys sagen es bei der Teamwahl
+    ph.hidden = !data.lead || data.phase !== 'vorbereitung' || !data.board.length
+    ph.textContent = 'Vorbereitung: Auf den Handys wählen jetzt alle ihr Team. „Spiel starten“ gibt das Raster frei, danach sind die Teams fest.'
     // Mitmessen nur, solange die Leitung die Messseite offen hat und keine Frage läuft
     $('viewer-tools').hidden = !data.messung || !!data.current
     clearTimeout(messungTimer)
     if (data.messung) messungTimer = setTimeout(load, 15000) // schließt die Leitung die Messseite, verschwindet der Knopf
     if (data.lead) {
       $('q-undo').disabled = !data.canUndo
+      $('q-start').hidden = data.phase !== 'vorbereitung' || !data.board.length
+      $('q-stop').hidden = data.phase !== 'laeuft' || !!data.current || finished()
+      $('q-neu').hidden = !finished()
       // während einer Frage nur Aufdecken, Wertung und Vollbild: der Rest lenkt ab
       for (const id of ['q-undo', 'q-qr', 'q-edit', 'q-messung']) $(id).hidden = !!data.current
       // ohne Code (Moodle-Aktivität, die noch nie aus Moodle gestartet wurde) kein QR-Knopf
@@ -311,6 +357,14 @@
     })
   })
   $('q-undo').addEventListener('click', () => act(() => post('/rueckgaengig')))
+  $('q-ton').addEventListener('click', () => { tonAn = !tonAn; try { localStorage.setItem('nextpad-quiz-ton', tonAn ? 'an' : 'aus') } catch {}; zeigeTon(); if (tonAn) buzzerTon() })
+  zeigeTon()
+  // Menü schließt nach einer Auswahl und bei einem Klick daneben
+  $('q-menu').addEventListener('click', e => { if (e.target.closest('.quiz-menu-list button, .quiz-menu-list a')) $('q-menu').open = false })
+  document.addEventListener('click', e => { if (!e.target.closest('#q-menu')) $('q-menu').open = false })
+  $('q-start').addEventListener('click', () => act(() => post('/spiel', { aktion: 'start' })))
+  $('q-stop').addEventListener('click', () => { if (confirm('Spiel beenden und das Ergebnis zeigen? Nicht gespielte Felder zählen nicht.')) act(() => post('/spiel', { aktion: 'ende' })) })
+  $('q-neu').addEventListener('click', () => { if (confirm('Neues Spiel beginnen? Punkte und gespielte Felder werden zurückgesetzt, Fragen und Teams bleiben.')) act(() => post('/spiel', { aktion: 'neu' })) })
   $('q-qr').addEventListener('click', () => { const b = $('qr-box'); b.hidden = !b.hidden; $('q-qr').setAttribute('aria-expanded', b.hidden ? 'false' : 'true') })
   $('q-full').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() })
 
@@ -319,7 +373,7 @@
     if (!data?.lead || e.target.closest?.('input, textarea') || e.ctrlKey || e.metaKey || e.altKey) return
     const q = data.current
     // Leertaste auf einer Schaltfläche löst diese aus, nicht das Aufdecken
-    if (e.key === ' ' && q && !q.revealed && !e.target.closest?.('button, a')) { e.preventDefault(); act(() => post('/feld', { field: q.id, revealed: true })) }
+    if (e.key === ' ' && q && !q.revealed && !e.target.closest?.('button, a, summary')) { e.preventDefault(); act(() => post('/feld', { field: q.id, revealed: true })) }
     else if (e.key === 'Escape' && q) act(() => post('/feld', { field: null }))
     else if ((e.key === 'z' || e.key === 'Z') && data.canUndo) act(() => post('/rueckgaengig'))
   })

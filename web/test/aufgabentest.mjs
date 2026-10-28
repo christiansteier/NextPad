@@ -18,7 +18,8 @@ await page.goto(`${base}/p/${P}`); await page.waitForSelector('.ProseMirror'); a
 // aus dem Dokument gelesen, nicht aus der Ansicht (die Kästchen zeichnet der Editor selbst)
 const items = () => page.evaluate(() => [...new DOMParser().parseFromString(window.nextpad.editor.getHTML(), 'text/html').querySelectorAll('li[data-type="taskItem"]')].map(li => `${li.dataset.checked === 'true' ? 'x' : ' '}:${li.textContent.trim()}`))
 const ende = async () => { for (let i = 0; i < 3; i++) await page.keyboard.press('Enter') }
-await page.evaluate(() => window.nextpad.editor.commands.focus('end'))
+// wie im Markdown-Test: kurz warten, bis der erste Abgleich durch ist (sonst gehen die ersten Zeichen verloren)
+await page.evaluate(() => window.nextpad.editor.commands.focus('end')); await page.waitForTimeout(200)
 await page.keyboard.type('- [ ] mit Strich'); await page.keyboard.press('Enter'); await page.keyboard.type('zweite Aufgabe'); await ende()
 let it = await items()
 check('„- [ ] “ getippt wird zur Aufgabe', it[0] === ' :mit Strich', it.join(' | '))
