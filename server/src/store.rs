@@ -139,6 +139,11 @@ CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT N
 CREATE TABLE IF NOT EXISTS quiz_fields (pad_id TEXT NOT NULL, id INTEGER NOT NULL, cat TEXT NOT NULL, points INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_teams (pad_id TEXT NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY (pad_id, id));
 CREATE TABLE IF NOT EXISTS quiz_log (pad_id TEXT NOT NULL, seq INTEGER NOT NULL, field INTEGER NOT NULL, team INTEGER, delta INTEGER NOT NULL, PRIMARY KEY (pad_id, seq));
+CREATE TABLE IF NOT EXISTS messung_geraet (pad_id TEXT NOT NULL, dev TEXT NOT NULL, nr INTEGER NOT NULL, art TEXT NOT NULL, PRIMARY KEY (pad_id, dev));
+CREATE TABLE IF NOT EXISTS messung_probe (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, ts REAL NOT NULL, rtt REAL NOT NULL, rtt_med REAL NOT NULL, off REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS messung_probe_pad ON messung_probe (pad_id);
+CREATE TABLE IF NOT EXISTS messung_runde (pad_id TEXT NOT NULL, runde INTEGER NOT NULL, ts REAL NOT NULL, PRIMARY KEY (pad_id, runde));
+CREATE TABLE IF NOT EXISTS messung_marke (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, runde INTEGER NOT NULL, t_empfang REAL, t_druck REAL, ts_ein REAL, off REAL NOT NULL, rtt REAL NOT NULL, PRIMARY KEY (pad_id, nr, runde));
 CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, author_id));
@@ -252,6 +257,7 @@ impl Store {
         c.execute("DELETE FROM ideas WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM idea_prompts WHERE pad_id=?1", params![id])?;
         for t in ["quiz_log", "quiz_teams", "quiz_fields", "quiz_state"] { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
+        for t in MESS_TABELLEN { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
         c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM snapshots WHERE pad_id=?1", params![id])?;
@@ -698,3 +704,79 @@ fn avatar_url(moodle_url: Option<String>, moodle_user: Option<String>) -> Option
     let (u, id) = (moodle_url?, moodle_user?);
     id.chars().all(|c| c.is_ascii_digit()).then(|| format!("{u}/user/pix.php/{id}/f1.jpg"))
 }
+
+/// Buzzer-Messung: ein Uhrabgleich (beste von fünf Anfragen) eines Geräts, Zeiten in Millisekunden.
+#[derive(Debug, Clone, Default)]
+pub struct MessProbe { pub nr: i64, pub ts: f64, pub rtt: f64, pub rtt_med: f64, pub off: f64 }
+
+/// Buzzer-Messung: Empfang des Signals und Druck eines Geräts in einer Runde. `t_*` in Gerätezeit, `ts_ein` in Serverzeit.
+#[derive(Debug, Clone, Default)]
+pub struct MessMarke { pub nr: i64, pub runde: i64, pub t_empfang: Option<f64>, pub t_druck: Option<f64>, pub ts_ein: Option<f64>, pub off: f64, pub rtt: f64 }
+
+impl Store {
+    /// Nummer des Geräts im Pad, bei Bedarf neu; None, wenn schon `max` Geräte mitmessen. Nach außen gehen nur Nummern.
+    pub fn mess_geraet(&self, pad_id: &str, dev: &str, art: &str, max: i64) -> Result<Option<i64>> {
+        let c = self.c();
+        if let Some(nr) = c.query_row("SELECT nr FROM messung_geraet WHERE pad_id=?1 AND dev=?2", params![pad_id, dev], |r| r.get(0)).optional()? { return Ok(Some(nr)); }
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM messung_geraet WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
+        if n >= max { return Ok(None); }
+        c.execute("INSERT INTO messung_geraet (pad_id, dev, nr, art) VALUES (?1, ?2, ?3, ?4)", params![pad_id, dev, n + 1, art])?;
+        Ok(Some(n + 1))
+    }
+    pub fn mess_geraete(&self, pad_id: &str) -> Result<Vec<(i64, String)>> {
+        Ok(self.c().prepare("SELECT nr, art FROM messung_geraet WHERE pad_id=?1 ORDER BY nr")?
+            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
+    }
+    /// false, wenn das Pad schon `max` Abgleiche hat.
+    pub fn mess_probe(&self, pad_id: &str, p: &MessProbe, max: i64) -> Result<bool> {
+        let c = self.c();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM messung_probe WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
+        if n >= max { return Ok(false); }
+        c.execute("INSERT INTO messung_probe (pad_id, nr, ts, rtt, rtt_med, off) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, p.nr, p.ts, p.rtt, p.rtt_med, p.off])?;
+        Ok(true)
+    }
+    pub fn mess_proben(&self, pad_id: &str) -> Result<Vec<MessProbe>> {
+        Ok(self.c().prepare("SELECT nr, ts, rtt, rtt_med, off FROM messung_probe WHERE pad_id=?1 ORDER BY nr, ts")?
+            .query_map(params![pad_id], |r| Ok(MessProbe { nr: r.get(0)?, ts: r.get(1)?, rtt: r.get(2)?, rtt_med: r.get(3)?, off: r.get(4)? }))?.collect::<rusqlite::Result<_>>()?)
+    }
+    /// Neue Runde mit Serverzeit `ts`; None, wenn schon `max` Runden gelaufen sind.
+    pub fn mess_signal(&self, pad_id: &str, ts: f64, max: i64) -> Result<Option<i64>> {
+        let c = self.c();
+        let runde: i64 = c.query_row("SELECT COALESCE(MAX(runde), 0) + 1 FROM messung_runde WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
+        if runde > max { return Ok(None); }
+        c.execute("INSERT INTO messung_runde (pad_id, runde, ts) VALUES (?1, ?2, ?3)", params![pad_id, runde, ts])?;
+        Ok(Some(runde))
+    }
+    pub fn mess_runden(&self, pad_id: &str) -> Result<Vec<(i64, f64)>> {
+        Ok(self.c().prepare("SELECT runde, ts FROM messung_runde WHERE pad_id=?1 ORDER BY runde")?
+            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
+    }
+    /// Empfang des Signals; der erste Empfang zählt. false, wenn es die Runde nicht gibt.
+    pub fn mess_empfang(&self, pad_id: &str, nr: i64, runde: i64, t: f64, off: f64, rtt: f64) -> Result<bool> {
+        let c = self.c();
+        if c.query_row("SELECT 1 FROM messung_runde WHERE pad_id=?1 AND runde=?2", params![pad_id, runde], |_| Ok(())).optional()?.is_none() { return Ok(false); }
+        c.execute("INSERT INTO messung_marke (pad_id, nr, runde, t_empfang, off, rtt) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                   ON CONFLICT(pad_id, nr, runde) DO UPDATE SET t_empfang=COALESCE(t_empfang, ?4)", params![pad_id, nr, runde, t, off, rtt])?;
+        Ok(true)
+    }
+    /// Druck; je Gerät und Runde zählt nur der erste. false, wenn es die Runde nicht gibt.
+    pub fn mess_druck(&self, pad_id: &str, nr: i64, runde: i64, t: f64, ts_ein: f64, off: f64, rtt: f64) -> Result<bool> {
+        let c = self.c();
+        if c.query_row("SELECT 1 FROM messung_runde WHERE pad_id=?1 AND runde=?2", params![pad_id, runde], |_| Ok(())).optional()?.is_none() { return Ok(false); }
+        c.execute("INSERT INTO messung_marke (pad_id, nr, runde, t_druck, ts_ein, off, rtt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                   ON CONFLICT(pad_id, nr, runde) DO UPDATE SET t_druck=?4, ts_ein=?5, off=?6, rtt=?7 WHERE t_druck IS NULL", params![pad_id, nr, runde, t, ts_ein, off, rtt])?;
+        Ok(true)
+    }
+    pub fn mess_marken(&self, pad_id: &str) -> Result<Vec<MessMarke>> {
+        Ok(self.c().prepare("SELECT nr, runde, t_empfang, t_druck, ts_ein, off, rtt FROM messung_marke WHERE pad_id=?1 ORDER BY runde, nr")?
+            .query_map(params![pad_id], |r| Ok(MessMarke { nr: r.get(0)?, runde: r.get(1)?, t_empfang: r.get(2)?, t_druck: r.get(3)?, ts_ein: r.get(4)?, off: r.get(5)?, rtt: r.get(6)? }))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn mess_loeschen(&self, pad_id: &str) -> Result<()> {
+        let c = self.c();
+        for t in MESS_TABELLEN { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
+        Ok(())
+    }
+}
+
+const MESS_TABELLEN: [&str; 4] = ["messung_marke", "messung_runde", "messung_probe", "messung_geraet"];

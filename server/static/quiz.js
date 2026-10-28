@@ -7,6 +7,9 @@
   const $ = id => document.getElementById(id)
   let data = null
   let busy = false
+  let lastScores = {}
+  const changedAt = {}
+  const finished = () => data.board.length > 0 && !data.current && data.board.every(f => f.played)
 
   async function post(path, body) {
     const r = await fetch(api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
@@ -28,7 +31,7 @@
     const b = $('board'); b.innerHTML = ''
     const cats = [...new Set(data.board.map(f => f.cat))]
     if (!cats.length) { b.hidden = true; return }
-    b.hidden = !!data.current
+    b.hidden = !!data.current || finished()
     const cols = cats.map(c => data.board.filter(f => f.cat === c).sort((x, y) => x.points - y.points))
     const rows = Math.max(...cols.map(c => c.length))
     b.style.gridTemplateColumns = `repeat(${cats.length}, minmax(0, 1fr))`
@@ -40,7 +43,9 @@
         if (!f) { b.append(document.createElement('div')); return }
         const label = `${f.cat}, ${f.points} Punkte${f.played ? ', gespielt' : ''}`
         if (data.lead) {
+          // gespielte Felder gesperrt: ein Fehlklick öffnet keine alte Frage, zurück geht es mit „Rückgängig“
           const cell = btn(String(f.points), 'quiz-cell' + (f.played ? ' is-played' : ''), () => post('/feld', { field: f.id }))
+          cell.disabled = !!f.played
           cell.setAttribute('aria-label', label); b.append(cell)
         } else {
           const cell = document.createElement('div'); cell.className = 'quiz-cell' + (f.played ? ' is-played' : '')
@@ -85,10 +90,37 @@
       const d = document.createElement('div'); d.className = 'quiz-score' + (t.score === max && max > 0 ? ' is-lead' : '')
       const n = document.createElement('span'); n.textContent = t.name
       const p = document.createElement('strong'); p.textContent = t.score
+      // kurz hervorheben, was sich gerade geändert hat; die Seite zeichnet oft zweimal kurz hintereinander,
+      // deshalb läuft die Animation beim Neuzeichnen an der alten Stelle weiter
+      if (lastScores[t.id] !== undefined && lastScores[t.id] !== t.score) changedAt[t.id] = Date.now()
+      const since = Date.now() - (changedAt[t.id] || 0)
+      if (since < 1600) { d.classList.add('is-changed'); d.style.animationDelay = `-${since}ms` }
       d.append(n, p); s.append(d)
     })
+    lastScores = Object.fromEntries(data.teams.map(t => [t.id, t.score]))
     const open = data.board.filter(f => !f.played).length
     if (data.board.length) { const o = document.createElement('p'); o.className = 'hint'; o.textContent = `${open} von ${data.board.length} Fragen offen`; s.append(o) }
+  }
+
+  // Abschluss nach der letzten Frage: Platzierung und die Fragen, über die es sich zu sprechen lohnt
+  function renderEnde() {
+    const e = $('ende'); e.innerHTML = ''
+    e.hidden = !finished()
+    if (e.hidden) return
+    const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text !== undefined) x.textContent = text; return x }
+    const h = el('h2', '', 'Ergebnis'); h.id = 'ende-h'
+    const ranked = [...data.teams].sort((a, b) => b.score - a.score)
+    const top = ranked.filter(t => t.score === ranked[0]?.score)
+    const sieg = el('p', 'quiz-sieg', !ranked.length ? '' : top.length > 1 ? `Gleichstand: ${top.map(t => t.name).join(' und ')}` : `${top[0].name} gewinnt`)
+    const ol = el('ol', 'quiz-rang')
+    ranked.forEach(t => { const li = el('li'); li.append(el('span', '', t.name), el('strong', '', String(t.score))); ol.append(li) })
+    const schwer = data.board.filter(f => f.schwer)
+    const h3 = el('h3', '', 'Zum Nachbesprechen')
+    const hint = el('p', 'hint', schwer.length ? 'Diese Fragen hat niemand oder erst nach einem Fehlversuch gelöst:' : 'Alle Fragen wurden auf Anhieb gelöst.')
+    const ul = el('ul', 'quiz-nach')
+    schwer.forEach(f => { const li = el('li'); li.append(el('span', 'quiz-meta-klein', `${f.cat} · ${f.points}`), el('span', '', f.question || '')); ul.append(li) })
+    e.append(h, sieg, ol, h3, hint, ul)
+    if (data.lead) e.append(el('p', 'hint', '„Rückgängig“ holt die letzte Frage zurück, „Fragen bearbeiten“ beginnt ein neues Spiel.'))
   }
 
   function render() {
@@ -98,6 +130,9 @@
     $('lead-tools').hidden = !data.lead
     if (data.lead) {
       $('q-undo').disabled = !data.canUndo
+      // während einer Frage nur Aufdecken, Wertung und Vollbild: der Rest lenkt ab
+      for (const id of ['q-undo', 'q-qr', 'q-edit', 'q-messung']) $(id).hidden = !!data.current
+      if (data.current) $('qr-box').hidden = true
       const setup = $('setup')
       // Formular nur füllen, wenn es zu ist: sonst überschreibt ein Live-Update die Eingabe
       if (setup.hidden || !setup.dataset.filled) {
@@ -109,7 +144,7 @@
     const empty = $('empty')
     empty.hidden = data.board.length > 0 || data.lead
     empty.textContent = 'Die Leitung richtet das Quiz gerade ein.'
-    renderBoard(); renderQuestion(); renderScores()
+    renderBoard(); renderQuestion(); renderEnde(); renderScores()
   }
 
   async function load() {

@@ -1,0 +1,29 @@
+/* NextPad – Buzzer-Messung. Baut auf start.css und quiz.css auf. */
+main.messung { flex: 1; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-5) var(--space-6); max-width: 1200px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+main.messung h1 { margin: 0; border-bottom: 3px solid var(--color-accent, #e60028); padding-bottom: var(--space-2); }
+.messung [hidden] { display: none !important; }
+.messung-buzzer {
+  display: block; width: 100%; min-height: 40vh; margin: var(--space-3) 0; padding: var(--space-4);
+  font: 700 clamp(1.6rem, 8vw, 3rem)/1.1 var(--font-text); color: var(--color-text-secondary);
+  background: var(--color-canvas); border: 2px dashed var(--color-border); border-radius: 0;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.messung-buzzer.is-jetzt { color: var(--color-canvas); background: var(--color-text-primary); border: 6px solid var(--color-accent, #e60028); cursor: pointer; }
+.messung-reaktion { font-size: 1.25rem; font-weight: 700; margin: 0; }
+.messung-kopf { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
+.messung-kopf .quiz-qr svg { width: 220px; height: 220px; }
+.messung-steuerung { flex: 1; min-width: 260px; }
+.messung-zahl { font-size: 1.4rem; margin-top: 0; }
+.messung-zahl strong { font-size: 2.4rem; }
+.messung-urteil { font-size: 1.25rem; font-weight: 700; border-left: 8px solid var(--color-text-primary); padding: var(--space-2) var(--space-3); margin: 0; }
+.messung-urteil:empty { display: none; }
+.messung-werte { display: grid; grid-template-columns: minmax(10rem, max-content) 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
+.messung-werte dt { font-weight: 700; }
+.messung-werte dd { margin: 0; }
+.messung-liste { border-collapse: collapse; width: 100%; margin-top: var(--space-2); }
+.messung-liste th, .messung-liste td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--color-border); }
+.messung-aktionen { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+@media (max-width: 640px) {
+  main.messung { padding: var(--space-3) var(--space-3) var(--space-5); }
+  .messung-werte { grid-template-columns: 1fr; }
+}

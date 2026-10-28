@@ -76,5 +76,33 @@ lead.once('dialog', d => d.accept()); await lead.click('#q-save')
 await lead.waitForSelector('#setup-error:not([hidden])')
 check('falsche Tabelle: Fehlermeldung, Stand bleibt', (await lead.textContent('#setup-error')).includes('vier Spalten') && await lead.locator('.quiz-cell.is-played').count() === 1)
 check('Live-Kanal geöffnet', sse.length > 0)
+
+// Gespielte Felder gesperrt, auch serverseitig
+await lead.click('#q-edit')
+check('gespieltes Feld ist gesperrt', await lead.locator('.quiz-cell.is-played').first().isDisabled())
+const played = await lead.evaluate(async u => { const d = await (await fetch(u + '/quiz')).json(); return d.board.find(f => f.played).id }, url)
+const reopen = await lead.evaluate(async ([u, f]) => (await fetch(u + '/quiz/feld', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: f }) })).status, [url, played])
+check('gespielte Frage lässt sich nicht wieder öffnen (409)', reopen === 409, String(reopen))
+
+// Während einer Frage nur Aufdecken, Wertung, Vollbild
+await lead.click('.quiz-cell >> text=100 >> nth=0'); await lead.waitForSelector('#question:not([hidden])')
+check('während der Frage: Rückgängig, QR und Bearbeiten ausgeblendet', await lead.isHidden('#q-undo') && await lead.isHidden('#q-qr') && await lead.isHidden('#q-edit') && await lead.isVisible('#q-full'))
+await lead.click('.quiz-team >> nth=0 >> button.plus'); await lead.waitForSelector('#board:not([hidden])')
+check('geänderter Punktestand wird hervorgehoben', await lead.locator('.quiz-score.is-changed').count() === 1)
+check('nach der Frage: Werkzeuge wieder da', await lead.isVisible('#q-undo'))
+
+// Letzte Frage: niemand → Abschluss
+await lead.click('.quiz-cell:not(:disabled)'); await lead.waitForSelector('#question:not([hidden])')
+await lead.click('text=Niemand, Feld schließen')
+await lead.waitForSelector('#ende:not([hidden])')
+check('Abschluss nach der letzten Frage, Raster ausgeblendet', await lead.isHidden('#board') && (await lead.textContent('.quiz-sieg')) === 'Rot gewinnt')
+check('Platzierung in richtiger Reihenfolge', (await lead.locator('.quiz-rang li').allTextContents()).join('|') === 'Rot100|Blau-100')
+const nach = await lead.locator('.quiz-nach li').allTextContents()
+check('Nachbesprechung: Fragen mit Abzug oder ohne Lösung', nach.length === 3 && nach.some(x => x.includes('Wie lang?')) && nach.some(x => x.includes('Welcher Dienst?')), nach.join(' / '))
+await view.waitForSelector('#ende:not([hidden])', { timeout: 5000 })
+check('Mitsehende sehen den Abschluss, ohne Antworten', (await view.textContent('#ende')).includes('Rot gewinnt') && !(await view.textContent('#ende')).includes(ANTWORT))
+await lead.keyboard.press('z')
+await lead.waitForSelector('#board:not([hidden])')
+check('Rückgängig holt die letzte Frage zurück', await lead.isHidden('#ende'))
 await b.close()
 console.log(`\n${pass} ok, ${fail} fehlgeschlagen`); process.exit(fail ? 1 : 0)
