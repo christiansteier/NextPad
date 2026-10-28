@@ -116,3 +116,7 @@ button.quiz-cell:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) { .quiz-erster { animation: none; } }
 /* vor dem Start: Raster sichtbar, aber erkennbar gesperrt */
 .quiz-board.is-gesperrt .quiz-cell { opacity: .45; }
+/* Countdown je Frage: groß am Beamer, rot in den letzten Sekunden */
+.quiz-countdown { margin: 0; font: 700 clamp(2.5rem, 7vw, 5rem)/1 var(--font-text); font-variant-numeric: tabular-nums; }
+.quiz-countdown.is-knapp, .quiz-countdown.is-um { color: var(--color-accent, #e60028); }
+.quiz-stat { margin: 0; padding-left: 1.2em; }

@@ -81,8 +81,8 @@ impl Rooms {
     fn load(&self, pad_id: &str) -> Result<Arc<Room>> {
         let doc = Doc::with_options(Options { skip_gc: true, offset_kind: OffsetKind::Utf16, ..Default::default() });
         let _ = doc.get_or_insert_xml_fragment(render::FRAGMENT);
-        // erst alles Wartende schreiben lassen (Pad kann gerade entladen worden sein)
-        self.store.flush();
+        // erst alles Wartende schreiben lassen (Pad kann gerade entladen worden sein); sonst fehlten Änderungen
+        if !self.store.flush() { return Err(anyhow::anyhow!("Speichern hängt, Pad wird nicht geladen")); }
         let mut seq: i64 = 0;
         {
             let mut txn = doc.transact_mut();
