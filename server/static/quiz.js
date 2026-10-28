@@ -80,7 +80,8 @@
 
   function renderBuzzWahl() {
     const w = $('buzz-wahl')
-    if (data.lead || !data.teams.length) { w.hidden = true; return }
+    // am Ende des Spiels gibt es nichts mehr zu buzzern
+    if (data.lead || !data.teams.length || finished()) { w.hidden = true; return }
     if (myTeam && !data.teams.some(t => t.id === myTeam)) { myTeam = 0; store.set(teamKey, '') }
     w.hidden = false; w.innerHTML = ''
     const l = document.createElement('p'); l.className = 'quiz-buzz-label'
@@ -94,8 +95,14 @@
     })
     if (!myTeam) $('buzz-wach').hidden = true
     if (myTeam) {
-      const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = 'Team wechseln'
-      c.addEventListener('click', () => chooseTeam(0)); w.append(c)
+      // wechseln nur vor dem Spiel; läuft es (Frage offen oder schon gespielt), bleibt das Team
+      const laeuft = !!data.current || data.board.some(f => f.played)
+      if (!laeuft) {
+        const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = 'Team wechseln'
+        c.addEventListener('click', () => chooseTeam(0)); w.append(c)
+      }
+      // ohne offene Frage kein Buzzer: sagen, worauf das Handy wartet
+      if (!data.current) w.append(Object.assign(document.createElement('p'), { className: 'hint quiz-buzz-warten', textContent: 'Bereit. Der Buzzer erscheint, sobald die Leitung eine Frage öffnet.' }))
     }
   }
 

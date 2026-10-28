@@ -23,10 +23,12 @@ const phone = async team => {
   return p
 }
 const rot = await phone('Rot'), blau = await phone('Blau')
+check('Handy ohne offene Frage: Hinweis, worauf es wartet', (await rot.textContent('#buzz-wahl')).includes('sobald die Leitung eine Frage öffnet'))
 check('Handy: Team gewählt, Wechsel möglich', (await rot.textContent('#buzz-wahl')).includes('Team wechseln') && await rot.locator('#buzz-wahl [aria-pressed="true"]').textContent() === 'Rot')
 
 await lead.click('.quiz-cell >> nth=0'); await lead.waitForSelector('#question:not([hidden])')
 for (const p of [rot, blau]) await p.waitForSelector('#buzz-btn:not([hidden]):not([disabled])', { timeout: 15000 })
+check('während der Frage kein Warte-Hinweis', !(await rot.textContent('#buzz-wahl')).includes('sobald die Leitung'))
 check('Buzzer erscheint auf beiden Handys, nach dem Abgleich bereit', (await blau.textContent('#buzz-btn')) === 'Buzzer')
 check('kein Buzzer bei der Leitung', await lead.isHidden('#buzz-btn'))
 
@@ -48,6 +50,7 @@ const again = await blau.evaluate(async u => {
 check('zweiter Druck desselben Geräts zählt nicht', again.neu === false, JSON.stringify(again))
 const badTeam = await blau.evaluate(async u => (await fetch(u + '/quiz/buzzer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dev: 'abcdefgh99', team: 9, field: 1, t: 1, off: 0, rtt: 10 }) })).status, url)
 check('unbekanntes Team 400', badTeam === 400, String(badTeam))
+check('im laufenden Spiel kein „Team wechseln“', !(await blau.textContent('#buzz-wahl')).includes('Team wechseln'))
 
 await lead.keyboard.press('Space')
 await sleep(500)
@@ -73,6 +76,11 @@ check('nach dem Neuladen: Druck kommt bei der Leitung an', (await lead.locator('
 await rot.goto(url + '/messung'); await rot.waitForSelector('#m-handy:not([hidden])'); await rot.goBack(); await rot.waitForSelector('#quiz-title')
 await rot.waitForSelector('#buzz-btn:not([hidden]):not([disabled])', { timeout: 8000 }).catch(() => {})
 check('zurück von der Messung: Buzzer bereit', await rot.isVisible('#buzz-btn') && await rot.isEnabled('#buzz-btn'))
+const wechsel = await rot.evaluate(async u => {
+  const q = await (await fetch(u + '/quiz', { cache: 'no-store' })).json()
+  return (await fetch(u + '/quiz/buzzer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dev: sessionStorage.getItem('nextpad-geraet'), team: 2, field: q.current.id, t: performance.timeOrigin + performance.now(), off: 0, rtt: 10 }) })).status
+}, url)
+check('Server: dasselbe Handy kann nicht für ein anderes Team drücken (409)', wechsel === 409, String(wechsel))
 // Wachhalten: ohne Unterstützung Hinweis, mit Unterstützung keiner
 const ohne = await b.newContext({ viewport: { width: 390, height: 844 } })
 await ohne.addInitScript(() => { Object.defineProperty(Navigator.prototype, 'wakeLock', { get: () => undefined }) })

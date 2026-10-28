@@ -816,6 +816,10 @@ impl Store {
         Ok(c.execute("INSERT OR IGNORE INTO quiz_buzz (pad_id, field, dev, team, t_press, ts_ein, flagged) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![pad_id, field, dev, b.team, b.t_press, b.ts_ein, b.flagged])? > 0)
     }
+    /// Team, für das ein Gerät in diesem Spiel schon gedrückt hat (ein neues Spiel leert die Drücke).
+    pub fn quiz_buzz_team(&self, pad_id: &str, dev: &str) -> Result<Option<i64>> {
+        Ok(self.c().query_row("SELECT team FROM quiz_buzz WHERE pad_id=?1 AND dev=?2 LIMIT 1", params![pad_id, dev], |r| r.get(0)).optional()?)
+    }
     pub fn quiz_buzzes(&self, pad_id: &str, field: i64) -> Result<Vec<Buzz>> {
         Ok(self.c().prepare("SELECT team, t_press, ts_ein, flagged FROM quiz_buzz WHERE pad_id=?1 AND field=?2 ORDER BY ts_ein")?
             .query_map(params![pad_id, field], |r| Ok(Buzz { team: r.get(0)?, t_press: r.get(1)?, ts_ein: r.get(2)?, flagged: r.get(3)? }))?
