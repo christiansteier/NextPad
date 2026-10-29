@@ -1,17 +1,17 @@
 #![forbid(unsafe_code)]
+mod addons;
 mod api;
 mod bausteine;
 mod config;
 mod docs;
-mod ideas;
-mod messung;
-mod quiz;
 mod ids;
 mod look;
+mod live;
 mod lti;
 mod migrate;
 mod net;
 mod pdf;
+mod qr;
 mod retention;
 mod render;
 mod store;
@@ -34,12 +34,10 @@ pub struct AppState {
     pub free_creations: std::sync::Mutex<std::collections::HashMap<String, Vec<i64>>>,
     /// Offene LTI-Anmeldungen und Plattformschlüssel
     pub lti: lti::LtiState,
-    /// Live-Meldungen der Ideensammlungen
-    pub ideas: ideas::Hub,
+    /// Live-Meldungen für Addons (Ideensammlung, Quiz, Messung)
+    pub live: live::Hub,
     /// Erscheinungsbild aus der Verwaltungsseite
     pub look: look::Looks,
-    /// Wann die Leitung je Quiz zuletzt die Buzzer-Messung offen hatte (ms); solange zeigt das Quiz den Knopf zum Mitmessen
-    pub messung_offen: std::sync::Mutex<std::collections::HashMap<String, f64>>,
 }
 
 #[tokio::main]
@@ -52,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         let export = std::path::PathBuf::from(args.get(2).ok_or_else(|| anyhow::anyhow!("Aufruf: nextpad import-etherpad <export-dir> [--no-history] [--only id,id]"))?);
         let data_dir = std::path::PathBuf::from(config::var("DATA").unwrap_or_else(|| "./data".into()));
         std::fs::create_dir_all(&data_dir)?;
-        let store = store::Store::open(&config::db_path(&data_dir))?;
+        let store = store::Store::open(&config::db_path(&data_dir), &addons::daten())?;
         let with_history = !args.iter().any(|a| a == "--no-history");
         let only: Vec<String> = args.iter().position(|a| a == "--only").and_then(|i| args.get(i + 1)).map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default();
         let t0 = std::time::Instant::now();
@@ -69,9 +67,9 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     let _ = web::BASE_PATH.set(config.base_path.clone());
     std::fs::create_dir_all(&config.data_dir)?;
-    let store = Arc::new(store::Store::open(&config::db_path(&config.data_dir))?);
+    let store = Arc::new(store::Store::open(&config::db_path(&config.data_dir), &addons::daten())?);
     let look = std::sync::RwLock::new(look::load(&store));
-    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), ideas: Default::default(), look, messung_offen: Default::default() });
+    let state = Arc::new(AppState { rooms: docs::Rooms::new(store.clone()), config, store, free_creations: Default::default(), lti: Default::default(), live: Default::default(), look });
     if args.get(1).map(String::as_str) == Some("compact") {
         // einmal zusammenführen (Frist aus NEXTPAD_HISTORY_DAYS)
         state.store.compact(ids::now_ms() - state.config.history_days * 86_400_000);
@@ -101,44 +99,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/logout", get(web::logout_confirm).post(lti::logout))
         .route("/static/start.js", get(web::static_start))
         .route("/static/start.css", get(web::static_start_css))
-        .route("/static/board/{*path}", get(web::static_board))
         .route("/api", get(api::version).post(api::version))
         .route("/api/", get(api::version))
         .route("/api/{version}/{func}", get(api::call).post(api::call).layer(axum::extract::DefaultBodyLimit::max(16 << 20)))
         .route("/p/{id}", get(web::page))
         .route("/p/{id}/export/{format}", get(web::export))
-        .route("/p/{id}/ideen", get(ideas::get).post(ideas::add))
-        .route("/p/{id}/ideen/live", get(ideas::live))
-        .route("/p/{id}/ideen/frage", axum::routing::post(ideas::prompt))
-        .route("/p/{id}/ideen/{n}/stimme", axum::routing::post(ideas::vote))
-        .route("/p/{id}/ideen/{n}/moderation", axum::routing::post(ideas::moderate))
-        .route("/p/{id}/leinwand", get(ideas::wall))
-        .route("/p/{id}/quiz", get(quiz::get))
-        .route("/p/{id}/quiz/live", get(quiz::live))
-        .route("/p/{id}/quiz/fragen", axum::routing::post(quiz::setup))
-        .route("/p/{id}/quiz/feld", axum::routing::post(quiz::open))
-        .route("/p/{id}/quiz/wertung", axum::routing::post(quiz::score))
-        .route("/p/{id}/quiz/rueckgaengig", axum::routing::post(quiz::undo))
-        .route("/p/{id}/quiz/spiel", axum::routing::post(quiz::spiel))
-        .route("/p/{id}/quiz/buzzer", axum::routing::post(quiz::buzzer))
-        .route("/static/quiz.js", get(quiz::static_js))
-        .route("/static/quiz.css", get(quiz::static_css))
-        .route("/p/{id}/messung", get(messung::page))
-        .route("/p/{id}/messung/zeit", get(messung::zeit))
-        .route("/p/{id}/messung/stand", get(messung::stand))
-        .route("/p/{id}/messung/daten", get(messung::daten))
-        .route("/p/{id}/messung/export.csv", get(messung::export))
-        .route("/p/{id}/messung/probe", axum::routing::post(messung::probe))
-        .route("/p/{id}/messung/empfang", axum::routing::post(messung::empfang))
-        .route("/p/{id}/messung/druck", axum::routing::post(messung::druck))
-        .route("/p/{id}/messung/signal", axum::routing::post(messung::signal))
-        .route("/p/{id}/messung/loeschen", axum::routing::post(messung::loeschen))
-        .route("/static/messung.js", get(messung::static_js))
-        .route("/static/messung.css", get(messung::static_css))
-        .route("/static/ideen.js", get(ideas::static_js))
-        .route("/static/ideen-wand.js", get(ideas::static_wand))
-        .route("/static/ideen.css", get(ideas::static_css))
         .route("/p/{id}/history", get(web::history))
+        .route("/p/{id}/wiederherstellen", axum::routing::post(web::restore))
         .route("/p/{id}/snapshots", get(web::snapshots))
         .route("/p/{id}/snapshots/{ts}", get(web::snapshot_html))
         .route("/ws/{id}", get(web::ws))
@@ -159,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/erscheinungsbild/vorgabe", axum::routing::post(look::reset))
         .route("/static/admin.js", get(look::static_js))
         .route("/status", get(web::status))
+        .merge(addons::routen(&state))
         .fallback(web::not_found)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state.clone());

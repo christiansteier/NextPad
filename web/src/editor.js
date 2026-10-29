@@ -409,6 +409,7 @@ async function toggleTimeline() {
       <button type="button" class="tl-next" title="Ein Schritt vor" aria-label="Ein Schritt vor">▶|</button>
       <input type="range" class="tl-slider" min="0" max="0" value="0" aria-label="Zeitpunkt">
       <span class="tl-pos"></span>
+      <button type="button" class="tl-restore" hidden>Diesen Stand wiederherstellen</button>
     </div>
     <div class="tl-info"></div>
     <div class="tl-authors"></div>
@@ -454,12 +455,26 @@ async function toggleTimeline() {
     const who = p.kind === 'update' && p.author ? (names.get(p.author) || p.author) : (p.kind === 'snapshot' ? p.label : 'unbekannt')
     info.textContent = `${when} · ${p.kind === 'snapshot' ? 'Stand' : 'Änderung'} · ${who}`
     pos.textContent = `${k + 1} / ${points.length}`
+    restoreBtn.disabled = k === points.length - 1
     // Autoren bis hierher
     const seen = new Map()
     for (let i = 0; i <= k; i++) { const a = points[i].author; if (a && !seen.has(a)) seen.set(a, names.get(a) || a) }
     authorsEl.innerHTML = ''
     for (const [id, name] of seen) { const el = document.createElement('span'); el.className = 'user'; el.style.backgroundColor = colorFor(id); el.textContent = name; authorsEl.appendChild(el) }
   }
+  // Wiederherstellen (wem das Pad gehört): der Server baut den Stand nach und legt ihn als neue Änderung obendrauf
+  const restoreBtn = panel.querySelector('.tl-restore')
+  restoreBtn.hidden = !cfg.restore
+  restoreBtn.addEventListener('click', async () => {
+    const p = points[+slider.value]
+    const when = new Date(p.ts).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
+    if (!confirm(`Den Stand vom ${when} wiederherstellen? Der jetzige Text bleibt in der Zeitleiste erhalten.`)) return
+    restoreBtn.disabled = true
+    const r = await fetch(`${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/wiederherstellen`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p.kind === 'snapshot' ? { ts: p.ts } : { seq: p.seq }) })
+    if (r.ok) { toggleTimeline(); return }
+    info.textContent = `Wiederherstellen fehlgeschlagen: ${(await r.text()) || r.status}`
+    restoreBtn.disabled = false
+  })
   let playing = null
   const stop = () => { if (playing) { clearInterval(playing); playing = null; panel.querySelector('.tl-play').textContent = '▶' } }
   slider.addEventListener('input', () => { stop(); render(+slider.value) })

@@ -68,6 +68,8 @@ body { font-family: Quicksand, Cantarell, "Open Sans", "Helvetica Neue", sans-se
 #timeline .tl-controls button:hover { background: var(--middle); }
 #timeline .tl-slider { flex: 1; accent-color: var(--primary); }
 #timeline .tl-pos { font-size: 12px; color: var(--dark); min-width: 5em; text-align: right; }
+#timeline .tl-controls .tl-restore { margin-left: auto; font-weight: 600; }
+#timeline .tl-controls .tl-restore:disabled { opacity: .5; cursor: default; }
 #timeline .tl-info { padding: 6px 16px; font-size: 13px; color: var(--dark); background: var(--super-light); }
 #timeline .tl-authors { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 16px 8px; font-size: 12px; background: var(--super-light); border-bottom: 1px solid var(--border); }
 #timeline .tl-authors .user { padding: 1px 8px; border-radius: 3px; }

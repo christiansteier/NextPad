@@ -56,6 +56,23 @@ name = "NextPad"
         type = "string"
         optional = true
 
+    [main.addons]
+    name.de = "Addons"
+    name.en = "Add-ons"
+    help.de = "Ausgeschaltet: keine Kachel, kein Moodle-Typ; bestehende Inhalte bleiben und sind nach dem Einschalten wieder da."
+
+        [main.addons.addon_ideen]
+        ask.de = "Ideensammlung"
+        type = "boolean"
+
+        [main.addons.addon_quiz]
+        ask.de = "Quiz-Raster mit Buzzer und Buzzer-Messung"
+        type = "boolean"
+
+        [main.addons.addon_zeichenbrett]
+        ask.de = "Zeichenbrett"
+        type = "boolean"
+
     [main.pads]
     name.de = "Freie Pads"
     name.en = "Free pads"

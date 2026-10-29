@@ -52,7 +52,7 @@ pub fn login_author(state: &AppState, headers: &HeaderMap) -> Option<crate::stor
 }
 
 /// Ursprünge (Schema und Host) der bekannten Moodle-Instanzen, für Profilbilder in der CSP.
-fn moodle_origins(state: &AppState) -> String {
+pub(crate) fn moodle_origins(state: &AppState) -> String {
     let urls = state.config.api_key_moodle.iter().flatten().cloned().chain(state.config.lti.iter().map(|p| p.moodle()));
     urls.filter_map(|u| { let (scheme, rest) = u.split_once("://")?; Some(format!("{scheme}://{}", rest.split('/').next()?)) })
         .collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>().join(" ")
@@ -137,7 +137,7 @@ pub fn check_access_ext(state: &AppState, headers: &HeaderMap, id: &str, create_
 /// Basis-Pfad für Seiten ohne Zugriff auf den Zustand (Fehlerseiten); einmal beim Start gesetzt.
 pub static BASE_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-fn error_page(status: StatusCode, msg: &str) -> Response {
+pub(crate) fn error_page(status: StatusCode, msg: &str) -> Response {
     let base = BASE_PATH.get().map(String::as_str).unwrap_or("");
     let title = match status.as_u16() { 404 => "Nicht gefunden", 403 => "Kein Zugriff", 400 => "Eingabe prüfen", 429 => "Bitte kurz warten", _ => "Das hat nicht geklappt" };
     let icons = icon_links();
@@ -172,40 +172,18 @@ pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         "free": access.free,
         "login": access.login,
         "owner": owner,
+        "restore": may_restore(&state, &access),
         "expires": expires,
         "theme": state.config.theme,
         "logo": if theme_hsd(&state) && has_logo(&state) { serde_json::Value::String(theme_url(&state, "logo.png")) } else { serde_json::Value::Null },
         "course": if access.free { None } else { state.store.course_url(&access.pad.id) },
     });
     let base = &state.config.base_path;
-    if state.store.is_ideas(&access.pad.id) {
-        let mut cfg = cfg;
-        cfg["readonlyId"] = if access.readonly { serde_json::Value::Null } else { json!(access.pad.readonly_id) };
-        let resp = crate::ideas::page(&state, &id, cfg);
+    if let Some(addon) = crate::addons::von_pad(&state, &access.pad.id) {
+        if !crate::addons::aktiv(&state, addon) { return crate::addons::nicht_aktiv(addon); }
+        let readonly_id = (!access.readonly).then_some(access.pad.readonly_id.as_str());
+        let resp = (addon.seite)(crate::addons::Seite { state: &state, headers: &headers, url_id: &id, pad_id: &access.pad.id, free: access.free, readonly_id, cfg });
         return with_cookie(resp, access.set_cookie.clone());
-    }
-    if state.store.is_quiz(&access.pad.id) {
-        let join = crate::quiz::join_svg(&state, &headers, access.free, &id, &access.pad.id, "");
-        let resp = crate::quiz::page(&state, &id, cfg, &join);
-        return with_cookie(resp, access.set_cookie.clone());
-    }
-    if state.store.is_board(&access.pad.id) {
-        let icons = icon_links();
-        let body = format!(r#"<!doctype html><html lang="de"><head><meta charset="utf-8">{icons}<meta name="viewport" content="width=device-width, initial-scale=1"><title>NextPad · Zeichenbrett</title>
-<link rel="stylesheet" href="{base}/static/board/board.css?v={v}"><style>html,body{{margin:0;height:100%;overflow:hidden}} #board{{position:fixed;inset:0}}</style></head>
-<body><div id="board"></div>
-<script type="application/json" id="nextpad-config">{cfg}</script>
-<script src="{base}/static/board/assets-path.js?v={v}"></script>
-<script type="module" src="{base}/static/board/board.js?v={v}"></script></body></html>"#, v = board_version(), cfg = cfg.to_string().replace("</", "<\\/"));
-        let mut resp = Html(body).into_response();
-        let csp = format!("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: {}; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; form-action 'self'; frame-ancestors {}; base-uri 'none'", moodle_origins(&state), state.config.frame_ancestors);
-        let h = resp.headers_mut();
-        if let Ok(v) = HeaderValue::from_str(&csp) { h.insert(header::CONTENT_SECURITY_POLICY, v); }
-        h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-        h.insert(header::REFERRER_POLICY, HeaderValue::from_static("same-origin"));
-        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-        if let Some(c) = &access.set_cookie { if let Ok(v) = HeaderValue::from_str(c) { h.append(header::SET_COOKIE, v); } }
-        return resp;
     }
     let theme_link = if theme_hsd(&state) { format!(r#"<link rel="stylesheet" href="{}/static/theme-hsd.css?v={}">"#, state.config.base_path, bundle_version()) } else { String::new() };
     let body_class = if theme_hsd(&state) { "theme-hsd" } else { "theme-colibris" };
@@ -275,14 +253,9 @@ async fn export_inner(State(state): State<Arc<AppState>>, Path((id, format)): Pa
         Ok(a) => a,
         Err((s, m)) => return error_page(s, m),
     };
-    if state.store.is_quiz(&access.pad.id) {
-        return crate::quiz::export(&state, &access.pad.id, &format).unwrap_or_else(|| error_page(StatusCode::NOT_FOUND, "Quiz-Raster lassen sich als Markdown oder Text sichern (nur der Punktestand)."));
-    }
-    if state.store.is_ideas(&access.pad.id) {
-        return crate::ideas::export(&state, &access.pad.id, &format).unwrap_or_else(|| error_page(StatusCode::NOT_FOUND, "Ideensammlungen lassen sich als Markdown, Text oder CSV sichern."));
-    }
-    if state.store.is_board(&access.pad.id) {
-        return error_page(StatusCode::CONFLICT, "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG, SVG oder Excalidraw-Datei sichern.");
+    if let Some(addon) = crate::addons::von_pad(&state, &access.pad.id) {
+        if !crate::addons::aktiv(&state, addon) { return crate::addons::nicht_aktiv(addon); }
+        return (addon.export)(&state, &access.pad.id, &format);
     }
     match format.as_str() {
         "html" => match state.rooms.html(&access.pad.id).await {
@@ -350,6 +323,30 @@ async fn snapshot_html_inner(State(state): State<Arc<AppState>>, Path((id, ts)):
     }
 }
 
+/// Frühere Stände zurückholen darf, wer das freie Pad besitzt; bei Moodle-Pads, wer moderiert (Lehrende).
+fn may_restore(state: &AppState, access: &Access) -> bool {
+    let Some((aid, _)) = access.author.as_ref().filter(|_| !access.readonly) else { return false };
+    (access.free && state.store.owner_of(&access.pad.id).ok().flatten().as_deref() == Some(aid.as_str())) || state.store.is_moderator(&access.pad.id, aid)
+}
+
+/// Früheren Stand aus der Zeitleiste wiederherstellen: `{"ts": …}` für einen Vollstand, `{"seq": …}` für einen Schritt.
+pub async fn restore(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap, axum::Json(body): axum::Json<serde_json::Value>) -> Response {
+    if !origin_ok(&state, &headers) || headers.get(header::ORIGIN).is_none() { return StatusCode::FORBIDDEN.into_response(); }
+    let access = match check_access(&state, &headers, &id) { Ok(a) => a, Err((s, m)) => return (s, m).into_response() };
+    if crate::addons::von_pad(&state, &access.pad.id).is_some() { return (StatusCode::CONFLICT, "Wiederherstellen gibt es nur bei Text-Pads.").into_response(); }
+    if !may_restore(&state, &access) { return (StatusCode::FORBIDDEN, "Frühere Stände stellt nur wieder her, wem das Pad gehört.").into_response(); }
+    let punkt = match (body.get("ts").and_then(|v| v.as_i64()), body.get("seq").and_then(|v| v.as_i64())) {
+        (Some(ts), None) => crate::docs::Punkt::Stand(ts),
+        (None, Some(seq)) => crate::docs::Punkt::Schritt(seq),
+        _ => return (StatusCode::BAD_REQUEST, "ts oder seq fehlt").into_response(),
+    };
+    match state.rooms.restore(&access.pad.id, punkt).await {
+        Ok(Some(())) => { tracing::info!("Früheren Stand wiederhergestellt: Pad {}", access.pad.id); axum::Json(json!({ "ok": true })).into_response() }
+        Ok(None) => (StatusCode::NOT_FOUND, "Diesen Stand gibt es nicht mehr.").into_response(),
+        Err(e) => { tracing::error!("Wiederherstellen: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
+    }
+}
+
 /// Legt ein freies Pad an, höchstens `free_pads_per_hour` je Adresse.
 fn create_free_pad(state: &AppState, name: &str, ip: std::net::IpAddr) -> Result<(), (StatusCode, &'static str)> {
     let key = crate::net::rate_key(ip);
@@ -385,17 +382,18 @@ pub fn urlencoding(s: &str) -> String {
 /// „Neues Pad“: zufälliger Name wie bei Etherpad.
 pub async fn new_pad(State(state): State<Arc<AppState>>, Query(q): Query<HashMap<String, String>>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap) -> Response {
     if !state.config.allow_free_pads { return error_page(StatusCode::FORBIDDEN, "Freie Pads sind auf diesem Server nicht eingeschaltet."); }
+    // „vorlage=ideen“ war bis 0.3.3 eine Textvorlage, alte Lesezeichen führen jetzt zur Ideensammlung
+    let typ = q.get("typ").map(String::as_str).filter(|t| !t.is_empty()).or(q.get("vorlage").filter(|v| *v == "ideen").map(String::as_str));
+    let addon = match typ.map(|t| crate::addons::nach_kennung(t).ok_or(t)) {
+        None => None,
+        Some(Ok(a)) if crate::addons::aktiv(&state, a) => Some(a),
+        Some(Ok(a)) => return crate::addons::nicht_aktiv(a),
+        Some(Err(_)) => return error_page(StatusCode::NOT_FOUND, "Diesen Pad-Typ gibt es nicht."),
+    };
     let name = ids::random16();
     if let Err((s, m)) = create_free_pad(&state, &name, crate::net::client_ip(&state, &headers, peer)) { return error_page(s, m); }
-    // „vorlage=ideen“ war bis 0.3.3 eine Textvorlage, alte Lesezeichen führen jetzt zur Ideensammlung
-    let kind = match (q.get("typ").map(String::as_str), q.get("vorlage").map(String::as_str)) {
-        (Some("zeichenbrett"), _) => Some("board"),
-        (Some("ideen"), _) | (_, Some("ideen")) => Some("ideas"),
-        (Some("quiz"), _) => Some("quiz"),
-        _ => None,
-    };
-    if let Some(k) = kind {
-        if let Err(e) = state.store.set_kind(&name, k) { tracing::warn!("Pad-Typ: {e}"); }
+    if let Some(a) = addon {
+        if let Err(e) = state.store.set_kind(&name, a.art) { tracing::warn!("Pad-Typ: {e}"); }
     } else if let Some(html) = q.get("vorlage").and_then(|v| template(v)) {
         if let Err(e) = state.rooms.set_html(&name, html).await { tracing::warn!("Vorlage: {e}"); }
     }
@@ -714,6 +712,7 @@ fn start_page_hsd(state: &AppState, headers: &HeaderMap) -> Response {
     };
     let style_attr = if bg { format!(r#" style="--bg-image:url('{}')""#, theme_url(state, "background.jpg")) } else { String::new() };
     let retention = retention_fact(state);
+    let addon_kacheln: String = crate::addons::aktive(state).map(|a| a.kachel.replace("{base}", base)).collect::<Vec<_>>().join("\n");
     let content = format!(r##"<div class="stage"><main id="inhalt" class="start" tabindex="-1">
 <div class="hero">{credit}</div>
 <div class="wrap entry-wrap">
@@ -732,9 +731,7 @@ fn start_page_hsd(state: &AppState, headers: &HeaderMap) -> Response {
 <ul class="templates">
 <li><a class="template" data-tint="blue" href="{base}/new?vorlage=gruppenarbeit"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3 3 0 0 1 0 5.6M18 14.3c1.8.9 3 2.8 3 5.7"/></svg><span class="template-name">Gruppenarbeit</span><span class="template-desc">Aufgabe, wer macht was, Ergebnisse</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
 <li><a class="template" data-tint="green" href="{base}/new?vorlage=protokoll"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg><span class="template-name">Protokoll</span><span class="template-desc">Tagesordnung, Beschlüsse, Aufgaben</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
-<li><a class="template" data-tint="yellow" href="{base}/new?typ=ideen"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="template-name">Ideensammlung</span><span class="template-desc">Ideen und Fragen sammeln, abstimmen</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
-<li><a class="template" data-tint="blue" href="{base}/new?typ=quiz"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="template-name">Quiz-Raster</span><span class="template-desc">Fragen nach Punkten, Teams, Beamer</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
-<li><a class="template" href="{base}/new?typ=zeichenbrett"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3M4 20h16"/></svg><span class="template-name">Zeichenbrett</span><span class="template-desc">Gemeinsam skizzieren</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>
+{addon_kacheln}
 </ul>
 </details>
 </section>
@@ -769,20 +766,15 @@ pub async fn help(State(state): State<Arc<AppState>>) -> Response {
         crate::retention::Mode::On => format!("<p>Pads aus Moodle bleiben, solange es die Aktivität im Kurs gibt. Pads von der Startseite gehören der Person, die sie angelegt hat. Nach {} Tagen ohne Öffnen oder Bearbeiten löscht NextPad sie. Wer über Moodle angemeldet ist, bekommt zwei Wochen vorher eine Mail mit dem Inhalt als PDF und kann das Pad um ein Jahr verlängern. Unter „Teilnehmende“ lässt sich das eigene Pad auch selbst verlängern oder löschen.</p>", state.config.retention_days),
         _ => "<p>Pads aus Moodle bleiben, solange es die Aktivität im Kurs gibt. Pads von der Startseite gehören der Person, die sie angelegt hat; sie kann ihr Pad unter „Teilnehmende“ selbst löschen. Eine automatische Löschfrist ist derzeit nicht eingeschaltet.</p>".to_string(),
     };
+    let addon_hilfe: String = crate::addons::aktive(&state).map(|a| a.hilfe).collect::<Vec<_>>().join("\n");
     let content = format!(r#"<main id="inhalt" class="doc" tabindex="-1"><p><a href="{base}/">← Zur Startseite</a></p><h1>Hilfe zu NextPad</h1>
 <p>NextPad ist der Nachfolger von Etherpad an der Hochschule Düsseldorf. Mehrere Personen schreiben dort gleichzeitig am selben Text. Alle sehen die Änderungen der anderen sofort.</p>
 <h2>Einem Pad beitreten</h2><p>Den Namen des Pads eingeben und „Öffnen oder anlegen“ wählen. Gleicher Name bedeutet gleiches Pad. Gibt es den Namen noch nicht, legt NextPad ein neues, leeres Pad an. Erlaubt sind Buchstaben, Ziffern, Leerzeichen und die Zeichen - _ . ( ) , bis 50 Zeichen.</p>
 <h2>Mit Vorlage beginnen</h2><p>Die Vorlagen legen ein Pad mit zufälligem Namen an und bringen eine Gliederung für Gruppenarbeit oder Protokoll mit. Über „Teilen“ im Pad lässt sich der Link kopieren und an die Gruppe schicken.</p>
-<h2>Quiz-Raster</h2><p>„Quiz-Raster“ legt ein Quiz nach Kategorien und Punktwerten an. Wer es anlegt, leitet: Fragen als Tabelle <code>Kategorie | Punkte | Frage | Antwort</code> einfügen, Teams eintragen, am Beamer ein Feld wählen, die Antwort aufdecken und Punkte vergeben. Wer den Link oder den QR-Code hat, sieht Raster, Frage und Punktestand mit, aber nicht die Antworten, bevor sie aufgedeckt sind. Tasten für die Leitung: Leertaste deckt auf, Esc führt zurück zum Raster, Z nimmt die letzte Wertung zurück. Gespielte Felder sind gesperrt; „Rückgängig“ holt die letzte Frage zurück. Rückgängig, QR-Code, Vollbild, Fragen bearbeiten, Buzzer-Messung und der Buzzer-Ton liegen im Menü ⋯ oben rechts.</p>
-<p>Ablauf: Nach dem Speichern ist das Raster gesperrt, alle wählen auf dem Handy ihr Team und dürfen noch wechseln. „Spiel starten“ gibt das Raster frei, danach sind die Teams fest. „Spiel beenden“ zeigt jederzeit das Ergebnis, auch wenn noch Felder offen sind; nach der letzten Frage erscheint es von selbst. Das Ergebnis zeigt die Platzierung, die Buzzer-Statistik (schnellstes Team, mittlere Zeit bis zum Druck je Team) und die Fragen, die niemand oder erst nach einem Fehlversuch gelöst hat, zum Nachbesprechen. „Neues Spiel“ setzt Punkte und Felder zurück, Fragen und Teams bleiben.</p>
-<p>Buzzer: Wer mitsieht, wählt auf dem Handy sein Team. Solange eine Frage offen ist und die Antwort nicht aufgedeckt, erscheint ein großer Buzzer. Gewertet wird, wann gedrückt wurde, nicht wann der Druck ankommt: Das Handy gleicht dazu laufend seine Uhr mit dem Server ab. Eine halbe Sekunde nach dem ersten Druck steht die Reihenfolge fest; liegen zwei Teams weniger als 50 ms auseinander, steht „gleichauf“ daneben. Je Handy und Frage zählt ein Druck. Am Beamer erscheint groß, welches Team zuerst gedrückt hat, und beim ersten Druck ertönt ein Buzzer-Ton (im Menü abschaltbar; der Browser spielt ihn erst, nachdem am Beamer einmal geklickt wurde). Die Punkte vergibt weiterhin die Leitung. Neben dem Team steht die Reaktionszeit ab dem Öffnen der Frage. Zieht die Leitung nach einer falschen Antwort Punkte ab, bleibt die Frage offen und am Beamer steht „Jetzt dran“ mit dem nächsten Team der Reihenfolge.</p>
-<p>Countdown: Beim Anlegen lässt sich die Zeit je Frage einstellen (Vorgabe 10 Sekunden, 0 schaltet den Countdown ab). Die Zeit läuft groß am Beamer, ab dem Öffnen der Frage; danach nimmt der Buzzer keinen Druck mehr an. Wer vorher gedrückt hat, bleibt in der Reihenfolge.</p>
-<p>„Buzzer-Messung“ (für die Leitung) prüft, ob ein Buzzer auf dem Handy im Raum fair wäre: Alle öffnen den QR-Code oder tippen im Quiz oben rechts auf „An der Messung teilnehmen“ (der Knopf erscheint, solange die Leitung die Messseite offen hat) und dann auf „Mitmessen“, die Leitung sendet einige Signale, alle drücken, sobald „Jetzt“ erscheint. Die Seite zeigt Laufzeiten, wie genau sich die Uhren der Handys abgleichen lassen, und ein Urteil. Gespeichert werden nur Zeiten und die Art des Geräts, keine Namen; die Leitung kann die Daten als CSV sichern und löschen.</p>
-<h2>Ideensammlung</h2><p>„Ideensammlung“ legt eine Liste an, in die alle ohne Namen Ideen oder Fragen eintragen und für Beiträge stimmen. Jede Person hat je Beitrag eine Stimme. Wer die Sammlung angelegt hat, kann oben die Frage setzen, Beiträge als erledigt markieren oder ausblenden. „Link zum Mitmachen kopieren“ holt die Adresse für die Gruppe. „Leinwand öffnen“ zeigt die beliebtesten Beiträge groß für den Beamer, bei freien Sammlungen mit QR-Code zum Mitmachen. Gesichert wird als Markdown oder CSV. Im Moodle-Kurs gibt es die Ideensammlung auch als Aktivität: Dann kommen nur Kursmitglieder hinein, und Lehrende moderieren.</p>
-<h2>Zeichenbrett</h2><p>„Zeichenbrett“ legt eine gemeinsame Zeichenfläche an: Formen, Pfeile, Freihand und Text, alle sehen die Zeiger der anderen. Gesichert wird über das Menü links oben als PNG, SVG oder Excalidraw-Datei. Bilder einfügen ist noch nicht möglich. Die Zeichenfläche ist mit Screenreadern kaum nutzbar; für zugängliche Zusammenarbeit eignet sich ein Text-Pad.</p>
+{addon_hilfe}
 <h2>Aus Moodle gestartet</h2><p>Pads, Quiz und Ideensammlungen, die als Aktivität aus Moodle gestartet wurden, zeigen oben „Zurück zum Kurs“. Der Verweis führt auf die Kursseite in Moodle, auch aus der eingebetteten Ansicht heraus.</p>
 <h2>Name und Profilbild</h2><p>Ohne Anmeldung heißt man im Pad „Gast“. Unter „Teilnehmende“ lässt sich ein eigener Name eintragen. Wer sich über Moodle anmeldet, erscheint mit Namen und Profilbild aus Moodle.</p>
-<h2>Frühere Stände</h2><p>Die Zeitleiste zeigt, wie der Text entstanden ist, und spielt die Änderungen ab.</p>
+<h2>Frühere Stände</h2><p>Die Zeitleiste zeigt, wie der Text entstanden ist, und spielt die Änderungen ab. Wem das Pad gehört (wer es auf der Startseite angelegt hat, in Moodle die Lehrenden), kann einen früheren Stand mit „Diesen Stand wiederherstellen“ zurückholen. Er kommt als neue Änderung obendrauf; der Stand davor bleibt in der Zeitleiste erhalten.</p>
 <h2>Exportieren</h2><p>Über „Export“ gibt es den Text als HTML, Markdown, reinen Text, als PDF oder als Druckansicht.</p>
 <h2>Markdown</h2><p>Eingefügter Markdown-Text wird formatiert übernommen, etwa Überschriften mit #, Listen mit -, Aufgaben mit - [ ], **fett** und Tabellen mit senkrechten Strichen (| A | B |, darunter | --- | --- |).</p>
 <h2>Einrücken</h2><p>Tab rückt den Absatz oder die Überschrift um eine Stufe ein, Umschalt+Tab wieder aus; dasselbe tun die Knöpfe „Einrücken“ und „Ausrücken“. Markierte Absätze rücken gemeinsam. In Listen verschachtelt Tab den Punkt weiter, in Tabellen springt Tab zur nächsten Zelle.</p>
@@ -889,29 +881,6 @@ pub async fn pad_pdf(state: &Arc<AppState>, pad_id: &str, shown_id: &str) -> any
         Ok(b) => Ok(b),
         Err(e) => { tracing::warn!("Typst-Satz gescheitert, schlichtes PDF: {e}"); Ok(crate::pdf::from_markdown(&format!("NextPad · Pad {shown_id}"), &md)) }
     }
-}
-
-/// Zeichenbrett-Bündel (Excalidraw, Teile, Schriften), beim Bau eingebettet.
-static BOARD: include_dir::Dir<'_> = include_dir::include_dir!("$CARGO_MANIFEST_DIR/static/board");
-
-pub fn board_version() -> &'static str {
-    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    V.get_or_init(|| {
-        let mut h: u64 = 1469598103934665603;
-        for f in ["board.js", "board.css"] { if let Some(file) = BOARD.get_file(f) { for b in file.contents() { h ^= *b as u64; h = h.wrapping_mul(1099511628211); } } }
-        format!("{h:016x}")
-    })
-}
-
-pub async fn static_board(Path(path): Path<String>) -> Response {
-    if path.contains("..") { return StatusCode::NOT_FOUND.into_response(); }
-    let Some(f) = BOARD.get_file(&path) else { return StatusCode::NOT_FOUND.into_response() };
-    let ct = match path.rsplit('.').next().unwrap_or("") {
-        "js" => "text/javascript; charset=utf-8", "css" => "text/css; charset=utf-8", "woff2" => "font/woff2", "woff" => "font/woff",
-        "ttf" => "font/ttf", "json" => "application/json", "svg" => "image/svg+xml", "png" => "image/png", _ => "application/octet-stream",
-    };
-    // Teile tragen einen Hash im Namen; board.js/css werden per ?v= versioniert
-    ([(header::CONTENT_TYPE, ct), (header::CACHE_CONTROL, "public, max-age=31536000, immutable"), (header::X_CONTENT_TYPE_OPTIONS, "nosniff")], f.contents()).into_response()
 }
 
 pub const START_CSS: &str = include_str!("../static/start.css");

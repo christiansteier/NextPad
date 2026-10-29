@@ -17,6 +17,8 @@ pub struct Config {
     pub api_version: String,
     pub trust_proxy: bool,
     pub allow_free_pads: bool,
+    /// Eingeschaltete Addons, Kennungen aus `addons::ALLE`
+    pub addons: Vec<&'static str>,
     pub free_pads_per_hour: u32,
     pub cookie_name: String,
     pub author_cookie: String,
@@ -130,6 +132,7 @@ impl Config {
             api_version: env("API_VERSION", "1.2.15"),
             trust_proxy: env("TRUST_PROXY", "false") == "true",
             allow_free_pads: env("ALLOW_FREE_PADS", "false") == "true",
+            addons: crate::addons::auswahl(var("ADDONS").as_deref())?,
             free_pads_per_hour: env("FREE_PADS_PER_HOUR", "20").parse().unwrap_or(20),
             author_cookie: env("AUTHOR_COOKIE", "nextpad_author"),
             theme: env("THEME", "colibris"),

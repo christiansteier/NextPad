@@ -203,15 +203,14 @@ struct LinkClaim {
 }
 
 impl Claims {
-    /// Pad-Typ der Kursaktivität; None: nur anmelden.
+    /// Typ der Kursaktivität: "pad" oder die Kennung eines Addons; None: nur anmelden.
     fn activity(&self) -> Option<&'static str> {
         let typ = self.custom.as_ref().and_then(|c| c.get("typ")).and_then(|v| v.as_str()).map(str::trim);
         let target = self.target_link_uri.as_deref().map(|u| u.split(['?', '#']).next().unwrap_or("").trim_end_matches('/').to_string()).unwrap_or_default();
         match typ {
-            Some("quiz") => Some("quiz"),
-            Some("ideen") => Some("ideas"),
             Some("pad" | "text") => Some("pad"),
-            _ if target.ends_with("/lti/ideen") => Some("ideas"),
+            Some(t) if crate::addons::nach_kennung(t).is_some_and(|a| a.moodle.is_some()) => crate::addons::nach_kennung(t).map(|a| a.kennung),
+            _ if target.ends_with("/lti/ideen") => Some("ideen"),
             _ if target.ends_with("/lti/pad") => Some("pad"),
             _ => None,
         }
@@ -321,7 +320,12 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     let path = base_path(&state);
     let mut target = path.clone();
     let mut session_cookie = None;
-    if let Some(kind) = claims.activity() {
+    if let Some(typ) = claims.activity() {
+        let addon = crate::addons::nach_kennung(typ);
+        if let Some(a) = addon.filter(|a| !crate::addons::aktiv(&state, a)) {
+            return page(StatusCode::NOT_FOUND, &format!("„{}“ ist auf diesem NextPad nicht eingeschaltet. Bitte die Verwaltung von NextPad fragen.", a.name));
+        }
+        let kind = addon.map_or("pad", |a| a.art);
         let (Some(ctx), Some(link)) = (&claims.context, &claims.resource_link) else {
             return page(StatusCode::BAD_REQUEST, "Moodle hat Kurs oder Aktivität nicht mitgeschickt. Bitte die Aktivität im Kurs neu starten.");
         };
@@ -333,11 +337,7 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
                 Ok(p) => {
                     let title: String = link.title.as_deref().unwrap_or("").chars().filter(|c| !c.is_control()).take(200).collect();
                     if !title.trim().is_empty() {
-                        let _ = match kind {
-                            "quiz" => state.store.quiz_set_title(&p, title.trim()),
-                            "ideas" => state.store.set_idea_prompt(&p, title.trim()),
-                            _ => Ok(()),
-                        };
+                        if let Some(setzen) = addon.and_then(|a| a.moodle) { let _ = setzen(&state.store, &p, title.trim()); }
                     }
                     tracing::info!("Kursaktivität über {} angelegt", pl.name);
                     p

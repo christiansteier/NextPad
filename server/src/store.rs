@@ -8,6 +8,21 @@ pub struct Store {
     conn: Mutex<Connection>,
     /// Schreib-Thread für Yjs-Updates und Wartung (eigene Verbindung, Transaktionen gebündelt)
     writer: mpsc::SyncSender<WriteOp>,
+    /// Tabellen der Addons mit Spalte `pad_id`; sie gehen beim Löschen eines Pads mit
+    zusatz: Vec<&'static str>,
+}
+
+/// Eigene Tabellen eines Addons: Schema, Ergänzungen älterer Datenbanken und die Tabellen,
+/// die beim Löschen eines Pads mitgehen. Angelegt werden sie immer, auch wenn das Addon ausgeschaltet ist.
+pub struct Zusatz {
+    pub schema: &'static str,
+    pub ergaenzen: fn(&Connection) -> rusqlite::Result<()>,
+    pub tabellen: &'static [&'static str],
+}
+
+/// Hat die Tabelle die Spalte? Für Schema-Ergänzungen.
+pub fn hat_spalte(conn: &Connection, tabelle: &str, spalte: &str) -> rusqlite::Result<bool> {
+    conn.prepare("SELECT 1 FROM pragma_table_info(?1) WHERE name=?2")?.exists(params![tabelle, spalte])
 }
 
 /// Aufträge an den Schreib-Thread. Reihenfolge bleibt erhalten.
@@ -85,22 +100,8 @@ pub struct Pad {
     pub last_edited: i64,
 }
 
-#[derive(Debug, Clone, Default)]
-/// `phase`: 0 Vorbereitung (Teams wählen, Raster gesperrt), 1 läuft, 2 beendet (Ergebnis).
-/// `sekunden`: Countdown je Frage, 0 = ohne.
-pub struct QuizState { pub title: String, pub current: Option<i64>, pub revealed: bool, pub phase: i64, pub sekunden: i64 }
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct QuizField { pub id: i64, pub cat: String, pub points: i64, pub question: String, pub answer: String }
 
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct Idea {
-    pub id: i64,
-    pub text: String,
-    pub created: i64,
-    pub hidden: bool,
-    pub done: bool,
-    pub votes: i64,
-}
+
 
 #[derive(Clone, Debug)]
 pub struct Author {
@@ -158,22 +159,6 @@ CREATE TABLE IF NOT EXISTS updates (
 CREATE TABLE IF NOT EXISTS snapshots (
   pad_id TEXT NOT NULL, ts INTEGER NOT NULL, seq INTEGER NOT NULL, label TEXT NOT NULL,
   state BLOB NOT NULL, html TEXT NOT NULL, PRIMARY KEY (pad_id, ts));
-CREATE TABLE IF NOT EXISTS ideas (
-  pad_id TEXT NOT NULL, id INTEGER NOT NULL, author_id TEXT NOT NULL, text TEXT NOT NULL, created INTEGER NOT NULL,
-  hidden INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (pad_id, id));
-CREATE TABLE IF NOT EXISTS idea_votes (pad_id TEXT NOT NULL, idea_id INTEGER NOT NULL, author_id TEXT NOT NULL, PRIMARY KEY (pad_id, idea_id, author_id));
-CREATE TABLE IF NOT EXISTS idea_prompts (pad_id TEXT PRIMARY KEY, prompt TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS quiz_state (pad_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', current INTEGER, revealed INTEGER NOT NULL DEFAULT 0, phase INTEGER NOT NULL DEFAULT 1, sekunden INTEGER NOT NULL DEFAULT 10);
-CREATE TABLE IF NOT EXISTS quiz_fields (pad_id TEXT NOT NULL, id INTEGER NOT NULL, cat TEXT NOT NULL, points INTEGER NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, PRIMARY KEY (pad_id, id));
-CREATE TABLE IF NOT EXISTS quiz_teams (pad_id TEXT NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY (pad_id, id));
-CREATE TABLE IF NOT EXISTS quiz_log (pad_id TEXT NOT NULL, seq INTEGER NOT NULL, field INTEGER NOT NULL, team INTEGER, delta INTEGER NOT NULL, PRIMARY KEY (pad_id, seq));
-CREATE TABLE IF NOT EXISTS quiz_buzz (pad_id TEXT NOT NULL, field INTEGER NOT NULL, dev TEXT NOT NULL, team INTEGER NOT NULL, t_press REAL NOT NULL, ts_ein REAL NOT NULL, flagged INTEGER NOT NULL DEFAULT 0, reaktion REAL, PRIMARY KEY (pad_id, field, dev));
-CREATE TABLE IF NOT EXISTS quiz_buzz_open (pad_id TEXT PRIMARY KEY, field INTEGER NOT NULL, ts REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS messung_geraet (pad_id TEXT NOT NULL, dev TEXT NOT NULL, nr INTEGER NOT NULL, art TEXT NOT NULL, PRIMARY KEY (pad_id, dev));
-CREATE TABLE IF NOT EXISTS messung_probe (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, ts REAL NOT NULL, rtt REAL NOT NULL, rtt_med REAL NOT NULL, off REAL NOT NULL);
-CREATE INDEX IF NOT EXISTS messung_probe_pad ON messung_probe (pad_id);
-CREATE TABLE IF NOT EXISTS messung_runde (pad_id TEXT NOT NULL, runde INTEGER NOT NULL, ts REAL NOT NULL, PRIMARY KEY (pad_id, runde));
-CREATE TABLE IF NOT EXISTS messung_marke (pad_id TEXT NOT NULL, nr INTEGER NOT NULL, runde INTEGER NOT NULL, t_empfang REAL, t_druck REAL, ts_ein REAL, off REAL NOT NULL, rtt REAL NOT NULL, PRIMARY KEY (pad_id, nr, runde));
 CREATE TABLE IF NOT EXISTS lti_links (link_key TEXT PRIMARY KEY, pad_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_join (pad_id TEXT PRIMARY KEY, url TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pad_kurs (pad_id TEXT PRIMARY KEY, url TEXT NOT NULL);
@@ -182,7 +167,7 @@ CREATE TABLE IF NOT EXISTS pad_moderators (pad_id TEXT NOT NULL, author_id TEXT 
 "#;
 
 impl Store {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, zusaetze: &[&Zusatz]) -> Result<Self> {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         conn.execute_batch(SCHEMA)?;
@@ -202,22 +187,15 @@ impl Store {
         // Schema-Ergänzung 26.10.2026: Admin-Recht einer Anmeldung über Moodle
         let has_admin: bool = conn.prepare("SELECT 1 FROM pragma_table_info('logins') WHERE name='admin'")?.exists([])?;
         if !has_admin { conn.execute_batch("ALTER TABLE logins ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;")?; }
-        // Schema-Ergänzung 28.10.2026: Spielphase im Quiz; laufende Spiele bleiben laufend (1)
-        let has_phase: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_state') WHERE name='phase'")?.exists([])?;
-        if !has_phase { conn.execute_batch("ALTER TABLE quiz_state ADD COLUMN phase INTEGER NOT NULL DEFAULT 1;")?; }
-        // Schema-Ergänzung 28.10.2026: Countdown je Frage und Reaktionszeit je Buzzer-Druck
-        let has_sek: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_state') WHERE name='sekunden'")?.exists([])?;
-        if !has_sek { conn.execute_batch("ALTER TABLE quiz_state ADD COLUMN sekunden INTEGER NOT NULL DEFAULT 10;")?; }
-        let has_reak: bool = conn.prepare("SELECT 1 FROM pragma_table_info('quiz_buzz') WHERE name='reaktion'")?.exists([])?;
-        if !has_reak { conn.execute_batch("ALTER TABLE quiz_buzz ADD COLUMN reaktion REAL;")?; }
+        for z in zusaetze { conn.execute_batch(z.schema)?; (z.ergaenzen)(&conn)?; }
         let wconn = Connection::open(path)?;
         wconn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         let (tx, rx) = mpsc::sync_channel::<WriteOp>(65_536);
         std::thread::Builder::new().name("sqlite-writer".into()).spawn(move || writer_loop(wconn, rx))?;
-        Ok(Store { conn: Mutex::new(conn), writer: tx })
+        Ok(Store { conn: Mutex::new(conn), writer: tx, zusatz: zusaetze.iter().flat_map(|z| z.tabellen.iter().copied()).collect() })
     }
 
-    fn c(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn c(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -239,7 +217,7 @@ impl Store {
             .query_map(params![id], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;
         for p in &pads {
-            Self::delete_pad_in(&c, p)?;
+            Self::delete_pad_in(&c, &self.zusatz, p)?;
         }
         c.execute("DELETE FROM sessions WHERE group_id=?1", params![id])?;
         c.execute("DELETE FROM groups WHERE id=?1", params![id])?;
@@ -291,13 +269,10 @@ impl Store {
             )
             .optional()?)
     }
-    fn delete_pad_in(c: &Connection, id: &str) -> Result<bool> {
+    fn delete_pad_in(c: &Connection, zusatz: &[&str], id: &str) -> Result<bool> {
         c.execute("DELETE FROM updates WHERE pad_id=?1", params![id])?;
-        c.execute("DELETE FROM idea_votes WHERE pad_id=?1", params![id])?;
-        c.execute("DELETE FROM ideas WHERE pad_id=?1", params![id])?;
-        c.execute("DELETE FROM idea_prompts WHERE pad_id=?1", params![id])?;
-        for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log", "quiz_teams", "quiz_fields", "quiz_state"] { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
-        for t in MESS_TABELLEN { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
+        // Tabellen der Addons, auch ausgeschalteter: deren Daten gehen mit dem Pad
+        for t in zusatz { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![id])?; }
         c.execute("DELETE FROM pad_moderators WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM lti_links WHERE pad_id=?1", params![id])?;
         c.execute("DELETE FROM pad_join WHERE pad_id=?1", params![id])?;
@@ -308,7 +283,7 @@ impl Store {
     pub fn delete_pad(&self, id: &str) -> Result<bool> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let r = Self::delete_pad_in(&tx, id)?;
+        let r = Self::delete_pad_in(&tx, &self.zusatz, id)?;
         tx.commit()?;
         Ok(r)
     }
@@ -317,137 +292,11 @@ impl Store {
         self.c().execute("UPDATE pads SET kind=?2 WHERE id=?1", params![pad_id, kind])?;
         Ok(())
     }
-    fn kind(&self, pad_id: &str) -> Option<String> {
+    /// Pad-Typ: None = Text-Pad, sonst die Art eines Addons.
+    pub fn kind(&self, pad_id: &str) -> Option<String> {
         self.c().query_row("SELECT kind FROM pads WHERE id=?1", params![pad_id], |r| r.get::<_, Option<String>>(0)).ok().flatten()
     }
-    pub fn is_board(&self, pad_id: &str) -> bool { self.kind(pad_id).as_deref() == Some("board") }
-    pub fn is_ideas(&self, pad_id: &str) -> bool { self.kind(pad_id).as_deref() == Some("ideas") }
-    pub fn is_quiz(&self, pad_id: &str) -> bool { self.kind(pad_id).as_deref() == Some("quiz") }
 
-    // Ideensammlung: Beiträge ohne Namen, eine Stimme je Person und Beitrag
-    pub fn ideas(&self, pad_id: &str) -> Result<Vec<Idea>> {
-        Ok(self.c().prepare(
-            "SELECT i.id, i.text, i.created, i.hidden, i.done, (SELECT COUNT(*) FROM idea_votes v WHERE v.pad_id=i.pad_id AND v.idea_id=i.id)
-             FROM ideas i WHERE i.pad_id=?1 ORDER BY i.id")?
-            .query_map(params![pad_id], |r| Ok(Idea { id: r.get(0)?, text: r.get(1)?, created: r.get(2)?, hidden: r.get(3)?, done: r.get(4)?, votes: r.get(5)? }))?
-            .collect::<std::result::Result<_, _>>()?)
-    }
-    pub fn my_votes(&self, pad_id: &str, author_id: &str) -> Result<Vec<i64>> {
-        Ok(self.c().prepare("SELECT idea_id FROM idea_votes WHERE pad_id=?1 AND author_id=?2")?
-            .query_map(params![pad_id, author_id], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?)
-    }
-    pub fn mine(&self, pad_id: &str, author_id: &str) -> Result<Vec<i64>> {
-        Ok(self.c().prepare("SELECT id FROM ideas WHERE pad_id=?1 AND author_id=?2")?
-            .query_map(params![pad_id, author_id], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?)
-    }
-    /// Legt einen Beitrag an, solange die Sammlung (`max_total`) und die Person (`max_own`) noch Platz haben.
-    pub fn add_idea(&self, pad_id: &str, author_id: &str, text: &str, max_total: i64, max_own: i64) -> Result<Option<i64>> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        let (total, own): (i64, i64) = tx.query_row("SELECT COUNT(*), COALESCE(SUM(author_id=?2), 0) FROM ideas WHERE pad_id=?1", params![pad_id, author_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        if total >= max_total || own >= max_own { return Ok(None); }
-        let now = ids::now_ms();
-        let id: i64 = tx.query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM ideas WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
-        tx.execute("INSERT INTO ideas (pad_id, id, author_id, text, created) VALUES (?1, ?2, ?3, ?4, ?5)", params![pad_id, id, author_id, text, now])?;
-        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, now])?;
-        tx.commit()?;
-        Ok(Some(id))
-    }
-    /// Stimme setzen oder zurücknehmen; nur für sichtbare, offene Beiträge. false: Beitrag nicht abstimmbar.
-    pub fn vote(&self, pad_id: &str, idea_id: i64, author_id: &str, on: bool) -> Result<bool> {
-        let c = self.c();
-        let open = c.query_row("SELECT 1 FROM ideas WHERE pad_id=?1 AND id=?2 AND hidden=0 AND done=0", params![pad_id, idea_id], |_| Ok(())).optional()?.is_some();
-        if !open { return Ok(false); }
-        if on { c.execute("INSERT OR IGNORE INTO idea_votes (pad_id, idea_id, author_id) VALUES (?1, ?2, ?3)", params![pad_id, idea_id, author_id])?; }
-        else { c.execute("DELETE FROM idea_votes WHERE pad_id=?1 AND idea_id=?2 AND author_id=?3", params![pad_id, idea_id, author_id])?; }
-        Ok(true)
-    }
-    pub fn moderate_idea(&self, pad_id: &str, idea_id: i64, hidden: Option<bool>, done: Option<bool>) -> Result<bool> {
-        let c = self.c();
-        let mut n = 0;
-        if let Some(h) = hidden { n = c.execute("UPDATE ideas SET hidden=?3 WHERE pad_id=?1 AND id=?2", params![pad_id, idea_id, h])?; }
-        if let Some(d) = done { n = c.execute("UPDATE ideas SET done=?3 WHERE pad_id=?1 AND id=?2", params![pad_id, idea_id, d])?; }
-        Ok(n > 0)
-    }
-
-    // Quiz-Raster: Fragen und Antworten nur hier, nie im Yjs-Dokument
-    pub fn quiz_state(&self, pad_id: &str) -> Result<QuizState> {
-        Ok(self.c().query_row("SELECT title, current, revealed, phase, sekunden FROM quiz_state WHERE pad_id=?1", params![pad_id],
-            |r| Ok(QuizState { title: r.get(0)?, current: r.get(1)?, revealed: r.get(2)?, phase: r.get(3)?, sekunden: r.get(4)? })).optional()?
-            .unwrap_or(QuizState { sekunden: 10, ..Default::default() }))
-    }
-    pub fn quiz_fields(&self, pad_id: &str) -> Result<Vec<QuizField>> {
-        Ok(self.c().prepare("SELECT id, cat, points, question, answer FROM quiz_fields WHERE pad_id=?1 ORDER BY id")?
-            .query_map(params![pad_id], |r| Ok(QuizField { id: r.get(0)?, cat: r.get(1)?, points: r.get(2)?, question: r.get(3)?, answer: r.get(4)? }))?
-            .collect::<std::result::Result<_, _>>()?)
-    }
-    pub fn quiz_teams(&self, pad_id: &str) -> Result<Vec<(i64, String)>> {
-        Ok(self.c().prepare("SELECT id, name FROM quiz_teams WHERE pad_id=?1 ORDER BY id")?
-            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?)
-    }
-    /// Wertungen in Reihenfolge: (Feld, Team oder None für „niemand“, Punkte)
-    pub fn quiz_log(&self, pad_id: &str) -> Result<Vec<(i64, Option<i64>, i64)>> {
-        Ok(self.c().prepare("SELECT field, team, delta FROM quiz_log WHERE pad_id=?1 ORDER BY seq")?
-            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<std::result::Result<_, _>>()?)
-    }
-    /// Neue Fragen und Teams: Wertungen und offene Frage fallen weg.
-    pub fn quiz_replace(&self, pad_id: &str, title: &str, fields: &[QuizField], teams: &[String], sekunden: i64) -> Result<()> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log", "quiz_teams", "quiz_fields"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
-        for f in fields { tx.execute("INSERT INTO quiz_fields (pad_id, id, cat, points, question, answer) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, f.id, f.cat, f.points, f.question, f.answer])?; }
-        for (i, t) in teams.iter().enumerate() { tx.execute("INSERT INTO quiz_teams (pad_id, id, name) VALUES (?1, ?2, ?3)", params![pad_id, i as i64 + 1, t])?; }
-        tx.execute("INSERT INTO quiz_state (pad_id, title, current, revealed, phase, sekunden) VALUES (?1, ?2, NULL, 0, 0, ?3) ON CONFLICT(pad_id) DO UPDATE SET title=?2, current=NULL, revealed=0, phase=0, sekunden=?3", params![pad_id, title, sekunden])?;
-        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
-        tx.commit()?;
-        Ok(())
-    }
-    pub fn quiz_set_title(&self, pad_id: &str, title: &str) -> Result<()> {
-        self.c().execute("INSERT INTO quiz_state (pad_id, title) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET title=?2", params![pad_id, title])?;
-        Ok(())
-    }
-    /// Offene Frage setzen (None: zurück zum Raster). false: Feld gibt es nicht.
-    pub fn quiz_open(&self, pad_id: &str, field: Option<i64>, revealed: bool) -> Result<bool> {
-        let c = self.c();
-        if let Some(f) = field {
-            if c.query_row("SELECT 1 FROM quiz_fields WHERE pad_id=?1 AND id=?2", params![pad_id, f], |_| Ok(())).optional()?.is_none() { return Ok(false); }
-        }
-        c.execute("INSERT INTO quiz_state (pad_id, current, revealed) VALUES (?1, ?2, ?3) ON CONFLICT(pad_id) DO UPDATE SET current=?2, revealed=?3", params![pad_id, field, field.is_some() && revealed])?;
-        Ok(true)
-    }
-    /// Wertung eintragen. Plus oder „niemand“ schließt das Feld und führt zurück zum Raster. false: Feld oder Team gibt es nicht.
-    pub fn quiz_score(&self, pad_id: &str, field: i64, team: Option<i64>, delta: i64) -> Result<bool> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        let ok_field = tx.query_row("SELECT 1 FROM quiz_fields WHERE pad_id=?1 AND id=?2", params![pad_id, field], |_| Ok(())).optional()?.is_some();
-        let ok_team = match team { Some(t) => tx.query_row("SELECT 1 FROM quiz_teams WHERE pad_id=?1 AND id=?2", params![pad_id, t], |_| Ok(())).optional()?.is_some(), None => true };
-        if !ok_field || !ok_team { return Ok(false); }
-        let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq), 0) + 1 FROM quiz_log WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
-        tx.execute("INSERT INTO quiz_log (pad_id, seq, field, team, delta) VALUES (?1, ?2, ?3, ?4, ?5)", params![pad_id, seq, field, team, delta])?;
-        if delta > 0 || team.is_none() { tx.execute("UPDATE quiz_state SET current=NULL, revealed=0 WHERE pad_id=?1", params![pad_id])?; }
-        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
-        tx.commit()?;
-        Ok(true)
-    }
-    /// Letzte Wertung zurücknehmen. false: es gab keine.
-    /// Spielphase setzen; beim Beenden schließt eine offene Frage.
-    pub fn quiz_set_phase(&self, pad_id: &str, phase: i64) -> Result<()> {
-        self.c().execute("INSERT INTO quiz_state (pad_id, phase) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET phase=?2, current=CASE WHEN ?2=1 THEN current ELSE NULL END, revealed=CASE WHEN ?2=1 THEN revealed ELSE 0 END", params![pad_id, phase])?;
-        Ok(())
-    }
-    /// Neues Spiel mit denselben Fragen und Teams: Punkte, gespielte Felder und Buzzer-Drücke weg, zurück in die Vorbereitung.
-    pub fn quiz_new_game(&self, pad_id: &str) -> Result<()> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        for t in ["quiz_buzz", "quiz_buzz_open", "quiz_log"] { tx.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
-        tx.execute("UPDATE quiz_state SET current=NULL, revealed=0, phase=0 WHERE pad_id=?1", params![pad_id])?;
-        tx.execute("UPDATE pads SET last_edited=?2 WHERE id=?1", params![pad_id, ids::now_ms()])?;
-        tx.commit()?;
-        Ok(())
-    }
-    pub fn quiz_undo(&self, pad_id: &str) -> Result<bool> {
-        Ok(self.c().execute("DELETE FROM quiz_log WHERE pad_id=?1 AND seq=(SELECT MAX(seq) FROM quiz_log WHERE pad_id=?1)", params![pad_id])? > 0)
-    }
     // Aktivitäten aus Moodle (LTI): je Ressourcen-Link eine eigene Gruppe mit einem Pad
     pub fn pad_for_link(&self, link_key: &str) -> Result<Option<String>> {
         Ok(self.c().query_row("SELECT l.pad_id FROM lti_links l JOIN pads p ON p.id=l.pad_id WHERE l.link_key=?1", params![link_key], |r| r.get(0)).optional()?)
@@ -473,13 +322,6 @@ impl Store {
     }
     pub fn is_moderator(&self, pad_id: &str, author_id: &str) -> bool {
         self.c().query_row("SELECT 1 FROM pad_moderators WHERE pad_id=?1 AND author_id=?2", params![pad_id, author_id], |_| Ok(())).optional().ok().flatten().is_some()
-    }
-    pub fn idea_prompt(&self, pad_id: &str) -> Result<String> {
-        Ok(self.c().query_row("SELECT prompt FROM idea_prompts WHERE pad_id=?1", params![pad_id], |r| r.get(0)).optional()?.unwrap_or_default())
-    }
-    pub fn set_idea_prompt(&self, pad_id: &str, prompt: &str) -> Result<()> {
-        self.c().execute("INSERT INTO idea_prompts (pad_id, prompt) VALUES (?1, ?2) ON CONFLICT(pad_id) DO UPDATE SET prompt=excluded.prompt", params![pad_id, prompt])?;
-        Ok(())
     }
 
     // Besitz und Aufbewahrung freier Pads
@@ -769,127 +611,6 @@ fn avatar_url(moodle_url: Option<String>, moodle_user: Option<String>) -> Option
     id.chars().all(|c| c.is_ascii_digit()).then(|| format!("{u}/user/pix.php/{id}/f1.jpg"))
 }
 
-/// Buzzer-Messung: ein Uhrabgleich (beste von fünf Anfragen) eines Geräts, Zeiten in Millisekunden.
-#[derive(Debug, Clone, Default)]
-pub struct MessProbe { pub nr: i64, pub ts: f64, pub rtt: f64, pub rtt_med: f64, pub off: f64 }
-
-/// Buzzer-Messung: Empfang des Signals und Druck eines Geräts in einer Runde. `t_*` in Gerätezeit, `ts_ein` in Serverzeit.
-#[derive(Debug, Clone, Default)]
-pub struct MessMarke { pub nr: i64, pub runde: i64, pub t_empfang: Option<f64>, pub t_druck: Option<f64>, pub ts_ein: Option<f64>, pub off: f64, pub rtt: f64 }
-
-impl Store {
-    /// Nummer des Geräts im Pad, bei Bedarf neu; None, wenn schon `max` Geräte mitmessen. Nach außen gehen nur Nummern.
-    pub fn mess_geraet(&self, pad_id: &str, dev: &str, art: &str, max: i64) -> Result<Option<i64>> {
-        let c = self.c();
-        if let Some(nr) = c.query_row("SELECT nr FROM messung_geraet WHERE pad_id=?1 AND dev=?2", params![pad_id, dev], |r| r.get(0)).optional()? { return Ok(Some(nr)); }
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM messung_geraet WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
-        if n >= max { return Ok(None); }
-        c.execute("INSERT INTO messung_geraet (pad_id, dev, nr, art) VALUES (?1, ?2, ?3, ?4)", params![pad_id, dev, n + 1, art])?;
-        Ok(Some(n + 1))
-    }
-    pub fn mess_geraete(&self, pad_id: &str) -> Result<Vec<(i64, String)>> {
-        Ok(self.c().prepare("SELECT nr, art FROM messung_geraet WHERE pad_id=?1 ORDER BY nr")?
-            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
-    }
-    /// false, wenn das Pad schon `max` Abgleiche hat.
-    pub fn mess_probe(&self, pad_id: &str, p: &MessProbe, max: i64) -> Result<bool> {
-        let c = self.c();
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM messung_probe WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
-        if n >= max { return Ok(false); }
-        c.execute("INSERT INTO messung_probe (pad_id, nr, ts, rtt, rtt_med, off) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![pad_id, p.nr, p.ts, p.rtt, p.rtt_med, p.off])?;
-        Ok(true)
-    }
-    pub fn mess_proben(&self, pad_id: &str) -> Result<Vec<MessProbe>> {
-        Ok(self.c().prepare("SELECT nr, ts, rtt, rtt_med, off FROM messung_probe WHERE pad_id=?1 ORDER BY nr, ts")?
-            .query_map(params![pad_id], |r| Ok(MessProbe { nr: r.get(0)?, ts: r.get(1)?, rtt: r.get(2)?, rtt_med: r.get(3)?, off: r.get(4)? }))?.collect::<rusqlite::Result<_>>()?)
-    }
-    /// Neue Runde mit Serverzeit `ts`; None, wenn schon `max` Runden gelaufen sind.
-    pub fn mess_signal(&self, pad_id: &str, ts: f64, max: i64) -> Result<Option<i64>> {
-        let c = self.c();
-        let runde: i64 = c.query_row("SELECT COALESCE(MAX(runde), 0) + 1 FROM messung_runde WHERE pad_id=?1", params![pad_id], |r| r.get(0))?;
-        if runde > max { return Ok(None); }
-        c.execute("INSERT INTO messung_runde (pad_id, runde, ts) VALUES (?1, ?2, ?3)", params![pad_id, runde, ts])?;
-        Ok(Some(runde))
-    }
-    pub fn mess_runden(&self, pad_id: &str) -> Result<Vec<(i64, f64)>> {
-        Ok(self.c().prepare("SELECT runde, ts FROM messung_runde WHERE pad_id=?1 ORDER BY runde")?
-            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
-    }
-    /// Empfang des Signals; der erste Empfang zählt. false, wenn es die Runde nicht gibt.
-    pub fn mess_empfang(&self, pad_id: &str, nr: i64, runde: i64, t: f64, off: f64, rtt: f64) -> Result<bool> {
-        let c = self.c();
-        if c.query_row("SELECT 1 FROM messung_runde WHERE pad_id=?1 AND runde=?2", params![pad_id, runde], |_| Ok(())).optional()?.is_none() { return Ok(false); }
-        c.execute("INSERT INTO messung_marke (pad_id, nr, runde, t_empfang, off, rtt) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                   ON CONFLICT(pad_id, nr, runde) DO UPDATE SET t_empfang=COALESCE(t_empfang, ?4)", params![pad_id, nr, runde, t, off, rtt])?;
-        Ok(true)
-    }
-    /// Druck; je Gerät und Runde zählt nur der erste. false, wenn es die Runde nicht gibt.
-    pub fn mess_druck(&self, pad_id: &str, nr: i64, runde: i64, t: f64, ts_ein: f64, off: f64, rtt: f64) -> Result<bool> {
-        let c = self.c();
-        if c.query_row("SELECT 1 FROM messung_runde WHERE pad_id=?1 AND runde=?2", params![pad_id, runde], |_| Ok(())).optional()?.is_none() { return Ok(false); }
-        c.execute("INSERT INTO messung_marke (pad_id, nr, runde, t_druck, ts_ein, off, rtt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                   ON CONFLICT(pad_id, nr, runde) DO UPDATE SET t_druck=?4, ts_ein=?5, off=?6, rtt=?7 WHERE t_druck IS NULL", params![pad_id, nr, runde, t, ts_ein, off, rtt])?;
-        Ok(true)
-    }
-    pub fn mess_marken(&self, pad_id: &str) -> Result<Vec<MessMarke>> {
-        Ok(self.c().prepare("SELECT nr, runde, t_empfang, t_druck, ts_ein, off, rtt FROM messung_marke WHERE pad_id=?1 ORDER BY runde, nr")?
-            .query_map(params![pad_id], |r| Ok(MessMarke { nr: r.get(0)?, runde: r.get(1)?, t_empfang: r.get(2)?, t_druck: r.get(3)?, ts_ein: r.get(4)?, off: r.get(5)?, rtt: r.get(6)? }))?
-            .collect::<rusqlite::Result<_>>()?)
-    }
-    pub fn mess_loeschen(&self, pad_id: &str) -> Result<()> {
-        let c = self.c();
-        for t in MESS_TABELLEN { c.execute(&format!("DELETE FROM {t} WHERE pad_id=?1"), params![pad_id])?; }
-        Ok(())
-    }
-}
-
-const MESS_TABELLEN: [&str; 4] = ["messung_marke", "messung_runde", "messung_probe", "messung_geraet"];
-
-/// Ein Buzzer-Druck: `t_press` ist die Druckzeit in Serverzeit (nach Uhrabgleich), `ts_ein` der Eingang beim Server.
-/// `flagged`: Zeit war unplausibel, ersetzt durch Eingang minus halbe Laufzeit.
-#[derive(Debug, Clone, Default)]
-/// `reaktion`: Druckzeit minus Öffnen der Frage (ms); fehlt bei Drücken aus älteren Versionen.
-pub struct Buzz { pub team: i64, pub t_press: f64, pub ts_ein: f64, pub flagged: bool, pub reaktion: Option<f64> }
-
-impl Store {
-    /// Neue Buzzer-Runde für ein Feld: alte Drücke dieses Felds weg, Öffnungszeit merken.
-    pub fn quiz_buzz_start(&self, pad_id: &str, field: i64, ts: f64) -> Result<()> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        tx.execute("DELETE FROM quiz_buzz WHERE pad_id=?1 AND field=?2", params![pad_id, field])?;
-        tx.execute("INSERT INTO quiz_buzz_open (pad_id, field, ts) VALUES (?1, ?2, ?3) ON CONFLICT(pad_id) DO UPDATE SET field=?2, ts=?3", params![pad_id, field, ts])?;
-        tx.commit()?;
-        Ok(())
-    }
-    /// Feld und Öffnungszeit der laufenden Buzzer-Runde.
-    pub fn quiz_buzz_open(&self, pad_id: &str) -> Result<Option<(i64, f64)>> {
-        Ok(self.c().query_row("SELECT field, ts FROM quiz_buzz_open WHERE pad_id=?1", params![pad_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?)
-    }
-    /// Ein Druck je Gerät und Feld; false, wenn das Gerät schon gedrückt hat oder das Feld voll ist.
-    pub fn quiz_buzz_add(&self, pad_id: &str, field: i64, dev: &str, b: &Buzz, max: i64) -> Result<bool> {
-        let c = self.c();
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM quiz_buzz WHERE pad_id=?1 AND field=?2", params![pad_id, field], |r| r.get(0))?;
-        if n >= max { return Ok(false); }
-        Ok(c.execute("INSERT OR IGNORE INTO quiz_buzz (pad_id, field, dev, team, t_press, ts_ein, flagged, reaktion) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![pad_id, field, dev, b.team, b.t_press, b.ts_ein, b.flagged, b.reaktion])? > 0)
-    }
-    /// Team, für das ein Gerät in diesem Spiel schon gedrückt hat (ein neues Spiel leert die Drücke).
-    pub fn quiz_buzz_team(&self, pad_id: &str, dev: &str) -> Result<Option<i64>> {
-        Ok(self.c().query_row("SELECT team FROM quiz_buzz WHERE pad_id=?1 AND dev=?2 LIMIT 1", params![pad_id, dev], |r| r.get(0)).optional()?)
-    }
-    pub fn quiz_buzzes(&self, pad_id: &str, field: i64) -> Result<Vec<Buzz>> {
-        Ok(self.c().prepare("SELECT team, t_press, ts_ein, flagged, reaktion FROM quiz_buzz WHERE pad_id=?1 AND field=?2 ORDER BY ts_ein")?
-            .query_map(params![pad_id, field], |r| Ok(Buzz { team: r.get(0)?, t_press: r.get(1)?, ts_ein: r.get(2)?, flagged: r.get(3)?, reaktion: r.get(4)? }))?
-            .collect::<rusqlite::Result<_>>()?)
-    }
-    /// Für die Statistik am Ende: je Feld und Team die schnellste sichere Reaktion (ms).
-    pub fn quiz_reaktionen(&self, pad_id: &str) -> Result<Vec<(i64, f64)>> {
-        Ok(self.c().prepare("SELECT team, MIN(reaktion) FROM quiz_buzz WHERE pad_id=?1 AND flagged=0 AND reaktion IS NOT NULL GROUP BY field, team")?
-            .query_map(params![pad_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?)
-    }
-}
-
 impl Store {
     /// Adresse, über die man in eine Moodle-Aktivität hineinkommt (für den QR-Code am Beamer).
     pub fn set_join_url(&self, pad_id: &str, url: &str) -> Result<()> {
@@ -913,13 +634,28 @@ impl Store {
 mod tests {
     use super::*;
 
+    /// Tabellen eines Addons legt der Speicher an und räumt sie mit dem Pad weg.
+    #[test]
+    fn zusatz_tabellen_gehen_mit_dem_pad() {
+        let dir = std::env::temp_dir().join(format!("nextpad-test-z-{}-{}", std::process::id(), ids::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        fn nichts(_: &Connection) -> rusqlite::Result<()> { Ok(()) }
+        let z = Zusatz { schema: "CREATE TABLE IF NOT EXISTS probe (pad_id TEXT NOT NULL, x INTEGER);", ergaenzen: nichts, tabellen: &["probe"] };
+        let store = Store::open(&dir.join("t.sqlite"), &[&z]).unwrap();
+        for p in ["p1", "p2"] { store.create_pad(p, None).unwrap(); store.c().execute("INSERT INTO probe (pad_id, x) VALUES (?1, 1)", params![p]).unwrap(); }
+        assert!(store.delete_pad("p1").unwrap());
+        let n = |p: &str| store.c().query_row("SELECT COUNT(*) FROM probe WHERE pad_id=?1", params![p], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!((n("p1"), n("p2")), (0, 1));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Gesperrte Datenbank: der Stapel wird nicht verworfen, sondern geschrieben, sobald die Sperre weg ist.
     #[test]
     fn schreibfehler_werden_wiederholt() {
         let dir = std::env::temp_dir().join(format!("nextpad-test-{}-{}", std::process::id(), ids::now_ms()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("t.sqlite");
-        let store = Store::open(&path).unwrap();
+        let store = Store::open(&path, &[]).unwrap();
         store.create_pad("p1", None).unwrap();
         // eigener Schreib-Thread ohne Wartezeit bei Sperre, damit der Fehler sofort kommt
         let wconn = Connection::open(&path).unwrap();

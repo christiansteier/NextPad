@@ -24,6 +24,7 @@ Konfiguration über Umgebungsvariablen:
 | `NEXTPAD_BASE_PATH` | leer | Pfadpräfix hinter dem Reverse-Proxy, z. B. `/np` (nur für Links in der Seite; der Proxy schneidet den Präfix ab) |
 | `NEXTPAD_API_VERSION` | `1.2.15` | Antwort von `GET /api` |
 | `NEXTPAD_ALLOW_FREE_PADS` | `false` | freie Pads: Startseite mit „Neues Pad“ und Pad per Name, Gäste schreiben ohne Moodle (Cookie-Identität), `createPad` über die API |
+| `NEXTPAD_ADDONS` | alle | eingeschaltete Addons, kommagetrennt aus `ideen`, `quiz`, `zeichenbrett`; leer = keins, unbekannte Kennung = Startfehler. Ausgeschaltet: keine Kachel, keine Routen, keine Hilfe, kein Moodle-Typ; bestehende Pads zeigen einen Hinweis, ihre Daten bleiben und gehen beim Löschen des Pads mit |
 | `NEXTPAD_FREE_PADS_PER_HOUR` | `20` | höchstens so viele neue freie Pads je Quelladresse und Stunde |
 | `NEXTPAD_AUTHOR_COOKIE` | `nextpad_author` | Name des Gast-Cookies |
 | `NEXTPAD_THEME` | `colibris` | Erscheinungsbild: `colibris` (wie Etherpad) oder `hsd` (Corporate Design der Hochschule Düsseldorf) |
@@ -116,7 +117,9 @@ Im Design `hsd` stellen Admins unter `/admin/erscheinungsbild` Name und Untertit
 
 ## Aufbau
 
-`config.rs` Konfiguration · `ids.rs` Kennungen · `store.rs` SQLite (Gruppen, Pads, Autoren, Sessions, Update-Log, Snapshots) · `docs.rs` geladene Dokumente, Broadcast, Persistenz, Snapshots · `sync.rs` WebSocket mit `yrs::sync` · `api.rs` Etherpad-API · `render.rs` Yjs ↔ HTML/Text · `web.rs` Editorseite, Zugriffsprüfung, Export, Status · `look.rs` Erscheinungsbild und Verwaltungsseite.
+`config.rs` Konfiguration · `ids.rs` Kennungen · `store.rs` SQLite (Gruppen, Pads, Autoren, Sessions, Update-Log, Snapshots) · `docs.rs` geladene Dokumente, Broadcast, Persistenz, Snapshots · `sync.rs` WebSocket mit `yrs::sync` · `api.rs` Etherpad-API · `render.rs` Yjs ↔ HTML/Text · `web.rs` Editorseite, Zugriffsprüfung, Export, Status · `look.rs` Erscheinungsbild und Verwaltungsseite · `live.rs` Live-Kanal (Server-Sent Events) für Addons · `qr.rs` QR-Codes.
+
+Addons liegen je in `addons/<kennung>/` und beschreiben sich mit einer `Addon`-Konstante (`addons/mod.rs`): Pad-Art, Tabellen (`daten.rs`, als `Zusatz` an `Store::open`), Routen, Seite, Export, Kachel, Hilfe, Moodle-Typ. Der Kern fragt keinen Pad-Typ einzeln ab. `addons/ideen` Ideensammlung · `addons/quiz` Quiz-Raster mit Buzzer und Buzzer-Messung (`messung.rs`) · `addons/zeichenbrett` Excalidraw-Seite (das Bündel baut `web/build.sh` nach `static/board`). Skripte und Stile der Addons liegen in `addons/<kennung>/static/`, ausgeliefert weiter unter `/static/…`.
 
 ## Fallen (gefunden im Proof of Concept)
 
