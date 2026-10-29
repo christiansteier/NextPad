@@ -145,7 +145,6 @@ impl Mail<'_> {
         let datum = crate::pdf::datum(sp, self.delete_after);
         let anrede = match self.name { Some(n) => tf(sp, "mail.anrede_name", &[("name", n)]), None => t(sp, "mail.anrede").to_string() };
         let anhang = t(sp, self.addon.map_or("mail.pdf", |a| a.sichern));
-        // Werte der Person zuletzt, damit Klammern in Titel oder Namen nicht ersetzt werden
         let text = tf(sp, "mail.text", &[("pad_link", self.pad_link), ("anhang", anhang), ("extend_link", self.extend_link), ("site", self.site), ("datum", &datum), ("anrede", &anrede), ("titel", titel)]);
         (tf(sp, "mail.betreff", &[("datum", &datum), ("titel", titel)]), text)
     }

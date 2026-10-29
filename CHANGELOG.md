@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-10-29
+
+### Fixed
+
+- Placeholders in texts are filled in one pass, so braces in a pad title or a name are never replaced.
+- The language switch stores the choice for the email before deletion only when the click comes from NextPad itself;
+  a link on another site can no longer change it. The cookie for the page language is set as before.
+- The last German-only answers of the API (origin check, restoring without a version, owner-only actions) follow the
+  language of the request.
+
 ## [0.17.1] - 2026-10-29
 
 ### Fixed

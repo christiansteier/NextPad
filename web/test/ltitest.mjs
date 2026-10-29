@@ -119,6 +119,10 @@ const spracheDb = () => { const db = new DatabaseSync(path.join(dir, 'nextpad.sq
 check('ohne Wahl keine Sprache gemerkt', spracheDb() === null, String(spracheDb()))
 const wahl = await fetch(`${base}/sprache/en?zurueck=${encodeURIComponent('/')}`, { redirect: 'manual', headers: { cookie: loginCookie } })
 check('Wahl bei Anmeldung gemerkt', wahl.status === 303 && spracheDb() === 'en', `${wahl.status} ${spracheDb()}`)
+{ const r = await fetch(`${base}/sprache/de?zurueck=${encodeURIComponent('/')}`, { redirect: 'manual', headers: { cookie: loginCookie, 'sec-fetch-site': 'cross-site' } })
+  check('fremde Seite ändert gespeicherte Sprache nicht', r.status === 303 && spracheDb() === 'en' && /nextpad-lang=de/.test(r.headers.get('set-cookie') || ''), `${r.status} ${spracheDb()}`) }
+{ const r = await fetch(`${base}/sprache/de?zurueck=${encodeURIComponent('/')}`, { redirect: 'manual', headers: { cookie: loginCookie, 'sec-fetch-site': 'same-origin' } })
+  check('eigene Seite ändert gespeicherte Sprache', r.status === 303 && spracheDb() === 'de', `${r.status} ${spracheDb()}`) }
 
 // Besitzer-Aktionen
 const origin = new URL(base).origin

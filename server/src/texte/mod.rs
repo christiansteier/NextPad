@@ -83,11 +83,23 @@ pub fn t(sprache: Sprache, schluessel: &'static str) -> &'static str {
     })
 }
 
-/// Text mit Platzhaltern `{name}`.
+/// Text mit Platzhaltern `{name}`, in einem Durchgang: Klammern in eingesetzten Werten bleiben, wie sie sind.
+/// Unbekannte Platzhalter bleiben stehen.
 pub fn tf(sprache: Sprache, schluessel: &'static str, werte: &[(&str, &str)]) -> String {
-    let mut s = t(sprache, schluessel).to_string();
-    for (name, wert) in werte { s = s.replace(&format!("{{{name}}}"), wert); }
-    s
+    let vorlage = t(sprache, schluessel);
+    let mut out = String::with_capacity(vorlage.len());
+    let mut rest = vorlage;
+    while let Some(i) = rest.find('{') {
+        out.push_str(&rest[..i]);
+        let nach = &rest[i + 1..];
+        let treffer = nach.find('}').and_then(|j| werte.iter().find(|(n, _)| *n == &nach[..j]).map(|(_, w)| (*w, j)));
+        match treffer {
+            Some((w, j)) => { out.push_str(w); rest = &nach[j + 1..]; }
+            None => { out.push('{'); rest = nach; }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Texte mit diesem Präfix als JSON für ein Skript (ohne Präfix), sicher in `<script type="application/json">`.
@@ -165,5 +177,8 @@ mod tests {
         assert_eq!(t(Sprache::De, "fehler.titel.404"), "Nicht gefunden");
         assert_eq!(t(Sprache::En, "gibt.es.nicht"), "gibt.es.nicht");
         assert!(tf(Sprache::En, "addon.nicht_aktiv", &[("name", "Quiz")]).contains("“Quiz”"));
+        // Werte werden nicht noch einmal ersetzt, egal in welcher Reihenfolge sie stehen
+        assert_eq!(tf(Sprache::De, "mail.betreff", &[("titel", "Plan {datum}"), ("datum", "1.1.")]), "NextPad: Pad „Plan {datum}“ wird am 1.1. gelöscht");
+        assert_eq!(tf(Sprache::De, "lti.addon_aus", &[]), t(Sprache::De, "lti.addon_aus"));
     }
 }

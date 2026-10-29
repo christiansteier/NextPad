@@ -241,7 +241,7 @@ pub fn origin_ok(state: &AppState, headers: &HeaderMap) -> bool {
 }
 
 pub async fn ws(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
-    if !origin_ok(&state, &headers) { return (StatusCode::FORBIDDEN, "Origin nicht erlaubt").into_response(); }
+    if !origin_ok(&state, &headers) { return abgelehnt(&headers, StatusCode::FORBIDDEN, "zugang.origin"); }
     let access = match check_access(&state, &headers, &id) {
         Ok(a) => a,
         Err((s, m)) => return abgelehnt(&headers, s, m),
@@ -363,7 +363,7 @@ pub async fn restore(State(state): State<Arc<AppState>>, Path(id): Path<String>,
     let punkt = match (body.get("ts").and_then(|v| v.as_i64()), body.get("seq").and_then(|v| v.as_i64())) {
         (Some(ts), None) => crate::docs::Punkt::Stand(ts),
         (None, Some(seq)) => crate::docs::Punkt::Schritt(seq),
-        _ => return (StatusCode::BAD_REQUEST, "ts oder seq fehlt").into_response(),
+        _ => return abgelehnt(&headers, StatusCode::BAD_REQUEST, "stand.punkt_fehlt"),
     };
     match state.rooms.restore(&access.pad.id, punkt).await {
         Ok(Some(())) => { tracing::info!("Früheren Stand wiederhergestellt: Pad {}", access.pad.id); axum::Json(json!({ "ok": true })).into_response() }
@@ -529,8 +529,10 @@ pub async fn sprache(State(state): State<Arc<AppState>>, Path(kuerzel): Path<Str
     let ziel = q.get("zurueck").filter(|z| eigener_pfad(base, z)).cloned().unwrap_or_else(|| format!("{base}/"));
     let path = if base.is_empty() { "/".to_string() } else { format!("{base}/") };
     let cookie = format!("{}={}; Path={path}; Max-Age=31536000; HttpOnly; Secure; SameSite=None", texte::WAHL_COOKIE, sp.kuerzel());
-    // über Moodle angemeldet: Wahl auch für die Mail vor dem Löschen merken
-    if let Some(a) = login_author(&state, &headers) {
+    // über Moodle angemeldet: Wahl auch für die Mail vor dem Löschen merken; nur, wenn der Klick von NextPad selbst
+    // kommt (Sec-Fetch-Site), damit eine fremde Seite die gespeicherte Sprache nicht umstellen kann
+    let eigen = headers.get("sec-fetch-site").and_then(|v| v.to_str().ok()).is_none_or(|v| v == "same-origin" || v == "none");
+    if let Some(a) = login_author(&state, &headers).filter(|_| eigen) {
         if let Err(e) = state.store.set_author_sprache(&a.id, sp.kuerzel()) { tracing::warn!("Sprache nicht gespeichert: {e}"); }
     }
     with_cookie((StatusCode::SEE_OTHER, [(header::LOCATION, ziel), (header::CACHE_CONTROL, "no-store".to_string())]).into_response(), Some(cookie))
@@ -870,7 +872,7 @@ fn owner_check(state: &AppState, headers: &HeaderMap, id: &str) -> Result<String
     let access = check_access(state, headers, id).map_err(|(s, m)| abgelehnt(headers, s, m))?;
     let aid = access.author.map(|a| a.0).unwrap_or_default();
     if !access.free || access.readonly || aid.is_empty() || state.store.owner_of(&access.pad.id).ok().flatten().as_deref() != Some(aid.as_str()) {
-        return Err((StatusCode::FORBIDDEN, "Nur wer das Pad angelegt hat, darf das.").into_response());
+        return Err(abgelehnt(headers, StatusCode::FORBIDDEN, "zugang.nur_besitz"));
     }
     Ok(access.pad.id)
 }

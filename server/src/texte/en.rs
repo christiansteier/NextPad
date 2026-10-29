@@ -30,6 +30,9 @@ pub const TEXTE: &[(&str, &str)] = &[
     ("zugang.ohne_gruppe", "Pads without a group are not available on this server."),
     ("zugang.keine_sitzung", "No valid session for this pad. Please reload the page in Moodle."),
     ("zugang.autor_fehler", "The author could not be created."),
+    ("zugang.origin", "Origin of the connection not allowed."),
+    ("zugang.nur_besitz", "Only the person who created the pad can do this."),
+    ("stand.punkt_fehlt", "Version missing: give a time (ts) or a step (seq)."),
     // Free pads
     ("frei.aus", "Free pads are not enabled on this server."),
     ("frei.typ_fehlt", "This pad type does not exist."),
