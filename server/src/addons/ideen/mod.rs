@@ -1,25 +1,66 @@
 //! Ideensammlung: Ideen und Fragen sammeln und abstimmen (nach dem Vorbild von liveask).
 //! Der Server prüft jede Stimme: eine je Person und Beitrag, moderieren darf nur, wer die Sammlung angelegt hat.
 //! Beiträge erscheinen ohne Namen. Änderungen gehen per Server-Sent Events an alle offenen Seiten.
+use super::{Addon, Seite};
 use crate::{web, AppState};
 use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{sse::{Event, KeepAlive, Sse}, Html, IntoResponse, Response},
-    Json,
+    routing::{get, post},
+    Json, Router,
 };
 use serde_json::json;
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::sync::Arc;
 use tokio::sync::broadcast;
+
+pub mod daten;
 
 pub const MAX_TEXT: usize = 500;
 const MAX_PROMPT: usize = 200;
 const MAX_TOTAL: i64 = 500;
 const MAX_OWN: i64 = 30;
 
-pub const IDEEN_JS: &str = include_str!("../static/ideen.js");
-pub const IDEEN_CSS: &str = include_str!("../static/ideen.css");
-pub const WAND_JS: &str = include_str!("../static/ideen-wand.js");
+pub const IDEEN_JS: &str = include_str!("static/ideen.js");
+pub const IDEEN_CSS: &str = include_str!("static/ideen.css");
+pub const WAND_JS: &str = include_str!("static/ideen-wand.js");
+
+pub const ADDON: Addon = Addon {
+    kennung: "ideen",
+    art: "ideas",
+    name: "Ideensammlung",
+    daten: Some(&daten::ZUSATZ),
+    routen,
+    seite,
+    export: export_antwort,
+    kachel: r#"<li><a class="template" data-tint="yellow" href="{base}/new?typ=ideen"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="template-name">Ideensammlung</span><span class="template-desc">Ideen und Fragen sammeln, abstimmen</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>"#,
+    sichern: "Die Beiträge lassen sich in der Sammlung unter „Teilen und sichern“ als Markdown oder CSV sichern.",
+    hilfe: r#"<h2>Ideensammlung</h2><p>„Ideensammlung“ legt eine Liste an, in die alle ohne Namen Ideen oder Fragen eintragen und für Beiträge stimmen. Jede Person hat je Beitrag eine Stimme. Wer die Sammlung angelegt hat, kann oben die Frage setzen, Beiträge als erledigt markieren oder ausblenden. „Link zum Mitmachen kopieren“ holt die Adresse für die Gruppe. „Leinwand öffnen“ zeigt die beliebtesten Beiträge groß für den Beamer, bei freien Sammlungen mit QR-Code zum Mitmachen. Gesichert wird als Markdown oder CSV. Im Moodle-Kurs gibt es die Ideensammlung auch als Aktivität: Dann kommen nur Kursmitglieder hinein, und Lehrende moderieren.</p>"#,
+    moodle: Some(|store, pad, titel| store.set_idea_prompt(pad, titel)),
+};
+
+fn routen() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/p/{id}/ideen", get(get_).post(add))
+        .route("/p/{id}/ideen/live", get(live))
+        .route("/p/{id}/ideen/frage", post(prompt))
+        .route("/p/{id}/ideen/{n}/stimme", post(vote))
+        .route("/p/{id}/ideen/{n}/moderation", post(moderate))
+        .route("/p/{id}/leinwand", get(wall))
+        .route("/static/ideen.js", get(static_js))
+        .route("/static/ideen-wand.js", get(static_wand))
+        .route("/static/ideen.css", get(static_css))
+}
+
+fn seite(s: Seite) -> Response {
+    let mut cfg = s.cfg;
+    cfg["readonlyId"] = json!(s.readonly_id);
+    page(s.state, s.url_id, cfg)
+}
+
+fn export_antwort(state: &AppState, pad: &str, format: &str) -> Response {
+    export(state, pad, format).unwrap_or_else(|| web::error_page(StatusCode::NOT_FOUND, "Ideensammlungen lassen sich als Markdown, Text oder CSV sichern."))
+}
 
 pub fn version() -> &'static str {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -30,28 +71,13 @@ pub fn version() -> &'static str {
     })
 }
 
-/// Je Sammlung ein Kanal; offene Seiten holen nach jeder Meldung den Stand neu.
-#[derive(Default)]
-pub struct Hub(Mutex<HashMap<String, broadcast::Sender<()>>>);
-
-impl Hub {
-    pub fn subscribe(&self, pad: &str) -> broadcast::Receiver<()> {
-        let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        m.retain(|_, tx| tx.receiver_count() > 0);
-        m.entry(pad.to_string()).or_insert_with(|| broadcast::channel(16).0).subscribe()
-    }
-    pub fn notify(&self, pad: &str) {
-        if let Some(tx) = self.0.lock().unwrap_or_else(|e| e.into_inner()).get(pad) { let _ = tx.send(()); }
-    }
-}
-
 /// `owner`: darf moderieren (wer die freie Sammlung angelegt hat, in Kursen die Lehrenden);
 /// `can_delete`: darf die ganze Sammlung löschen (nur freie Sammlungen, Kursaktivitäten verwaltet Moodle).
 struct Viewer { pad: String, author: Option<String>, readonly: bool, owner: bool, can_delete: bool }
 
 fn viewer(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
     let access = web::check_access(state, headers, id).map_err(|(s, m)| (s, m).into_response())?;
-    if !state.store.is_ideas(&access.pad.id) { return Err((StatusCode::NOT_FOUND, "Das ist keine Ideensammlung.").into_response()); }
+    if state.store.kind(&access.pad.id).as_deref() != Some(ADDON.art) { return Err((StatusCode::NOT_FOUND, "Das ist keine Ideensammlung.").into_response()); }
     let author = access.author.map(|a| a.0);
     let creator = access.free && !access.readonly && author.is_some() && state.store.owner_of(&access.pad.id).ok().flatten() == author;
     let moderator = !access.readonly && author.as_deref().is_some_and(|a| state.store.is_moderator(&access.pad.id, a));
@@ -80,7 +106,7 @@ fn no_store(mut r: Response) -> Response {
 }
 
 /// Stand für diese Person: ausgeblendete Beiträge sieht nur, wer moderiert.
-pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+pub async fn get_(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match viewer(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     let (Ok(mut items), Ok(prompt)) = (state.store.ideas(&v.pad), state.store.idea_prompt(&v.pad)) else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     if !v.owner { items.retain(|i| !i.hidden); }
@@ -99,7 +125,7 @@ pub async fn add(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
     let text = clean(body.get("text").and_then(|t| t.as_str()).unwrap_or(""), MAX_TEXT);
     if text.is_empty() { return (StatusCode::BAD_REQUEST, "Bitte einen Text eingeben.").into_response(); }
     match state.store.add_idea(&v.pad, &author, &text, MAX_TOTAL, MAX_OWN) {
-        Ok(Some(n)) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true, "id": n })).into_response() }
+        Ok(Some(n)) => { state.live.notify(&v.pad); Json(json!({ "ok": true, "id": n })).into_response() }
         Ok(None) => (StatusCode::TOO_MANY_REQUESTS, "Die Sammlung ist voll oder du hast schon sehr viele Beiträge geschrieben.").into_response(),
         Err(e) => { tracing::warn!("Idee speichern: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -109,7 +135,7 @@ pub async fn vote(State(state): State<Arc<AppState>>, Path((id, n)): Path<(Strin
     let (v, author) = match writer(&state, &headers, &id) { Ok(x) => x, Err(r) => return r };
     let on = body.get("on").and_then(|b| b.as_bool()).unwrap_or(true);
     match state.store.vote(&v.pad, n, &author, on) {
-        Ok(true) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(true) => { state.live.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Ok(false) => (StatusCode::CONFLICT, "Über diesen Beitrag lässt sich nicht mehr abstimmen.").into_response(),
         Err(e) => { tracing::warn!("Stimme: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -120,7 +146,7 @@ pub async fn moderate(State(state): State<Arc<AppState>>, Path((id, n)): Path<(S
     if !v.owner { return (StatusCode::FORBIDDEN, "Nur wer die Sammlung angelegt hat, darf das.").into_response(); }
     let flag = |k: &str| body.get(k).and_then(|b| b.as_bool());
     match state.store.moderate_idea(&v.pad, n, flag("hidden"), flag("done")) {
-        Ok(true) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(true) => { state.live.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => { tracing::warn!("Moderation: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -131,7 +157,7 @@ pub async fn prompt(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
     if !v.owner { return (StatusCode::FORBIDDEN, "Nur wer die Sammlung angelegt hat, darf das.").into_response(); }
     let text = clean(body.get("prompt").and_then(|t| t.as_str()).unwrap_or(""), MAX_PROMPT).replace('\n', " ");
     match state.store.set_idea_prompt(&v.pad, &text) {
-        Ok(()) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true, "prompt": text })).into_response() }
+        Ok(()) => { state.live.notify(&v.pad); Json(json!({ "ok": true, "prompt": text })).into_response() }
         Err(e) => { tracing::warn!("Frage setzen: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -139,7 +165,7 @@ pub async fn prompt(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
 /// Live-Meldungen: nur „geändert“, ohne Inhalt; der Stand kommt über GET mit den Rechten der Person.
 pub async fn live(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match viewer(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
-    let rx = state.ideas.subscribe(&v.pad);
+    let rx = state.live.subscribe(&v.pad);
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
         match rx.recv().await {
             Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => Some((Ok::<_, std::convert::Infallible>(Event::default().event("change").data("1")), rx)),
@@ -229,7 +255,7 @@ pub fn page(state: &AppState, url_id: &str, cfg: serde_json::Value) -> Response 
 /// (nur bei freien Sammlungen und nur über den Link zum Mitmachen, nicht über den Leselink).
 pub async fn wall(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let access = match web::check_access(&state, &headers, &id) { Ok(a) => a, Err((s, m)) => return (s, m).into_response() };
-    if !state.store.is_ideas(&access.pad.id) { return (StatusCode::NOT_FOUND, "Das ist keine Ideensammlung.").into_response(); }
+    if state.store.kind(&access.pad.id).as_deref() != Some(ADDON.art) { return (StatusCode::NOT_FOUND, "Das ist keine Ideensammlung.").into_response(); }
     let base = &state.config.base_path;
     // nach dem Link, nicht nach dem Cookie: wer die Leinwand direkt in einem frischen Browser öffnet, hat noch keins
     let join = if access.free && !id.starts_with("r.") {
@@ -243,7 +269,7 @@ pub async fn wall(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
         format!(r#"<aside class="wall-join">{qr}<p>Mitmachen:<br><strong>{}</strong></p></aside>"#, html_escape::encode_text(&url))
     } else if !access.free {
         match state.store.join_url(&access.pad.id) {
-            Some(u) => format!(r#"<aside class="wall-join">{}</aside>"#, crate::quiz::qr_block(&u, "Mitmachen über Moodle:")),
+            Some(u) => format!(r#"<aside class="wall-join">{}</aside>"#, crate::qr::block(&u, "Mitmachen über Moodle:")),
             None => r#"<aside class="wall-join"><p>Mitmachen über die Aktivität im Moodle-Kurs.</p></aside>"#.to_string(),
         }
     } else { String::new() };

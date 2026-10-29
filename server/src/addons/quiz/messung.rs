@@ -1,12 +1,14 @@
 //! Buzzer-Messung im Quiz-Raster: misst im Raum, ob ein Buzzer mit Uhrabgleich fair genug wäre. Keine Wertung, keine Namen.
 //! Handys gleichen alle 3 s ihre Uhr mit dem Server ab (beste von fünf Anfragen); auf ein Signal der Leitung zeigen sie
 //! „Jetzt drücken“. Gespeichert werden je Gerät eine Nummer, die grobe Geräteart und Zeitpunkte, ausgewertet auf dem Server.
-use crate::{quiz, store::{MessMarke, MessProbe}, web, AppState};
+use super::daten::{MessMarke, MessProbe};
+use crate::{addons::quiz, web, AppState};
 use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
-    Json,
+    routing::{get, post},
+    Json, Router,
 };
 use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
@@ -19,8 +21,24 @@ const OFFEN_MS: f64 = 10_000.0;
 /// Unter diesem Abstand gelten zwei Drücke als gleichzeitig; zugleich die Grenze für das Urteil.
 const KNAPP_MS: f64 = 50.0;
 
-pub const MESSUNG_JS: &str = include_str!("../static/messung.js");
-pub const MESSUNG_CSS: &str = include_str!("../static/messung.css");
+pub const MESSUNG_JS: &str = include_str!("static/messung.js");
+pub const MESSUNG_CSS: &str = include_str!("static/messung.css");
+
+pub(super) fn routen() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/p/{id}/messung", get(page))
+        .route("/p/{id}/messung/zeit", get(zeit))
+        .route("/p/{id}/messung/stand", get(stand))
+        .route("/p/{id}/messung/daten", get(daten))
+        .route("/p/{id}/messung/export.csv", get(export))
+        .route("/p/{id}/messung/probe", post(probe))
+        .route("/p/{id}/messung/empfang", post(empfang))
+        .route("/p/{id}/messung/druck", post(druck))
+        .route("/p/{id}/messung/signal", post(signal))
+        .route("/p/{id}/messung/loeschen", post(loeschen))
+        .route("/static/messung.js", get(static_js))
+        .route("/static/messung.css", get(static_css))
+}
 
 pub fn version() -> &'static str {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -118,7 +136,7 @@ pub async fn druck(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
 pub async fn signal(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match quiz::lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     match state.store.mess_signal(&v.pad, jetzt(), MAX_RUNDEN) {
-        Ok(Some(runde)) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true, "runde": runde })).into_response() }
+        Ok(Some(runde)) => { state.live.notify(&v.pad); Json(json!({ "ok": true, "runde": runde })).into_response() }
         Ok(None) => (StatusCode::TOO_MANY_REQUESTS, format!("Höchstens {MAX_RUNDEN} Runden.")).into_response(),
         Err(e) => { tracing::warn!("Messung Signal: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -127,7 +145,7 @@ pub async fn signal(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
 pub async fn loeschen(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match quiz::lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     match state.store.mess_loeschen(&v.pad) {
-        Ok(()) => { tracing::info!("Messdaten gelöscht: Pad {}", v.pad); state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(()) => { tracing::info!("Messdaten gelöscht: Pad {}", v.pad); state.live.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Err(e) => { tracing::warn!("Messung löschen: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -141,7 +159,7 @@ fn nur_leitung(state: &AppState, headers: &HeaderMap, id: &str) -> Result<String
 /// Auswertung für die Leitung.
 pub async fn daten(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let pad = match nur_leitung(&state, &headers, &id) { Ok(p) => p, Err(r) => return r };
-    if leitung_da(&state, &pad) { state.ideas.notify(&pad); }
+    if leitung_da(&pad) { state.live.notify(&pad); }
     let (Ok(g), Ok(p), Ok(r), Ok(m)) = (state.store.mess_geraete(&pad), state.store.mess_proben(&pad), state.store.mess_runden(&pad), state.store.mess_marken(&pad))
         else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     no_store(Json(auswerten(&g, &p, &r, &m, jetzt())).into_response())
@@ -150,10 +168,17 @@ pub async fn daten(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
 /// Wie lange der Knopf zum Mitmessen nach der letzten Abfrage der Leitung bleibt (die Messseite fragt alle 2 s).
 const LEITUNG_DA_MS: f64 = 10_000.0;
 
+/// Wann die Leitung je Quiz zuletzt die Messseite offen hatte (ms); solange zeigt das Quiz den Knopf zum Mitmessen.
+/// Nur im Speicher, nach einem Neustart fragt die Messseite binnen 2 s wieder.
+fn offen() -> &'static std::sync::Mutex<std::collections::HashMap<String, f64>> {
+    static O: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> = std::sync::OnceLock::new();
+    O.get_or_init(Default::default)
+}
+
 /// Merkt, dass die Leitung die Messseite offen hat; true, wenn sie eben erst dazukam (dann sollen die Handys neu laden).
-fn leitung_da(state: &AppState, pad: &str) -> bool {
+fn leitung_da(pad: &str) -> bool {
     let now = jetzt();
-    let mut m = state.messung_offen.lock().unwrap_or_else(|e| e.into_inner());
+    let mut m = offen().lock().unwrap_or_else(|e| e.into_inner());
     m.retain(|_, t| now - *t < 3_600_000.0);
     let neu = m.get(pad).map_or(true, |t| now - *t >= LEITUNG_DA_MS);
     m.insert(pad.to_string(), now);
@@ -161,8 +186,8 @@ fn leitung_da(state: &AppState, pad: &str) -> bool {
 }
 
 /// Ob die Leitung die Messseite gerade offen hat.
-pub fn leitung_misst(state: &AppState, pad: &str) -> bool {
-    let m = state.messung_offen.lock().unwrap_or_else(|e| e.into_inner());
+pub fn leitung_misst(pad: &str) -> bool {
+    let m = offen().lock().unwrap_or_else(|e| e.into_inner());
     m.get(pad).is_some_and(|t| jetzt() - *t < LEITUNG_DA_MS)
 }
 
@@ -321,7 +346,7 @@ pub fn auswerten(geraete: &[(i64, String)], proben: &[MessProbe], runden: &[(i64
 /// Eine Seite für Leitung und Handys; das Skript zeigt je nach Rolle.
 pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let access = match web::check_access(&state, &headers, &id) { Ok(a) => a, Err((s, m)) => return (s, m).into_response() };
-    if !state.store.is_quiz(&access.pad.id) { return (StatusCode::NOT_FOUND, "Das ist kein Quiz-Raster.").into_response(); }
+    if state.store.kind(&access.pad.id).as_deref() != Some(quiz::ADDON.art) { return (StatusCode::NOT_FOUND, "Das ist kein Quiz-Raster.").into_response(); }
     let base = &state.config.base_path;
     let join = quiz::join_svg(&state, &headers, access.free, &id, &access.pad.id, "/messung");
     let cfg = json!({ "urlId": id, "basePath": base });

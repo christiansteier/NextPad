@@ -11,6 +11,10 @@ use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{Doc, OffsetKind, Options, ReadTxn, StateVector, Transact, TransactionMut, Update, UpdateEvent};
 
+/// Punkt der Zeitleiste: Vollstand (Zeitstempel) oder Stand nach einem Schritt (Nummer im Update-Log).
+#[derive(Clone, Copy, Debug)]
+pub enum Punkt { Stand(i64), Schritt(i64) }
+
 /// Kapazität des Broadcast-Kanals je Pad; wer weiter zurückliegt, wird getrennt und synchronisiert neu.
 const CHANNEL: usize = 1024;
 
@@ -198,6 +202,40 @@ impl Rooms {
     }
     pub async fn set_text(&self, pad_id: &str, text: &str) -> Result<()> { self.write(pad_id, "setText", |t, f| render::set_text(t, f, text)).await }
     pub async fn set_html(&self, pad_id: &str, html: &str) -> Result<()> { self.write(pad_id, "setHTML", |t, f| render::set_html(t, f, html)).await }
+
+    /// Früheren Stand aus der Zeitleiste zurückholen: als neue Änderung obendrauf, der jetzige Stand bleibt im Verlauf.
+    /// None, wenn es den Punkt nicht (mehr) gibt.
+    pub async fn restore(&self, pad_id: &str, punkt: Punkt) -> Result<Option<()>> {
+        let Some(html) = self.html_at(pad_id, punkt)? else { return Ok(None) };
+        self.write(pad_id, "Wiederhergestellt", |t, f| render::set_html(t, f, &html)).await?;
+        Ok(Some(()))
+    }
+
+    /// Stand an einem Punkt der Zeitleiste als HTML, nachgebaut wie im Browser: Vollstand, danach die Schritte bis dahin.
+    fn html_at(&self, pad_id: &str, punkt: Punkt) -> Result<Option<String>> {
+        if !self.store.flush() { return Err(anyhow::anyhow!("Speichern hängt")); }
+        let snaps = self.store.snapshots_all(pad_id)?;
+        let doc = Doc::with_options(Options { skip_gc: true, offset_kind: OffsetKind::Utf16, ..Default::default() });
+        let frag = doc.get_or_insert_xml_fragment(render::FRAGMENT);
+        {
+            let mut txn = doc.transact_mut();
+            match punkt {
+                Punkt::Stand(ts) => {
+                    let Some((_, _, _, state)) = snaps.iter().find(|s| s.0 == ts) else { return Ok(None) };
+                    txn.apply_update(Update::decode_v1(state)?)?;
+                }
+                Punkt::Schritt(seq) => {
+                    let ups = self.store.updates_all(pad_id)?;
+                    if !ups.iter().any(|u| u.0 == seq) { return Ok(None); }
+                    let base = snaps.iter().filter(|s| s.1 <= seq).max_by_key(|s| s.1);
+                    let von = match base { Some((_, s, _, state)) => { txn.apply_update(Update::decode_v1(state)?)?; *s } None => 0 };
+                    for (_, _, _, bytes) in ups.iter().filter(|u| u.0 > von && u.0 <= seq) { txn.apply_update(Update::decode_v1(bytes)?)?; }
+                }
+            }
+        }
+        let txn = doc.transact();
+        Ok(Some(render::to_html(&txn, &frag)))
+    }
 
     /// Pad gelöscht: Raum sperren, aus dem Speicher nehmen, Verbindungen schließen.
     pub fn evict(&self, pad_id: &str) {

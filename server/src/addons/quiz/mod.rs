@@ -1,16 +1,22 @@
 //! Quiz-Raster: Raster aus Kategorien und Punktwerten, die Leitung steuert am Beamer, Teams sammeln Punkte.
 //! Fragen und Antworten liegen nur in SQLite, nie im Yjs-Dokument. Eine Antwort verlässt den Server nur zur Leitung
 //! oder nachdem die Leitung sie aufgedeckt hat. Wer nicht leitet, sieht Raster, offene Frage und Punktestand, nur lesend.
-use crate::{store::{Buzz, QuizField}, web, AppState};
+use super::{Addon, Seite};
+use crate::{web, AppState};
+use daten::{Buzz, QuizField};
 use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{sse::{Event, KeepAlive, Sse}, Html, IntoResponse, Response},
-    Json,
+    routing::{get, post},
+    Json, Router,
 };
 use serde_json::json;
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::broadcast;
+
+pub mod daten;
+mod messung;
 
 const MAX_FIELDS: usize = 60;
 const MAX_CATS: usize = 8;
@@ -28,8 +34,50 @@ const MAX_BUZZ: i64 = 300;
 /// Längster Countdown je Frage in Sekunden.
 const MAX_SEKUNDEN: i64 = 120;
 
-pub const QUIZ_JS: &str = include_str!("../static/quiz.js");
-pub const QUIZ_CSS: &str = include_str!("../static/quiz.css");
+pub const QUIZ_JS: &str = include_str!("static/quiz.js");
+pub const QUIZ_CSS: &str = include_str!("static/quiz.css");
+
+pub const ADDON: Addon = Addon {
+    kennung: "quiz",
+    art: "quiz",
+    name: "Quiz-Raster",
+    daten: Some(&daten::ZUSATZ),
+    routen,
+    seite,
+    export: export_antwort,
+    kachel: r#"<li><a class="template" data-tint="blue" href="{base}/new?typ=quiz"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="template-name">Quiz-Raster</span><span class="template-desc">Fragen nach Punkten, Teams, Beamer</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>"#,
+    sichern: "Fragen und Punktestand lassen sich im Quiz als Markdown oder Text sichern.",
+    hilfe: r#"<h2>Quiz-Raster</h2><p>„Quiz-Raster“ legt ein Quiz nach Kategorien und Punktwerten an. Wer es anlegt, leitet: Fragen als Tabelle <code>Kategorie | Punkte | Frage | Antwort</code> einfügen, Teams eintragen, am Beamer ein Feld wählen, die Antwort aufdecken und Punkte vergeben. Wer den Link oder den QR-Code hat, sieht Raster, Frage und Punktestand mit, aber nicht die Antworten, bevor sie aufgedeckt sind. Tasten für die Leitung: Leertaste deckt auf, Esc führt zurück zum Raster, Z nimmt die letzte Wertung zurück. Gespielte Felder sind gesperrt; „Rückgängig“ holt die letzte Frage zurück. Rückgängig, QR-Code, Vollbild, Fragen bearbeiten, Buzzer-Messung und der Buzzer-Ton liegen im Menü ⋯ oben rechts.</p>
+<p>Ablauf: Nach dem Speichern ist das Raster gesperrt, alle wählen auf dem Handy ihr Team und dürfen noch wechseln. „Spiel starten“ gibt das Raster frei, danach sind die Teams fest. „Spiel beenden“ zeigt jederzeit das Ergebnis, auch wenn noch Felder offen sind; nach der letzten Frage erscheint es von selbst. Das Ergebnis zeigt die Platzierung, die Buzzer-Statistik (schnellstes Team, mittlere Zeit bis zum Druck je Team) und die Fragen, die niemand oder erst nach einem Fehlversuch gelöst hat, zum Nachbesprechen. „Neues Spiel“ setzt Punkte und Felder zurück, Fragen und Teams bleiben.</p>
+<p>Buzzer: Wer mitsieht, wählt auf dem Handy sein Team. Solange eine Frage offen ist und die Antwort nicht aufgedeckt, erscheint ein großer Buzzer. Gewertet wird, wann gedrückt wurde, nicht wann der Druck ankommt: Das Handy gleicht dazu laufend seine Uhr mit dem Server ab. Eine halbe Sekunde nach dem ersten Druck steht die Reihenfolge fest; liegen zwei Teams weniger als 50 ms auseinander, steht „gleichauf“ daneben. Je Handy und Frage zählt ein Druck. Am Beamer erscheint groß, welches Team zuerst gedrückt hat, und beim ersten Druck ertönt ein Buzzer-Ton (im Menü abschaltbar; der Browser spielt ihn erst, nachdem am Beamer einmal geklickt wurde). Die Punkte vergibt weiterhin die Leitung. Neben dem Team steht die Reaktionszeit ab dem Öffnen der Frage. Zieht die Leitung nach einer falschen Antwort Punkte ab, bleibt die Frage offen und am Beamer steht „Jetzt dran“ mit dem nächsten Team der Reihenfolge.</p>
+<p>Countdown: Beim Anlegen lässt sich die Zeit je Frage einstellen (Vorgabe 10 Sekunden, 0 schaltet den Countdown ab). Die Zeit läuft groß am Beamer, ab dem Öffnen der Frage; danach nimmt der Buzzer keinen Druck mehr an. Wer vorher gedrückt hat, bleibt in der Reihenfolge.</p>
+<p>„Buzzer-Messung“ (für die Leitung) prüft, ob ein Buzzer auf dem Handy im Raum fair wäre: Alle öffnen den QR-Code oder tippen im Quiz oben rechts auf „An der Messung teilnehmen“ (der Knopf erscheint, solange die Leitung die Messseite offen hat) und dann auf „Mitmessen“, die Leitung sendet einige Signale, alle drücken, sobald „Jetzt“ erscheint. Die Seite zeigt Laufzeiten, wie genau sich die Uhren der Handys abgleichen lassen, und ein Urteil. Gespeichert werden nur Zeiten und die Art des Geräts, keine Namen; die Leitung kann die Daten als CSV sichern und löschen.</p>"#,
+    moodle: Some(|store, pad, titel| store.quiz_set_title(pad, titel)),
+};
+
+fn routen() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/p/{id}/quiz", get(get_))
+        .route("/p/{id}/quiz/live", get(live))
+        .route("/p/{id}/quiz/fragen", post(setup))
+        .route("/p/{id}/quiz/feld", post(open))
+        .route("/p/{id}/quiz/wertung", post(score))
+        .route("/p/{id}/quiz/rueckgaengig", post(undo))
+        .route("/p/{id}/quiz/spiel", post(spiel))
+        .route("/p/{id}/quiz/buzzer", post(buzzer))
+        .route("/static/quiz.js", get(static_js))
+        .route("/static/quiz.css", get(static_css))
+        .merge(messung::routen())
+}
+
+fn seite(s: Seite) -> Response {
+    let join = join_svg(s.state, s.headers, s.free, s.url_id, s.pad_id, "");
+    page(s.state, s.url_id, s.cfg, &join)
+}
+
+fn export_antwort(state: &AppState, pad: &str, format: &str) -> Response {
+    export(state, pad, format).unwrap_or_else(|| web::error_page(StatusCode::NOT_FOUND, "Quiz-Raster lassen sich als Markdown oder Text sichern (nur der Punktestand)."))
+}
 
 pub fn version() -> &'static str {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -45,7 +93,7 @@ pub(crate) struct Viewer { pub pad: String, pub lead: bool }
 
 pub(crate) fn viewer(state: &AppState, headers: &HeaderMap, id: &str) -> Result<Viewer, Response> {
     let access = web::check_access(state, headers, id).map_err(|(s, m)| (s, m).into_response())?;
-    if !state.store.is_quiz(&access.pad.id) { return Err((StatusCode::NOT_FOUND, "Das ist kein Quiz-Raster.").into_response()); }
+    if state.store.kind(&access.pad.id).as_deref() != Some(ADDON.art) { return Err((StatusCode::NOT_FOUND, "Das ist kein Quiz-Raster.").into_response()); }
     let author = access.author.map(|a| a.0);
     let creator = access.free && !access.readonly && author.is_some() && state.store.owner_of(&access.pad.id).ok().flatten() == author;
     let moderator = !access.readonly && author.as_deref().is_some_and(|a| state.store.is_moderator(&access.pad.id, a));
@@ -164,7 +212,7 @@ pub fn buzz_time(t: f64, off: f64, rtt: f64, ein: f64, open: f64) -> (f64, bool)
 }
 
 /// Stand für diese Person. Antworten nur für die Leitung oder nach dem Aufdecken.
-pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+pub async fn get_(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match viewer(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     let (Ok(st), Ok(fields), Ok(teams), Ok(log)) = (state.store.quiz_state(&v.pad), state.store.quiz_fields(&v.pad), state.store.quiz_teams(&v.pad), state.store.quiz_log(&v.pad))
         else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
@@ -207,7 +255,7 @@ pub async fn get(State(state): State<Arc<AppState>>, Path(id): Path<String>, hea
     let statistik = statistik(&state.store.quiz_reaktionen(&v.pad).unwrap_or_default(), &teams);
     let phase = match st.phase { 0 => "vorbereitung", 2 => "ende", _ => "laeuft" };
     let mut out = json!({ "title": st.title, "lead": v.lead, "phase": phase, "teams": teams_json, "board": board, "current": current, "buzz": buzz, "statistik": statistik,
-        "messung": !v.lead && crate::messung::leitung_misst(&state, &v.pad) });
+        "messung": !v.lead && messung::leitung_misst(&v.pad) });
     if v.lead {
         out["canUndo"] = json!(!log.is_empty());
         out["setup"] = json!({ "sekunden": st.sekunden, "title": st.title, "teams": teams.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", "), "table": if fields.is_empty() { String::new() } else { table_text(&fields) } });
@@ -227,7 +275,7 @@ pub async fn setup(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
     let sekunden = body.get("sekunden").and_then(|x| x.as_i64()).unwrap_or(10);
     if !(0..=MAX_SEKUNDEN).contains(&sekunden) { return (StatusCode::BAD_REQUEST, format!("Zeit je Frage: 0 bis {MAX_SEKUNDEN} Sekunden.")).into_response(); }
     match state.store.quiz_replace(&v.pad, &title, &fields, &teams, sekunden) {
-        Ok(()) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true, "fields": fields.len() })).into_response() }
+        Ok(()) => { state.live.notify(&v.pad); Json(json!({ "ok": true, "fields": fields.len() })).into_response() }
         Err(e) => { tracing::warn!("Quiz einrichten: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -257,7 +305,7 @@ pub async fn open(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
             if let Some(f) = field.filter(|f| !revealed && before != Some(*f)) {
                 if let Err(e) = state.store.quiz_buzz_start(&v.pad, f, jetzt()) { tracing::warn!("Buzzer starten: {e}"); }
             }
-            state.ideas.notify(&v.pad);
+            state.live.notify(&v.pad);
             Json(json!({ "ok": true })).into_response()
         }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
@@ -281,7 +329,7 @@ pub async fn score(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
     let Some(points) = points else { return StatusCode::NOT_FOUND.into_response() };
     let delta = if team.is_none() { 0 } else if plus { points } else { -points };
     match state.store.quiz_score(&v.pad, field, team, delta) {
-        Ok(true) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(true) => { state.live.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => { tracing::warn!("Quiz werten: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
@@ -298,7 +346,7 @@ pub async fn spiel(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
         _ => return StatusCode::BAD_REQUEST.into_response(),
     };
     match r {
-        Ok(()) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(()) => { state.live.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Err(e) => { tracing::warn!("Quiz Spielablauf: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -308,7 +356,7 @@ pub async fn undo(State(state): State<Arc<AppState>>, Path(id): Path<String>, he
     // nach „Spiel beenden“ macht Rückgängig auch das Beenden rückgängig: das Spiel läuft weiter
     if state.store.quiz_state(&v.pad).is_ok_and(|s| s.phase == 2) { let _ = state.store.quiz_set_phase(&v.pad, 1); }
     match state.store.quiz_undo(&v.pad) {
-        Ok(_) => { state.ideas.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
+        Ok(_) => { state.live.notify(&v.pad); Json(json!({ "ok": true })).into_response() }
         Err(e) => { tracing::warn!("Quiz rückgängig: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -344,7 +392,7 @@ pub async fn buzzer(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
     let reaktion = Some(t_press - open_ts).filter(|r| *r >= 0.0);
     match state.store.quiz_buzz_add(&v.pad, open_field, dev, &Buzz { team, t_press, ts_ein: ein, flagged, reaktion }, MAX_BUZZ) {
         Ok(added) => {
-            if added { state.ideas.notify(&v.pad); }
+            if added { state.live.notify(&v.pad); }
             Json(json!({ "ok": true, "neu": added })).into_response()
         }
         Err(e) => { tracing::warn!("Buzzer: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
@@ -355,7 +403,7 @@ pub async fn buzzer(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
 /// Nutzt den Kanal der Ideensammlung, Pad-Kennungen sind eindeutig.
 pub async fn live(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     let v = match viewer(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
-    let rx = state.ideas.subscribe(&v.pad);
+    let rx = state.live.subscribe(&v.pad);
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
         match rx.recv().await {
             Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => Some((Ok::<_, std::convert::Infallible>(Event::default().event("change").data("1")), rx)),
@@ -386,7 +434,7 @@ pub fn export(state: &AppState, pad: &str, format: &str) -> Option<Response> {
 pub fn join_svg(state: &AppState, headers: &HeaderMap, free: bool, url_id: &str, pad_id: &str, suffix: &str) -> String {
     // Moodle-Aktivität: der Code führt zur Aktivität in Moodle (Anmeldung dort), nicht direkt ins Pad
     if !free {
-        return state.store.join_url(pad_id).map(|u| qr_block(&u, "Mitmachen über Moodle:")).unwrap_or_default();
+        return state.store.join_url(pad_id).map(|u| crate::qr::block(&u, "Mitmachen über Moodle:")).unwrap_or_default();
     }
     if url_id.starts_with("r.") { return String::new(); }
     let base = &state.config.base_path;
@@ -395,13 +443,7 @@ pub fn join_svg(state: &AppState, headers: &HeaderMap, free: bool, url_id: &str,
         format!("https://{host}{base}")
     });
     let url = format!("{}/p/{}{suffix}", origin.trim_end_matches('/'), web::urlencoding(pad_id));
-    qr_block(&url, "Mitsehen auf dem Handy:")
-}
-
-pub fn qr_block(url: &str, label: &str) -> String {
-    let qr = qrcode::QrCode::new(url.as_bytes()).map(|c| c.render::<qrcode::render::svg::Color>().min_dimensions(320, 320).quiet_zone(true).build()).unwrap_or_default();
-    let qr = qr.split_once("<svg").map(|(_, r)| format!(r#"<svg role="img" aria-label="QR-Code: {}"{r}"#, html_escape::encode_double_quoted_attribute(label.trim_end_matches(':')))).unwrap_or_default();
-    format!(r#"{qr}<p>{}<br><strong>{}</strong></p>"#, html_escape::encode_text(label), html_escape::encode_text(url))
+    crate::qr::block(&url, "Mitsehen auf dem Handy:")
 }
 
 /// Seite des Quiz; Leitung und Mitsehende bekommen dieselbe Seite, das Skript zeigt je nach Rolle.

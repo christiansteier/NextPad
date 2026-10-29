@@ -7,7 +7,7 @@ name = "NextPad"
 description.en = "Collaborative pads with timeline, whiteboard and Moodle login; Etherpad API compatible"
 description.de = "Gemeinsam schreiben und zeichnen mit Zeitleiste und Moodle-Anmeldung; Etherpad-kompatibel"
 
-version = "0.14.0~ynh1"
+version = "0.15.0~ynh1"
 
 maintainers = ["ZWEK der Hochschule Düsseldorf"]
 
@@ -54,10 +54,28 @@ ram.runtime = "100M"
     type = "boolean"
     default = true
 
+    [install.addon_ideen]
+    ask.de = "Addon Ideensammlung einschalten?"
+    ask.en = "Enable the idea collection add-on?"
+    type = "boolean"
+    default = true
+
+    [install.addon_quiz]
+    ask.de = "Addon Quiz-Raster (mit Buzzer) einschalten?"
+    ask.en = "Enable the quiz grid add-on (with buzzer)?"
+    type = "boolean"
+    default = true
+
+    [install.addon_zeichenbrett]
+    ask.de = "Addon Zeichenbrett einschalten?"
+    ask.en = "Enable the drawing board add-on?"
+    type = "boolean"
+    default = true
+
 [resources]
     [resources.sources.main]
-    url = "https://github.com/christiansteier/nextpad/releases/download/v0.14.0/nextpad-0.14.0-amd64"
-    sha256 = "72816f77ff54b23429d359e3dded8bcead5c779f79523addb162f9b13bb361ce"
+    url = "https://github.com/christiansteier/nextpad/releases/download/v0.15.0/nextpad-0.15.0-amd64"
+    sha256 = "2e7af80fcacb6e8fb10a9eda2831b3e485d13ea0b7167b6b9755ce391387e699"
     extract = false
     rename = "nextpad"
 

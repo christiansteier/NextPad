@@ -9,6 +9,9 @@ source /usr/share/yunohost/helpers
 nextpad_settings_defaults
 ynh_app_setting_set --key=theme --value="$theme"
 ynh_app_setting_set --key=allow_free_pads --value="$allow_free_pads"
+ynh_app_setting_set --key=addon_ideen --value="$addon_ideen"
+ynh_app_setting_set --key=addon_quiz --value="$addon_quiz"
+ynh_app_setting_set --key=addon_zeichenbrett --value="$addon_zeichenbrett"
 api_allowed=$(ynh_app_setting_get --key=api_allowed)
 frame_ancestors=$(ynh_app_setting_get --key=frame_ancestors)
 free_pads_per_hour=$(ynh_app_setting_get --key=free_pads_per_hour)

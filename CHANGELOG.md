@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-10-29
+
+### Added
+
+- Restore an earlier version from the timeline: the owner of a free pad (in Moodle: teachers) can bring back any step or
+  saved version with “Diesen Stand wiederherstellen”. The server rebuilds that version and applies it as a new change,
+  so the version before stays in the timeline. Other people and read-only links cannot restore (server-side check).
+- Add-ons can be switched per instance with `NEXTPAD_ADDONS` (comma-separated `ideen`, `quiz`, `zeichenbrett`; unset =
+  all, empty = none). A switched-off add-on has no start page tile, routes, help section or Moodle activity type;
+  existing pads show a notice and keep their data, which is still removed when the pad is deleted. The YunoHost package
+  asks at install time and offers the switches in its configuration panel; existing installations keep all add-ons.
+
+### Changed
+
+- The pad is the core; idea collection, quiz grid (with buzzer and buzzer measurement) and drawing board are add-ons in
+  `server/src/addons/`. Each describes itself (tables, routes, page, export, tile, help, Moodle type), and the core no
+  longer checks pad types one by one. The live channel and QR codes are shared core services.
+- The deletion notice for a quiz no longer attaches an empty PDF; it says how to save the quiz instead.
+
 ## [0.15.0] - 2026-10-28
 
 ### Added

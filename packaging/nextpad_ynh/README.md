@@ -3,7 +3,7 @@
 YunoHost-Paket für NextPad. Installation aus diesem Ordner:
 
 ```bash
-sudo yunohost app install ./nextpad_ynh --args "domain=pads.example.org&path=/np&init_main_permission=visitors&theme=colibris&allow_free_pads=1"
+sudo yunohost app install ./nextpad_ynh --args "domain=pads.example.org&path=/np&init_main_permission=visitors&theme=colibris&allow_free_pads=1&addon_ideen=1&addon_quiz=1&addon_zeichenbrett=1"
 ```
 
 Die Installation lädt das Programm aus den GitHub-Releases (https://github.com/christiansteier/nextpad/releases),

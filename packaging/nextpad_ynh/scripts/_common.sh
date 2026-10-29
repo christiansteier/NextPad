@@ -15,12 +15,22 @@ nextpad_settings_defaults() {
     ynh_app_setting_set_default --key=background_credit --value=""
     ynh_app_setting_set_default --key=background_credit_url --value=""
     ynh_app_setting_set_default --key=admins --value=""
+    # Addons: bestehende Installationen behalten alle
+    ynh_app_setting_set_default --key=addon_ideen --value="1"
+    ynh_app_setting_set_default --key=addon_quiz --value="1"
+    ynh_app_setting_set_default --key=addon_zeichenbrett --value="1"
 }
 
 # Umgebungsdatei aus den Einstellungen schreiben
 nextpad_write_config() {
     if [ "$path" = "/" ]; then base_path=""; else base_path="$path"; fi
     if [ "${allow_free_pads:-1}" = "1" ] || [ "${allow_free_pads:-}" = "true" ]; then free_pads="true"; else free_pads="false"; fi
+    # NEXTPAD_ADDONS aus den drei Schaltern; immer aus den gespeicherten Einstellungen, auch beim Upgrade
+    addons=""
+    for a in ideen quiz zeichenbrett; do
+        v=$(ynh_app_setting_get --key="addon_$a")
+        if [ "$v" = "1" ] || [ "$v" = "true" ]; then addons="${addons:+$addons,}$a"; fi
+    done
     ynh_config_add --template="nextpad.env" --destination="$install_dir/nextpad.env"
     chown root:"$app" "$install_dir/nextpad.env"
     chmod 640 "$install_dir/nextpad.env"
