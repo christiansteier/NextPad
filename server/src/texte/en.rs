@@ -1,5 +1,22 @@
 //! English texts. Every key also appears in `de.rs` (unit test).
 pub const TEXTE: &[(&str, &str)] = &[
+    // Sign-in through Moodle (LTI)
+    ("lti.nicht_eingerichtet", "Signing in through Moodle is not set up here."),
+    ("lti.unvollstaendig", "Incomplete sign-in request. Please start the sign-in again in Moodle."),
+    ("lti.plattform", "This Moodle site is not enabled for NextPad."),
+    ("lti.deployment", "This deployment is not enabled for NextPad."),
+    ("lti.ziel", "The target address does not belong to NextPad."),
+    ("lti.zu_viele", "Too many sign-ins at once. Please try again in a moment."),
+    ("lti.nicht_angemeldet", "Moodle reports: not signed in. Please sign in to Moodle first and start the sign-in there again."),
+    ("lti.abgelehnt", "Moodle refused the sign-in. Please start again in Moodle."),
+    ("lti.antwort", "Incomplete response from Moodle."),
+    ("lti.abgelaufen", "The sign-in has expired or was already used. Please start again in Moodle."),
+    ("lti.browser", "The sign-in does not belong to this browser. Please start again in Moodle and open NextPad in its own window, not embedded."),
+    ("lti.unbestaetigt", "The sign-in could not be confirmed. Please start again in Moodle."),
+    ("lti.fehlgeschlagen", "Sign-in failed."),
+    ("lti.addon_aus", "“{name}” is not enabled on this NextPad. Please ask the NextPad administrators."),
+    ("lti.kontext", "Moodle did not send the course or activity. Please start the activity in the course again."),
+    ("lti.aktivitaet", "The activity could not be created."),
     // Error page
     ("fehler.titel.400", "Please check your input"),
     ("fehler.titel.403", "No access"),
@@ -132,6 +149,7 @@ pub const TEXTE: &[(&str, &str)] = &[
     ("editor.dunkel", "Dark mode on/off"),
     ("editor.zum_kurs", "Back to course"),
     ("editor.startseite", "Start page"),
+    ("editor.autorenfarben", "Author colours on/off"),
     ("editor.staende", "View earlier versions"),
     ("editor.nur_lesen", "read only"),
     ("editor.exportieren", "Share and export"),

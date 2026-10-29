@@ -233,7 +233,16 @@ function select(parent, title, label, entries, onChange) {
   parent.appendChild(sel); return sel
 }
 const menuLeft = document.createElement('div'); menuLeft.className = 'menu_left'; tb.appendChild(menuLeft)
-if (cfg.logo) { const lg = document.createElement('img'); lg.src = cfg.logo; lg.alt = cfg.logoAlt || ''; lg.className = 'toolbar-logo'; menuLeft.appendChild(lg); const s0 = document.createElement('span'); s0.className = 'separator'; menuLeft.appendChild(s0) }
+// Logo der Einrichtung; bei freien Pads führt es wie das Haus-Symbol zur Startseite
+if (cfg.logo) {
+  const lg = document.createElement('img'); lg.src = cfg.logo; lg.alt = cfg.logoAlt || ''; lg.className = 'toolbar-logo'
+  if (cfg.free) {
+    const a = document.createElement('a'); a.className = 'toolbar-home'; a.href = `${cfg.basePath}/`; a.title = tx('startseite')
+    a.setAttribute('aria-label', cfg.logoAlt ? `${cfg.logoAlt}, ${tx('startseite')}` : tx('startseite')); lg.alt = ''
+    a.appendChild(lg); menuLeft.appendChild(a)
+  } else menuLeft.appendChild(lg)
+  const s0 = document.createElement('span'); s0.className = 'separator'; menuLeft.appendChild(s0)
+}
 const menuRight = document.createElement('div'); menuRight.className = 'menu_right'; tb.appendChild(menuRight)
 if (!cfg.readonly) {
   ibtn(menuLeft, I.bold, tx('fett'), () => editor.chain().toggleBold().run(), () => editor.isActive('bold'))
@@ -251,7 +260,7 @@ if (!cfg.readonly) {
   ibtn(menuLeft, I.redo, tx('wiederholen'), () => editor.chain().redo().run())
   sep(menuLeft)
 }
-ibtn(menuLeft, I.eye, 'Autorenfarben ein/aus', () => { showColors = !showColors; document.getElementById('editor').classList.toggle('no-colors', !showColors) }, () => !showColors)
+ibtn(menuLeft, I.eye, tx('autorenfarben'), () => { showColors = !showColors; document.getElementById('editor').classList.toggle('no-colors', !showColors) }, () => !showColors)
 if (!cfg.readonly) {
   sep(menuLeft)
   select(menuLeft, tx('schriftgroesse'), tx('schriftgroesse'), [['', tx('standard')], ...[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 24, 30, 36, 48].map(n => [n + 'px', String(n)])], v => v ? editor.chain().setFontSize(v).run() : editor.chain().unsetFontSize().run())

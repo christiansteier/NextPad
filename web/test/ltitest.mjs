@@ -53,6 +53,9 @@ check('login Parameter', l.loc.searchParams.get('redirect_uri') === `${PUBLIC}/l
 check('login setzt Bindungs-Cookie', !!l.cookie && l.r.headers.getSetCookie().some(c => /SameSite=None/.test(c) && /Secure/.test(c)))
 const bad = await fetch(`${base}/lti/login?iss=https://evil.test&login_hint=1&target_link_uri=${PUBLIC}/lti/launch`, { redirect: 'manual' })
 check('unbekannte Plattform 403', bad.status === 403)
+{ const t = await bad.text(); check('Fehlerseite ohne Angabe deutsch', t.includes('lang="de"') && t.includes('nicht freigeschaltet'), t.slice(0, 300)) }
+{ const r = await fetch(`${base}/lti/login?iss=https://evil.test&login_hint=1&target_link_uri=${PUBLIC}/lti/launch`, { redirect: 'manual', headers: { 'accept-language': 'en-GB,en;q=0.9' } }); const t = await r.text()
+  check('Fehlerseite englisch nach Browser', r.status === 403 && t.includes('lang="en"') && t.includes('not enabled for NextPad') && t.includes('Zur Startseite') === false, t.slice(0, 300)) }
 const badTarget = await fetch(`${base}/lti/login?iss=${ISS}&login_hint=1&target_link_uri=https://evil.test/`, { redirect: 'manual' })
 check('fremde Zieladresse 400', badTarget.status === 400)
 
@@ -70,6 +73,8 @@ for (const [name, mk, opt, want] of cases) {
 }
 { const li = await login(); const r = await launch(li, jwt(claims(li.nonce)), null); check('ohne Bindungs-Cookie 400', r.status === 400, `Status ${r.status}`) }
 { const li = await login(); const r = await fetch(`${base}/lti/launch`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: li.cookie }, body: form({ error: 'login_required', state: li.state }) }); check('Moodle-Fehler login_required 403', r.status === 403) }
+{ const li = await login(); const r = await fetch(`${base}/lti/launch`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `${li.cookie}; nextpad-lang=en` }, body: form({ error: 'login_required', state: li.state }) }); const t = await r.text()
+  check('Moodle-Fehler in der eigenen Wahl englisch', r.status === 403 && t.includes('Moodle reports: not signed in'), t.slice(0, 300)) }
 
 // erfolgreiche Anmeldung
 l = await login()

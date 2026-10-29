@@ -644,8 +644,8 @@ impl Marks {
 /// Ein Block, wie er ins Dokument geschrieben wird.
 #[derive(Clone, Debug)]
 pub enum Block {
-    Para { align: Option<String>, runs: Vec<(String, Marks)> },
-    Heading { level: u8, runs: Vec<(String, Marks)> },
+    Para { align: Option<String>, indent: u8, runs: Vec<(String, Marks)> },
+    Heading { level: u8, indent: u8, runs: Vec<(String, Marks)> },
     List { ordered: bool, items: Vec<Vec<Block>> },
     /// Aufgabenliste: je Eintrag erledigt ja/nein und Inhalt
     TaskList { items: Vec<(bool, Vec<Block>)> },
@@ -738,7 +738,7 @@ fn flush_runs(runs: &mut Vec<(String, Marks)>, blocks: &mut Vec<Block>, align: O
     let mut pending_break = false;
     for (s, m) in runs.drain(..) {
         if s == "\n" {
-            blocks.push(Block::Para { align: align.clone(), runs: std::mem::take(&mut current) });
+            blocks.push(Block::Para { align: align.clone(), indent: 0, runs: std::mem::take(&mut current) });
             pending_break = true;
         } else {
             current.push((s, m));
@@ -746,12 +746,16 @@ fn flush_runs(runs: &mut Vec<(String, Marks)>, blocks: &mut Vec<Block>, align: O
         }
     }
     if !current.is_empty() || !pending_break {
-        blocks.push(Block::Para { align, runs: current });
+        blocks.push(Block::Para { align, indent: 0, runs: current });
     }
 }
 
 fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
     let name = el.value().name().to_ascii_lowercase();
+    let indent = el.value().attr("style").and_then(|s| s.split(';').find_map(|d| {
+        let (key, value) = d.split_once(':')?;
+        (key.trim() == "padding-left").then(|| value.trim().strip_suffix("em")?.trim().parse::<u8>().ok()).flatten()
+    })).filter(|n| *n <= 16 && *n % 2 == 0).map_or(0, |n| n / 2);
     let align = el.value().attr("style").and_then(|s| {
         s.split(';').find_map(|d| {
             let mut kv = d.splitn(2, ':');
@@ -765,7 +769,7 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
             let mut runs = Vec::new();
             let mut a = None;
             collect_inline(el, marks, &mut runs, &mut blocks, &mut a);
-            blocks.push(Block::Heading { level: level.min(4), runs });
+            blocks.push(Block::Heading { level: level.min(4), indent, runs });
         }
         "ul" | "ol" => {
             // Aufgabenliste aus dem eigenen Export (data-type) oder mit Kontrollkästchen im Eintrag
@@ -783,9 +787,9 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
                     let mut a = None;
                     collect_inline(li, marks, &mut runs, &mut inner, &mut a);
                     let mut item = Vec::new();
-                    if !runs.is_empty() { item.push(Block::Para { align: None, runs }); }
+                    if !runs.is_empty() { item.push(Block::Para { align: None, indent: 0, runs }); }
                     item.extend(inner);
-                    if item.is_empty() { item.push(Block::Para { align: None, runs: vec![] }); }
+                    if item.is_empty() { item.push(Block::Para { align: None, indent: 0, runs: vec![] }); }
                     items.push((checked, item));
                 }
                 blocks.push(Block::TaskList { items });
@@ -799,9 +803,9 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
                     let mut a = None;
                     collect_inline(li, marks, &mut runs, &mut inner, &mut a);
                     let mut item = Vec::new();
-                    if !runs.is_empty() { item.push(Block::Para { align: None, runs }); }
+                    if !runs.is_empty() { item.push(Block::Para { align: None, indent: 0, runs }); }
                     item.extend(inner);
-                    if item.is_empty() { item.push(Block::Para { align: None, runs: vec![] }); }
+                    if item.is_empty() { item.push(Block::Para { align: None, indent: 0, runs: vec![] }); }
                     items.push(item);
                 }
             }
@@ -824,7 +828,7 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
                     flush_runs(&mut runs, &mut content, None);
                     content.extend(inner);
                     content.retain(|b| !matches!(b, Block::Table { .. } | Block::Toc)); // keine Tabellen in Tabellen
-                    if content.is_empty() { content.push(Block::Para { align: None, runs: vec![] }); }
+                    if content.is_empty() { content.push(Block::Para { align: None, indent: 0, runs: vec![] }); }
                     row.push((cn == "th", content));
                 }
                 if !row.is_empty() { rows.push(row); }
@@ -834,7 +838,7 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
         "nav" if el.value().attr("data-type") == Some("toc") => blocks.push(Block::Toc),
         "pre" => {
             let text = el.text().collect::<String>();
-            blocks.push(Block::Para { align: None, runs: vec![(text, Marks { code: true, ..marks.clone() })] });
+            blocks.push(Block::Para { align: None, indent: 0, runs: vec![(text, Marks { code: true, ..marks.clone() })] });
         }
         _ => {
             let mut runs = Vec::new();
@@ -842,8 +846,13 @@ fn parse_block(el: ElementRef, marks: &Marks) -> Vec<Block> {
             collect_inline(el, marks, &mut runs, &mut blocks, &mut a);
             let before = blocks.len();
             flush_runs(&mut runs, &mut blocks, a.clone());
+            if name == "p" {
+                for block in &mut blocks[before..] {
+                    if let Block::Para { indent: n, .. } = block { *n = indent; }
+                }
+            }
             if blocks.len() == before && name == "p" {
-                blocks.push(Block::Para { align: a, runs: vec![] }); // leerer Absatz bleibt erhalten
+                blocks.push(Block::Para { align: a, indent, runs: vec![] }); // leerer Absatz bleibt erhalten
             }
         }
     }
@@ -870,14 +879,16 @@ fn write_runs(txn: &mut TransactionMut, el: &XmlElementRef, runs: &[(String, Mar
 
 fn write_block(txn: &mut TransactionMut, parent: &XmlElementRef, b: &Block) {
     match b {
-        Block::Para { align, runs } => {
+        Block::Para { align, indent, runs } => {
             let p: XmlElementRef = parent.push_back(txn, XmlElementPrelim::new("paragraph", Vec::<XmlIn>::new()));
             if let Some(a) = align { p.insert_attribute(txn, "textAlign", Any::from(a.as_str())); }
+            if *indent > 0 { p.insert_attribute(txn, "indent", Any::from(*indent as f64)); }
             write_runs(txn, &p, runs);
         }
-        Block::Heading { level, runs } => {
+        Block::Heading { level, indent, runs } => {
             let h: XmlElementRef = parent.push_back(txn, XmlElementPrelim::new("heading", Vec::<XmlIn>::new()));
             h.insert_attribute(txn, "level", Any::from(*level as f64));
+            if *indent > 0 { h.insert_attribute(txn, "indent", Any::from(*indent as f64)); }
             write_runs(txn, &h, runs);
         }
         Block::List { ordered, items } => {
@@ -909,7 +920,7 @@ fn write_rows(txn: &mut TransactionMut, table: &XmlElementRef, rows: &[Vec<(bool
     for row in rows {
         let tr: XmlElementRef = table.push_back(txn, XmlElementPrelim::new("tableRow", Vec::<XmlIn>::new()));
         for i in 0..cols {
-            let (head, content) = row.get(i).map(|(h, c)| (*h, c.clone())).unwrap_or((false, vec![Block::Para { align: None, runs: vec![] }]));
+            let (head, content) = row.get(i).map(|(h, c)| (*h, c.clone())).unwrap_or((false, vec![Block::Para { align: None, indent: 0, runs: vec![] }]));
             let cell: XmlElementRef = tr.push_back(txn, XmlElementPrelim::new(if head { "tableHeader" } else { "tableCell" }, Vec::<XmlIn>::new()));
             for b in &content { write_block(txn, &cell, b); }
         }
@@ -919,14 +930,16 @@ fn write_rows(txn: &mut TransactionMut, table: &XmlElementRef, rows: &[Vec<(bool
 fn write_block_root(txn: &mut TransactionMut, frag: &XmlFragmentRef, b: &Block) {
     // Wurzel ist ein Fragment: gleiche Logik, anderer Elterntyp
     match b {
-        Block::Para { align, runs } => {
+        Block::Para { align, indent, runs } => {
             let p: XmlElementRef = frag.push_back(txn, XmlElementPrelim::new("paragraph", Vec::<XmlIn>::new()));
             if let Some(a) = align { p.insert_attribute(txn, "textAlign", Any::from(a.as_str())); }
+            if *indent > 0 { p.insert_attribute(txn, "indent", Any::from(*indent as f64)); }
             write_runs(txn, &p, runs);
         }
-        Block::Heading { level, runs } => {
+        Block::Heading { level, indent, runs } => {
             let h: XmlElementRef = frag.push_back(txn, XmlElementPrelim::new("heading", Vec::<XmlIn>::new()));
             h.insert_attribute(txn, "level", Any::from(*level as f64));
+            if *indent > 0 { h.insert_attribute(txn, "indent", Any::from(*indent as f64)); }
             write_runs(txn, &h, runs);
         }
         Block::List { ordered, items } => {
@@ -970,10 +983,10 @@ pub fn set_text(txn: &mut TransactionMut, frag: &XmlFragmentRef, text: &str) {
     let lines = if lines.last() == Some(&"") && lines.len() > 1 { &lines[..lines.len() - 1] } else { &lines[..] };
     for line in lines {
         let runs = if line.is_empty() { vec![] } else { vec![(line.to_string(), Marks::default())] };
-        write_block_root(txn, frag, &Block::Para { align: None, runs });
+        write_block_root(txn, frag, &Block::Para { align: None, indent: 0, runs });
     }
     if lines.is_empty() {
-        write_block_root(txn, frag, &Block::Para { align: None, runs: vec![] });
+        write_block_root(txn, frag, &Block::Para { align: None, indent: 0, runs: vec![] });
     }
 }
 
@@ -996,7 +1009,7 @@ pub fn set_html(txn: &mut TransactionMut, frag: &XmlFragmentRef, html: &str) {
         }
         break;
     }
-    if blocks.is_empty() { blocks.push(Block::Para { align: None, runs: vec![] }); }
+    if blocks.is_empty() { blocks.push(Block::Para { align: None, indent: 0, runs: vec![] }); }
     for b in &blocks { write_block_root(txn, frag, b); }
 }
 
@@ -1075,6 +1088,11 @@ mod tests {
         assert!(text.contains("    Titel\n") && text.contains("        Zwei\nNormal"), "{text}");
         let typ = to_typst(&txn, &frag);
         assert!(typ.contains("#pad(left: 2em)[#heading(level: 2)[") && typ.contains("#pad(left: 4em)[#align(center)[#\"Zwei\"]]"), "{typ}");
+        let restored = Doc::new();
+        let restored_frag = restored.get_or_insert_xml_fragment(FRAGMENT);
+        { let mut t = restored.transact_mut(); set_html(&mut t, &restored_frag, &html); }
+        let t = restored.transact();
+        assert_eq!(to_html(&t, &restored_frag), html, "Einrückung muss den Weg über HTML überstehen");
     }
 
     #[test]

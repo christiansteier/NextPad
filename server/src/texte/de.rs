@@ -1,5 +1,22 @@
 //! Deutsche Texte. Jeder Schlüssel steht in `en.rs` ebenso (Unit-Test).
 pub const TEXTE: &[(&str, &str)] = &[
+    // Anmeldung über Moodle (LTI)
+    ("lti.nicht_eingerichtet", "Die Anmeldung über Moodle ist hier nicht eingerichtet."),
+    ("lti.unvollstaendig", "Unvollständige Anmeldeanfrage. Bitte die Anmeldung in Moodle neu starten."),
+    ("lti.plattform", "Diese Moodle-Instanz ist für NextPad nicht freigeschaltet."),
+    ("lti.deployment", "Dieses Deployment ist für NextPad nicht freigeschaltet."),
+    ("lti.ziel", "Die Zieladresse gehört nicht zu NextPad."),
+    ("lti.zu_viele", "Zu viele Anmeldungen gleichzeitig. Bitte gleich noch einmal."),
+    ("lti.nicht_angemeldet", "Moodle meldet: nicht angemeldet. Bitte zuerst in Moodle anmelden und die Anmeldung dort neu starten."),
+    ("lti.abgelehnt", "Moodle hat die Anmeldung abgelehnt. Bitte in Moodle neu starten."),
+    ("lti.antwort", "Unvollständige Antwort von Moodle."),
+    ("lti.abgelaufen", "Die Anmeldung ist abgelaufen oder wurde schon benutzt. Bitte in Moodle neu starten."),
+    ("lti.browser", "Die Anmeldung gehört nicht zu diesem Browser. Bitte in Moodle neu starten; NextPad in einem eigenen Fenster öffnen, nicht eingebettet."),
+    ("lti.unbestaetigt", "Die Anmeldung konnte nicht bestätigt werden. Bitte in Moodle neu starten."),
+    ("lti.fehlgeschlagen", "Anmeldung fehlgeschlagen."),
+    ("lti.addon_aus", "„{name}“ ist auf diesem NextPad nicht eingeschaltet. Bitte die Verwaltung von NextPad fragen."),
+    ("lti.kontext", "Moodle hat Kurs oder Aktivität nicht mitgeschickt. Bitte die Aktivität im Kurs neu starten."),
+    ("lti.aktivitaet", "Die Aktivität konnte nicht angelegt werden."),
     // Fehlerseite
     ("fehler.titel.400", "Eingabe prüfen"),
     ("fehler.titel.403", "Kein Zugriff"),
@@ -132,6 +149,7 @@ pub const TEXTE: &[(&str, &str)] = &[
     ("editor.dunkel", "Dunkler Modus ein/aus"),
     ("editor.zum_kurs", "Zurück zum Kurs"),
     ("editor.startseite", "Startseite"),
+    ("editor.autorenfarben", "Autorenfarben ein/aus"),
     ("editor.staende", "Frühere Stände ansehen"),
     ("editor.nur_lesen", "nur lesen"),
     ("editor.exportieren", "Teilen und exportieren"),

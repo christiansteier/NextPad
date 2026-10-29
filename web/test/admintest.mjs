@@ -83,6 +83,17 @@ const padHtml = await (await fetch(`${base}/open?padname=${pad}`)).text()
 check('Editor übernimmt Farben', padHtml.includes('--primary:#007a96'))
 const pdf = await get(`/p/${pad}/export/pdf`)
 check('PDF mit SVG-Logo', pdf.status === 200 && (await pdf.arrayBuffer()).byteLength > 1000)
+// Logo oben links im Pad führt zur Startseite
+{
+  const lb = await chromium.launch(); const lp = await (await lb.newContext({ locale: 'de-DE' })).newPage()
+  await lp.goto(`${base}/p/${pad}`); await lp.waitForSelector('.ProseMirror')
+  const home = lp.locator('#toolbar a.toolbar-home')
+  const box = await home.count() ? await home.boundingBox() : null
+  check('Pad: Logo ist Verweis zur Startseite', await home.count() === 1 && (await home.getAttribute('aria-label')) === 'Testhochschule, Startseite' && await home.locator('img.toolbar-logo').count() === 1 && box.height >= 44 && box.width >= 44, box && `${box.width}x${box.height}`)
+  await home.click(); await lp.waitForURL(u => new URL(u).pathname.replace(/\/$/, '') === new URL(base).pathname.replace(/\/$/, ''), { timeout: 5000 }).catch(() => {})
+  check('Pad: Klick aufs Logo öffnet die Startseite', new URL(lp.url()).pathname.replace(/\/$/, '') === new URL(base).pathname.replace(/\/$/, '') && (await lp.locator('main').count()) === 1, lp.url())
+  await lb.close()
+}
 
 // kein Logo: Zeichen und Name als Verweis
 await save(admin, { product: 'Testpads', logo: 'keins', background: 'vorgabe' })

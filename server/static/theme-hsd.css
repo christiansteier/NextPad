@@ -37,3 +37,7 @@ html[data-theme="dark"] .theme-hsd .ib.selected { background: var(--tint-blue); 
 html[data-theme="dark"] .theme-hsd #statusbar .users { background: var(--tint-blue); color: #f2f2f2; }
 html[data-theme="dark"] .theme-hsd #timeline .tl-controls button { background: #1e1e1e; color: #ececec; border-color: #8c8c8c; }
 html[data-theme="dark"] .theme-hsd #timeline .tl-controls button:hover { background: #2e2e2e; border-color: #ececec; }
+
+/* Logo in der Werkzeugleiste als Weg zur Startseite: Ziel mindestens 44 px, sichtbarer Fokus */
+.theme-hsd a.toolbar-home { display: flex; align-items: center; min-height: 44px; min-width: 44px; }
+.theme-hsd a.toolbar-home:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }

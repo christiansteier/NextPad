@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-29
+
+### Fixed
+
+- In a free pad with an institution logo, the logo at the top left of the toolbar now leads to the start page, like
+  the house icon; it is named for screen readers and is at least 44 px large.
+- Restoring an earlier version from the timeline keeps the indentation of paragraphs and headings (contributed in #1).
+- The error pages of the Moodle sign-in (LTI) follow the language: the person’s own choice, otherwise the language
+  from Moodle, otherwise the browser language. Before they were German only.
+- The “Author colours on/off” button in the editor toolbar was German on English pages.
+
 ## [0.17.0] - 2026-10-29
 
 Upgrade note: the database gains the column `authors.sprache`, added automatically on start. Back up the database

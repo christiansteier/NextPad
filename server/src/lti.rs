@@ -13,6 +13,7 @@
 //! oder Zieladresse `…/lti/pad` bzw. `…/lti/ideen`): je Ressourcen-Link eine eigene Gruppe mit einem
 //! Text-Pad, einer Ideensammlung oder einem Quiz-Raster. Zugang nur über den Start aus Moodle (Sitzung wie
 //! bei Etherpad-Gruppenpads), Lehrende moderieren bzw. leiten.
+use crate::texte::{t, tf, Sprache};
 use crate::sperre::Sperre;
 use crate::{ids, AppState};
 use axum::{
@@ -104,37 +105,39 @@ fn token32() -> String { format!("{}{}", ids::random16(), ids::random16()) }
 
 fn enc(s: &str) -> String { serde_urlencoded::to_string([("x", s)]).map(|v| v[2..].to_string()).unwrap_or_default() }
 
-fn page(status: StatusCode, msg: &str) -> Response {
-    (status, Html(format!("<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>NextPad</title><body style=\"font-family:Arial,sans-serif;padding:2em;max-width:36em;line-height:1.5\"><p>{}</p><p><a href=\"./..\">Zur Startseite</a></p></body></html>", html_escape::encode_text(msg)))).into_response()
+/// Fehlerseite der Anmeldung; `msg` ist schon in der Sprache `sp`.
+fn page(sp: Sprache, status: StatusCode, msg: &str) -> Response {
+    (status, Html(format!("<!doctype html><html lang=\"{}\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>NextPad</title><body style=\"font-family:Arial,sans-serif;padding:2em;max-width:36em;line-height:1.5\"><p>{}</p><p><a href=\"./..\">{}</a></p></body></html>", sp.kuerzel(), html_escape::encode_text(msg), t(sp, "fehler.zur_startseite")))).into_response()
 }
 
 fn base_path(state: &AppState) -> String { if state.config.base_path.is_empty() { "/".into() } else { format!("{}/", state.config.base_path) } }
 
 /// Schritt 1: Anmeldung aus Moodle anstoßen (GET oder POST).
-pub async fn login(State(state): State<Arc<AppState>>, Query(q): Query<HashMap<String, String>>, body: Bytes) -> Response {
-    let Some(public) = state.config.public_url.clone() else { return page(StatusCode::NOT_FOUND, "Die Anmeldung über Moodle ist hier nicht eingerichtet.") };
+pub async fn login(State(state): State<Arc<AppState>>, Query(q): Query<HashMap<String, String>>, headers: HeaderMap, body: Bytes) -> Response {
+    let sp = Sprache::aus_anfrage(&headers);
+    let Some(public) = state.config.public_url.clone() else { return page(sp, StatusCode::NOT_FOUND, t(sp, "lti.nicht_eingerichtet")) };
     let mut p = q;
     if !body.is_empty() {
         if let Ok(form) = serde_urlencoded::from_bytes::<Vec<(String, String)>>(&body) { p.extend(form); }
     }
     let get = |k: &str| p.get(k).map(String::as_str).filter(|v| !v.is_empty());
     let (Some(iss), Some(login_hint), Some(target)) = (get("iss"), get("login_hint"), get("target_link_uri")) else {
-        return page(StatusCode::BAD_REQUEST, "Unvollständige Anmeldeanfrage. Bitte die Anmeldung in Moodle neu starten.");
+        return page(sp, StatusCode::BAD_REQUEST, t(sp, "lti.unvollstaendig"));
     };
     let iss = iss.trim_end_matches('/');
     let found = state.config.lti.iter().position(|pl| pl.issuer.trim_end_matches('/') == iss && get("client_id").map(|c| c == pl.client_id).unwrap_or(true));
     let Some(idx) = found else {
         tracing::warn!("LTI-Anmeldung von unbekannter Plattform");
-        return page(StatusCode::FORBIDDEN, "Diese Moodle-Instanz ist für NextPad nicht freigeschaltet.");
+        return page(sp, StatusCode::FORBIDDEN, t(sp, "lti.plattform"));
     };
     let pl = &state.config.lti[idx];
     if let Some(dep) = get("lti_deployment_id") {
         if !pl.deployment_ids.is_empty() && !pl.deployment_ids.iter().any(|d| d == dep) {
-            return page(StatusCode::FORBIDDEN, "Dieses Deployment ist für NextPad nicht freigeschaltet.");
+            return page(sp, StatusCode::FORBIDDEN, t(sp, "lti.deployment"));
         }
     }
     if !target.starts_with(&public) {
-        return page(StatusCode::BAD_REQUEST, "Die Zieladresse gehört nicht zu NextPad.");
+        return page(sp, StatusCode::BAD_REQUEST, t(sp, "lti.ziel"));
     }
     let st = token32();
     let nonce = token32();
@@ -142,7 +145,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Query(q): Query<HashMap<S
         let mut m = state.lti.pending.sperren();
         let now = ids::now_ms();
         m.retain(|_, p| now - p.created < PENDING_MS);
-        if m.len() > 10_000 { return page(StatusCode::SERVICE_UNAVAILABLE, "Zu viele Anmeldungen gleichzeitig. Bitte gleich noch einmal."); }
+        if m.len() > 10_000 { return page(sp, StatusCode::SERVICE_UNAVAILABLE, t(sp, "lti.zu_viele")); }
         m.insert(st.clone(), Pending { nonce: nonce.clone(), platform: idx, created: now });
     }
     let redirect_uri = format!("{public}/lti/launch");
@@ -288,27 +291,30 @@ fn verify(state: &AppState, idx: usize, token: &str, nonce: &str) -> Result<Clai
 
 /// Schritt 3: Rücksprung von Moodle mit id_token.
 pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum::Form(f): axum::Form<LaunchForm>) -> Response {
+    let sp = Sprache::aus_anfrage(&headers);
     if let Some(e) = f.error {
         tracing::info!("LTI-Anmeldung von Moodle abgelehnt: {e} {}", f.error_description.as_deref().unwrap_or(""));
-        let msg = if e == "login_required" { "Moodle meldet: nicht angemeldet. Bitte zuerst in Moodle anmelden und die Anmeldung dort neu starten." } else { "Moodle hat die Anmeldung abgelehnt. Bitte in Moodle neu starten." };
-        return page(StatusCode::FORBIDDEN, msg);
+        let msg = if e == "login_required" { t(sp, "lti.nicht_angemeldet") } else { t(sp, "lti.abgelehnt") };
+        return page(sp, StatusCode::FORBIDDEN, msg);
     }
-    let (Some(token), Some(st)) = (f.id_token, f.state) else { return page(StatusCode::BAD_REQUEST, "Unvollständige Antwort von Moodle.") };
+    let (Some(token), Some(st)) = (f.id_token, f.state) else { return page(sp, StatusCode::BAD_REQUEST, t(sp, "lti.antwort")) };
     let pending = state.lti.pending.sperren().remove(&st);
     let Some(pending) = pending.filter(|p| ids::now_ms() - p.created < PENDING_MS) else {
-        return page(StatusCode::BAD_REQUEST, "Die Anmeldung ist abgelaufen oder wurde schon benutzt. Bitte in Moodle neu starten.");
+        return page(sp, StatusCode::BAD_REQUEST, t(sp, "lti.abgelaufen"));
     };
     let bound = crate::web::cookie_values(&headers, STATE_COOKIE).iter().any(|c| c.as_bytes() == st.as_bytes());
     if !bound {
-        return page(StatusCode::BAD_REQUEST, "Die Anmeldung gehört nicht zu diesem Browser. Bitte in Moodle neu starten; NextPad in einem eigenen Fenster öffnen, nicht eingebettet.");
+        return page(sp, StatusCode::BAD_REQUEST, t(sp, "lti.browser"));
     }
     let idx = pending.platform;
     let st2 = state.clone();
     let res = tokio::task::spawn_blocking(move || verify(&st2, idx, &token, &pending.nonce)).await.unwrap_or_else(|_| Err("Prüfung abgebrochen".into()));
     let claims = match res {
         Ok(c) => c,
-        Err(e) => { tracing::warn!("LTI-Anmeldung über {} abgewiesen: {e}", state.config.lti[idx].name); return page(StatusCode::FORBIDDEN, "Die Anmeldung konnte nicht bestätigt werden. Bitte in Moodle neu starten."); }
+        Err(e) => { tracing::warn!("LTI-Anmeldung über {} abgewiesen: {e}", state.config.lti[idx].name); return page(sp, StatusCode::FORBIDDEN, t(sp, "lti.unbestaetigt")); }
     };
+    // ab hier gilt: eigene Wahl, sonst die Sprache aus Moodle, sonst die der Anfrage
+    let sp = Sprache::gewaehlt(&headers).or_else(|| claims.launch_presentation.as_ref().and_then(|p| p.locale.as_deref()).and_then(Sprache::aus_kuerzel)).unwrap_or(sp);
     let pl = &state.config.lti[idx];
     let name = claims.name.clone().filter(|n| !n.trim().is_empty())
         .or_else(|| { let n = format!("{} {}", claims.given_name.as_deref().unwrap_or(""), claims.family_name.as_deref().unwrap_or("")); (!n.trim().is_empty()).then(|| n.trim().to_string()) })
@@ -316,14 +322,14 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     let name: String = name.chars().filter(|c| !c.is_control()).take(80).collect();
     let author = match state.store.create_author_from(&name, Some(&claims.sub), Some(&pl.moodle())) {
         Ok(a) => a,
-        Err(e) => { tracing::error!("LTI-Autor: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
+        Err(e) => { tracing::error!("LTI-Autor: {e}"); return page(sp, StatusCode::INTERNAL_SERVER_ERROR, t(sp, "lti.fehlgeschlagen")); }
     };
     // Mailadresse nur für die Ankündigung vor dem Löschen eigener Pads
     let email = claims.email.as_deref().map(str::trim).filter(|e| e.contains('@') && e.len() <= 254 && !e.chars().any(|c| c.is_control() || c.is_whitespace()));
     let _ = state.store.set_author_email(&author.id, email);
     let token = match state.store.create_login(&author.id, ids::now_ms() / 1000 + LOGIN_SECONDS, claims.administers(&state.config.admins)) {
         Ok(t) => t,
-        Err(e) => { tracing::error!("LTI-Anmeldung speichern: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
+        Err(e) => { tracing::error!("LTI-Anmeldung speichern: {e}"); return page(sp, StatusCode::INTERNAL_SERVER_ERROR, t(sp, "lti.fehlgeschlagen")); }
     };
     tracing::info!("LTI-Anmeldung über {}{}", pl.name, if claims.administers(&state.config.admins) { " (Admin)" } else { "" });
     let path = base_path(&state);
@@ -332,11 +338,11 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     if let Some(typ) = claims.activity() {
         let addon = crate::addons::nach_kennung(typ);
         if let Some(a) = addon.filter(|a| !crate::addons::aktiv(&state, a)) {
-            return page(StatusCode::NOT_FOUND, &format!("„{}“ ist auf diesem NextPad nicht eingeschaltet. Bitte die Verwaltung von NextPad fragen.", crate::texte::t(crate::texte::Sprache::De, a.name)));
+            return page(sp, StatusCode::NOT_FOUND, &tf(sp, "lti.addon_aus", &[("name", t(sp, a.name))]));
         }
         let kind = addon.map_or("pad", |a| a.art);
         let (Some(ctx), Some(link)) = (&claims.context, &claims.resource_link) else {
-            return page(StatusCode::BAD_REQUEST, "Moodle hat Kurs oder Aktivität nicht mitgeschickt. Bitte die Aktivität im Kurs neu starten.");
+            return page(sp, StatusCode::BAD_REQUEST, t(sp, "lti.kontext"));
         };
         let dep = claims.deployment_id.as_deref().unwrap_or("");
         let key = serde_json::json!([pl.issuer.trim_end_matches('/'), dep, ctx.id, link.id]).to_string();
@@ -351,9 +357,9 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
                     tracing::info!("Kursaktivität über {} angelegt", pl.name);
                     p
                 }
-                Err(e) => { tracing::error!("Kursaktivität anlegen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Die Aktivität konnte nicht angelegt werden."); }
+                Err(e) => { tracing::error!("Kursaktivität anlegen: {e}"); return page(sp, StatusCode::INTERNAL_SERVER_ERROR, t(sp, "lti.aktivitaet")); }
             },
-            Err(e) => { tracing::error!("Kursaktivität suchen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
+            Err(e) => { tracing::error!("Kursaktivität suchen: {e}"); return page(sp, StatusCode::INTERNAL_SERVER_ERROR, t(sp, "lti.fehlgeschlagen")); }
         };
         if claims.moderates() { let _ = state.store.add_moderator(&pad, &author.id); }
         // QR-Code am Beamer: Moodle zählt Ressourcen-Links mit der Nummer der LTI-Instanz, die Aktivität ist dann
@@ -368,7 +374,7 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
         let group = crate::ids::group_of_pad(&pad).unwrap_or("").to_string();
         let sid = match state.store.create_session(&group, &author.id, ids::now_ms() / 1000 + LOGIN_SECONDS) {
             Ok(s) => s,
-            Err(e) => { tracing::error!("Sitzung anlegen: {e}"); return page(StatusCode::INTERNAL_SERVER_ERROR, "Anmeldung fehlgeschlagen."); }
+            Err(e) => { tracing::error!("Sitzung anlegen: {e}"); return page(sp, StatusCode::INTERNAL_SERVER_ERROR, t(sp, "lti.fehlgeschlagen")); }
         };
         // mehrere Sitzungen in einem Cookie, durch Komma getrennt wie bei Etherpad; ältere bleiben gültig
         let now_s = ids::now_ms() / 1000;

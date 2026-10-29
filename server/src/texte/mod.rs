@@ -24,6 +24,9 @@ impl Sprache {
         match haupt.as_str() { "de" => Some(Sprache::De), "en" => Some(Sprache::En), _ => None }
     }
 
+    /// Nur die eigene Wahl über den Umschalter, sonst keine.
+    pub fn gewaehlt(headers: &HeaderMap) -> Option<Self> { cookie(headers, WAHL_COOKIE) }
+
     pub fn aus_anfrage(headers: &HeaderMap) -> Self {
         cookie(headers, WAHL_COOKIE)
             .or_else(|| cookie(headers, MOODLE_COOKIE))

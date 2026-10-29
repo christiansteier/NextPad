@@ -230,8 +230,8 @@ fn chars_to_blocks(chars: &[Ch]) -> Vec<Block> {
     let mut i = 0;
     while i < parsed.len() {
         match &parsed[i].kind {
-            LineKind::Para => { blocks.push(Block::Para { align: parsed[i].align.clone(), runs: parsed[i].runs.clone() }); i += 1; }
-            LineKind::Heading(lv) => { blocks.push(Block::Heading { level: *lv, runs: parsed[i].runs.clone() }); i += 1; }
+            LineKind::Para => { blocks.push(Block::Para { align: parsed[i].align.clone(), indent: 0, runs: parsed[i].runs.clone() }); i += 1; }
+            LineKind::Heading(lv) => { blocks.push(Block::Heading { level: *lv, indent: 0, runs: parsed[i].runs.clone() }); i += 1; }
             LineKind::List { .. } => {
                 let (b, next) = build_list(&parsed, i, 1);
                 blocks.push(b);
@@ -248,12 +248,12 @@ fn chars_to_blocks(chars: &[Ch]) -> Vec<Block> {
         while i < lines.len() {
             match &lines[i].kind {
                 LineKind::List { ordered: o, level: lv } if *lv == level && *o == ordered => {
-                    items.push(vec![Block::Para { align: None, runs: lines[i].runs.clone() }]);
+                    items.push(vec![Block::Para { align: None, indent: 0, runs: lines[i].runs.clone() }]);
                     i += 1;
                 }
                 LineKind::List { level: lv, .. } if *lv > level => {
                     let (sub, next) = build_list(lines, i, *lv);
-                    if items.is_empty() { items.push(vec![Block::Para { align: None, runs: vec![] }]); }
+                    if items.is_empty() { items.push(vec![Block::Para { align: None, indent: 0, runs: vec![] }]); }
                     items.last_mut().unwrap().push(sub);
                     i = next;
                 }
