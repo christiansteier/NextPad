@@ -20,8 +20,10 @@ const open = async () => {
   return p
 }
 const page = await open(); const errors = []; page.on('pageerror', e => errors.push(e.message.slice(0, 150)))
+// Erst tippen, wenn der Editor den Fokus hat: nach focus() und nach Klicks auf die Werkzeugleiste kommt er einen Tick später
+const imText = () => page.waitForFunction(() => document.activeElement?.classList.contains('ProseMirror'), null, { timeout: 5000 })
 const indents = () => page.evaluate(() => [...document.querySelectorAll('.ProseMirror > p')].map(p => p.getAttribute('data-indent') || '0').join(','))
-await page.evaluate(() => window.nextpad.editor.commands.focus('end'))
+await page.evaluate(() => window.nextpad.editor.commands.focus('end')); await imText(); await page.waitForTimeout(150)
 await page.keyboard.type('Erster Absatz'); await page.keyboard.press('Enter'); await page.keyboard.type('Zweiter Absatz')
 await page.keyboard.press('Tab')
 check('Tab rückt den Absatz ein', await indents() === '0,1', await indents())
@@ -34,11 +36,11 @@ await page.click('button[title^="Einrücken"]')
 check('Knopf Einrücken: Stufe 2', await indents() === '0,2', await indents())
 await page.click('button[title^="Ausrücken"]'); await page.click('button[title^="Ausrücken"]'); await page.click('button[title^="Ausrücken"]')
 check('Ausrücken geht nicht unter 0', await indents() === '0,0', await indents())
-await page.keyboard.press('Tab')
+await imText(); await page.keyboard.press('Tab')
 // markierte Absätze rücken gemeinsam ein
-await page.evaluate(() => window.nextpad.editor.commands.selectAll()); await page.keyboard.press('Tab')
+await page.evaluate(() => window.nextpad.editor.commands.selectAll()); await imText(); await page.keyboard.press('Tab')
 check('Markierung: alle Absätze eine Stufe weiter', await indents() === '1,2', await indents())
-await page.evaluate(() => window.nextpad.editor.commands.focus('end'))
+await page.evaluate(() => window.nextpad.editor.commands.focus('end')); await imText(); await page.waitForTimeout(150)
 await page.keyboard.press('Enter'); await page.keyboard.type('- Punkt eins'); await page.keyboard.press('Enter'); await page.keyboard.type('Punkt zwei')
 await page.keyboard.press('Tab')
 check('in der Liste verschachtelt Tab weiter', await page.evaluate(() => !!document.querySelector('.ProseMirror ul ul li')?.textContent.includes('Punkt zwei')))

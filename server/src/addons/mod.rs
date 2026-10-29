@@ -2,7 +2,7 @@
 //! der Kern kennt nur dieses Verzeichnis. Eingeschaltet wird je Instanz mit `NEXTPAD_ADDONS`.
 //! Die Tabellen aller Addons legt der Speicher immer an und räumt sie beim Löschen eines Pads mit weg,
 //! auch wenn ein Addon ausgeschaltet ist; ausgeschaltet heißt: keine Kachel, keine Routen, keine Hilfe, kein Moodle-Typ.
-use crate::{store::{Store, Zusatz}, AppState};
+use crate::{store::{Store, Zusatz}, texte::{self, Sprache}, AppState};
 use axum::{http::{HeaderMap, StatusCode}, response::Response, Router};
 use std::sync::Arc;
 
@@ -25,25 +25,31 @@ pub struct Seite<'a> {
     pub cfg: serde_json::Value,
 }
 
+/// Setzt beim ersten Start aus Moodle den Titel: (Speicher, Pad, Titel)
+pub type TitelSetzen = fn(&Store, &str, &str) -> anyhow::Result<()>;
+
 pub struct Addon {
     /// Kennung in `NEXTPAD_ADDONS`, in `/new?typ=` und als Moodle-Parameter `typ`
     pub kennung: &'static str,
     /// Wert in `pads.kind`
     pub art: &'static str,
+    /// Schlüssel im Textkatalog des Addons
     pub name: &'static str,
     pub daten: Option<&'static Zusatz>,
     pub routen: fn() -> Router<Arc<AppState>>,
     pub seite: fn(Seite) -> Response,
     /// Export im Format der Adresse (`md`, `txt`, …); das Addon antwortet auch, wenn es ein Format nicht kann
-    pub export: fn(&AppState, &str, &str) -> Response,
-    /// Kachel auf der Startseite, `{base}` wird ersetzt
+    pub export: fn(&AppState, &str, &str, Sprache) -> Response,
+    /// Kachel auf der Startseite (Schlüssel), `{base}` wird ersetzt
     pub kachel: &'static str,
-    /// Satz in der Mail vor dem Löschen: wie sich der Inhalt sichern lässt (Addons bekommen kein PDF)
+    /// Satz in der Mail vor dem Löschen (Schlüssel): wie sich der Inhalt sichern lässt (Addons bekommen kein PDF)
     pub sichern: &'static str,
-    /// Abschnitt der Hilfeseite (HTML)
+    /// Abschnitt der Hilfeseite (Schlüssel, HTML)
     pub hilfe: &'static str,
     /// Als Kursaktivität aus Moodle startbar; setzt beim ersten Start den Titel der Aktivität
-    pub moodle: Option<fn(&Store, &str, &str) -> anyhow::Result<()>>,
+    pub moodle: Option<TitelSetzen>,
+    /// Texte des Addons (deutsch, englisch); Schlüssel beginnen mit der Kennung
+    pub texte: (texte::Texte, texte::Texte),
 }
 
 /// Alle Addons in der Reihenfolge von Startseite und Hilfe.
@@ -76,8 +82,9 @@ pub fn von_pad(state: &AppState, pad_id: &str) -> Option<&'static Addon> { state
 pub fn routen(state: &AppState) -> Router<Arc<AppState>> { aktive(state).fold(Router::new(), |r, a| r.merge((a.routen)())) }
 
 /// Antwort für Pads eines ausgeschalteten Addons; die Daten bleiben.
-pub fn nicht_aktiv(a: &Addon) -> Response {
-    crate::web::error_page(StatusCode::NOT_FOUND, &format!("„{}“ ist auf diesem Server nicht eingeschaltet. Der Inhalt bleibt erhalten und ist wieder da, sobald die Verwaltung die Funktion einschaltet.", a.name))
+pub fn nicht_aktiv(a: &Addon, headers: &HeaderMap) -> Response {
+    let sp = Sprache::aus_anfrage(headers);
+    crate::web::error_page(sp, StatusCode::NOT_FOUND, &texte::tf(sp, "addon.nicht_aktiv", &[("name", texte::t(sp, a.name))]))
 }
 
 #[cfg(test)]
@@ -96,7 +103,8 @@ mod tests {
     fn kennung_und_art_sind_eindeutig() {
         for (i, a) in ALLE.iter().enumerate() {
             for b in &ALLE[i + 1..] { assert!(a.kennung != b.kennung && a.art != b.art); }
-            assert!(a.kachel.contains(&format!("/new?typ={}", a.kennung)), "Kachel von {} führt nicht zum eigenen Typ", a.kennung);
+            assert!([texte::Sprache::De, texte::Sprache::En].iter().all(|sp| texte::t(*sp, a.kachel).contains(&format!("/new?typ={}", a.kennung))), "Kachel von {} führt nicht zum eigenen Typ", a.kennung);
+            assert!([texte::Sprache::De, texte::Sprache::En].iter().all(|sp| texte::t(*sp, a.sichern).ends_with('.')), "Satz zum Sichern von {} fehlt", a.kennung);
         }
     }
 }

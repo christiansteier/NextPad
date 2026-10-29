@@ -13,8 +13,8 @@ authors:
     affiliation: "ZWEK – Centre for Training and Competence Development, Hochschule Düsseldorf – University of Applied Sciences"
     orcid: "https://orcid.org/0000-0001-7946-0461"
 license: EUPL-1.2
-version: "0.2.2"
-date-released: "2026-10-25"
+version: "0.17.0"
+date-released: "2026-10-29"
 keywords:
   - etherpad
   - moodle

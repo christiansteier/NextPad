@@ -1,7 +1,8 @@
-NextPad ist ein Pad-Server zum gemeinsamen Schreiben und Zeichnen. Er bildet die HTTP-Schnittstelle von Etherpad nach, sodass das Moodle-Plugin „Etherpad Lite“ (mod_etherpadlite) unverändert damit arbeitet.
+NextPad is a pad server for writing and drawing together. It reproduces Etherpad's HTTP interface, so the Moodle plugin "Etherpad Lite" (mod_etherpadlite) works with it unchanged.
 
-- Gemeinsames Schreiben in Echtzeit (Yjs), Autorenfarben, Zeitleiste
-- Zeichenbrett (Excalidraw) als zweiter Pad-Typ
-- Freie Pads von der Startseite mit Vorlagen, Besitz und Aufbewahrungsfrist
-- Anmeldung über Moodle per LTI 1.3, Profilbilder aus Moodle
-- Export als HTML, Markdown, Text und PDF (Typst)
+- Real-time collaborative writing (Yjs), author colours, timeline
+- Whiteboard (Excalidraw) as a second pad type
+- Free pads from the start page with templates, ownership and a retention period
+- Sign-in through Moodle with LTI 1.3, profile pictures from Moodle
+- Export as HTML, Markdown, text and PDF (Typst)
+- Interface in German and English, switchable by each person

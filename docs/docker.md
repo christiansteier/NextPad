@@ -1,10 +1,12 @@
-# NextPad als Container
+# NextPad as a container
 
-Alternative zur YunoHost-App (`packaging/nextpad_ynh`) für einen eigenen Server oder eine VM. Ein fertiges Image wird derzeit nicht veröffentlicht; gebaut wird es aus dem Wurzelverzeichnis des Repos mit `docker build -t nextpad .`.
+Deutsche Fassung: [docker.de.md](docker.de.md)
 
-Aufbau nach dem Muster der Images von linuxserver.io: Basis `ghcr.io/linuxserver/baseimage-alpine:3.23` mit s6-overlay, Dienst läuft als Nutzer `abc` mit einstellbarer Kennung (`PUID`/`PGID`), alles Veränderliche liegt unter `/config`. Das Programm ist statisch gegen musl gebaut und nutzt mimalloc als Speicherverwaltung.
+An alternative to the YunoHost app (`packaging/nextpad_ynh`) for your own server or a VM. No ready-made image is published at the moment; build it from the root of the repository with `docker build -t nextpad .`.
 
-## docker compose (empfohlen)
+Built after the pattern of the linuxserver.io images: base `ghcr.io/linuxserver/baseimage-alpine:3.23` with s6-overlay, the service runs as user `abc` with a configurable ID (`PUID`/`PGID`), everything that changes lives under `/config`. The program is statically linked against musl and uses mimalloc as its allocator.
+
+## docker compose (recommended)
 
 ```yaml
 services:
@@ -21,7 +23,7 @@ services:
       - NEXTPAD_API_ALLOWED=192.0.2.10
       - NEXTPAD_THEME=colibris
     volumes:
-      - /pfad/zu/nextpad/config:/config
+      - /path/to/nextpad/config:/config
     ports:
       - 127.0.0.1:5090:5090
     restart: unless-stopped
@@ -35,27 +37,29 @@ docker run -d \
   -e PUID=1000 -e PGID=1000 -e TZ=Europe/Berlin \
   -e NEXTPAD_PUBLIC_URL=https://pads.example.org \
   -p 127.0.0.1:5090:5090 \
-  -v /pfad/zu/nextpad/config:/config \
+  -v /path/to/nextpad/config:/config \
   --restart unless-stopped \
   nextpad
 ```
 
-## Parameter
+## Parameters
 
-| Parameter | Funktion |
+| Parameter | Function |
 |---|---|
-| `-p 5090` | HTTP und WebSocket; nur hinter einem Reverse-Proxy mit TLS betreiben |
-| `-e PUID=1000` | Benutzerkennung, der `/config/data` gehört |
-| `-e PGID=1000` | Gruppenkennung |
-| `-e TZ=Europe/Berlin` | Zeitzone |
-| `-e NEXTPAD_*` | alle Einstellungen aus `server/README.md`; Pfade sind im Image schon auf `/config` gesetzt |
-| `-v /config` | `data/` (SQLite), `secrets/` (`api-keys.txt`, `lti-platforms.json`, Plattformschlüssel), `theme/` (`logo.png`, `font.ttf`, `background.jpg`) |
+| `-p 5090` | HTTP and WebSocket; run only behind a reverse proxy with TLS |
+| `-e PUID=1000` | User ID that owns `/config/data` |
+| `-e PGID=1000` | Group ID |
+| `-e TZ=Europe/Berlin` | Time zone |
+| `-e NEXTPAD_*` | All settings from [`server/README.md`](../server/README.md); paths are already set to `/config` in the image |
+| `-v /config` | `data/` (SQLite), `secrets/` (`api-keys.txt`, `lti-platforms.json`, platform keys), `theme/` (`logo.png`, `font.ttf`, `background.jpg`) |
 
-Beim ersten Start legt der Container die Ordner an und erzeugt einen API-Schlüssel in `/config/secrets/api-keys.txt`, wenn keiner vorhanden ist (Hinweis im Log). Diesen Schlüssel in Moodle beim Plugin Etherpad Lite eintragen.
+On first start the container creates the folders and generates an API key in `/config/secrets/api-keys.txt` if there is none (notice in the log). Enter this key in Moodle in the Etherpad Lite plugin.
 
-## Grenzen wie bei einer kleinen VM
+The interface is in German and English; each person switches with "DE | EN" in the page header. Nothing needs to be configured for this.
 
-Empfohlen für den Betrieb neben anderen Diensten:
+## Limits as for a small VM
+
+Recommended when running next to other services:
 
 ```yaml
     cap_drop: [ALL]
@@ -69,9 +73,11 @@ Empfohlen für den Betrieb neben anderen Diensten:
       nofile: { soft: 65536, hard: 65536 }
 ```
 
-Die fünf Capabilities braucht s6-overlay beim Start (Nutzer anpassen, Rechte unter `/config` setzen, Rechte abgeben); der Dienst selbst läuft danach ohne Rechte als `abc`. Ein schreibgeschütztes Dateisystem unterstützt dieses Muster nicht ohne Weiteres.
+s6-overlay needs these five capabilities at start (adjust the user, set permissions under `/config`, drop privileges); after that the service itself runs without privileges as `abc`. A read-only file system is not easily supported by this pattern.
 
-## Aktualisieren
+## Update
+
+Back up `/config/data` first: a new version may add columns to the database when it starts.
 
 ```bash
 docker compose -f /opt/nextpad/compose.yaml pull
@@ -79,12 +85,12 @@ docker compose -f /opt/nextpad/compose.yaml up -d
 docker image prune -f
 ```
 
-## Wartung im Container
+## Maintenance in the container
 
-`with-contenv` gibt den Befehlen die Umgebung des Containers mit (Pfade, Einstellungen):
+`with-contenv` passes the container's environment (paths, settings) to the commands:
 
 ```bash
-docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad compact        # Update-Log zusammenführen
-docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad retention-run  # Aufbewahrung (Modus aus NEXTPAD_RETENTION)
+docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad compact        # merge the update log
+docker exec nextpad with-contenv s6-setuidgid abc /app/nextpad retention-run  # retention (mode from NEXTPAD_RETENTION)
 docker logs -f nextpad
 ```

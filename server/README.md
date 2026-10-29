@@ -1,138 +1,151 @@
-# NextPad-Server
+# NextPad server
 
-Rust (Axum, yrs). Bildet die Etherpad-API für mod_etherpadlite nach und betreibt dahinter Yjs-Dokumente mit WebSocket-Sync.
+Deutsche Fassung: [README.de.md](README.de.md)
 
-## Bauen und starten
+Rust (Axum, yrs). Reproduces the Etherpad API for mod_etherpadlite and runs Yjs documents with WebSocket sync behind it.
+
+## Build and run
 
     cd server
     CARGO_TARGET_DIR=~/.cache/cargo-target/nextpad cargo build --release
 
-Das Editor-Bundle liegt gebaut unter `static/` und wird zur Übersetzungszeit eingebettet (`include_str!`). Neu bauen: `bash ../web/build.sh`, danach `cargo build`.
+The editor bundle is prebuilt under `static/` and embedded at compile time (`include_str!`). To rebuild: `bash ../web/build.sh`, then `cargo build`.
 
-Konfiguration über Umgebungsvariablen:
+Configuration through environment variables:
 
-| Variable | Standard | Bedeutung |
+| Variable | Default | Meaning |
 |---|---|---|
-| `NEXTPAD_BIND` | `127.0.0.1:5090` | Adresse und Port |
-| `NEXTPAD_DATA` | `./data` | Datenverzeichnis (SQLite `nextpad.sqlite`) |
-| `NEXTPAD_API_KEYS_FILE` | `<data>/api-keys.txt` | ein Schlüssel je Zeile, mindestens 32 Zeichen, optional danach die Basis-URL der zugehörigen Moodle (`<schlüssel> https://moodle.example.org`): dann zeigt der Editor die Moodle-Profilbilder (`user/pix.php/<id>/f1.jpg`, vom Browser mit der Moodle-Sitzung geladen) und trennt gleiche Nutzer-IDs verschiedener Moodles; `#` leitet Kommentare ein |
-| `NEXTPAD_API_ALLOWED` | `127.0.0.1,::1` | erlaubte Quelladressen für `/api/*`, Adressen oder Netze (CIDR), kommagetrennt, `*` für alle |
-| `NEXTPAD_TRUST_PROXY` | `false` | `true`: Quelladresse aus `X-Real-IP` bzw. letztem `X-Forwarded-For`-Eintrag, aber nur von Adressen in `NEXTPAD_TRUSTED_PROXIES` |
-| `NEXTPAD_TRUSTED_PROXIES` | `127.0.0.1,::1` | Reverse-Proxys, deren Kopfzeilen gelten (CIDR erlaubt) |
-| `NEXTPAD_ALLOWED_ORIGINS` | leer | zusätzliche erlaubte Origins für WebSocket-Verbindungen; der eigene Host ist immer erlaubt |
-| `NEXTPAD_FRAME_ANCESTORS` | `'self'` | Wert für `Content-Security-Policy: frame-ancestors` |
-| `NEXTPAD_BASE_PATH` | leer | Pfadpräfix hinter dem Reverse-Proxy, z. B. `/np` (nur für Links in der Seite; der Proxy schneidet den Präfix ab) |
-| `NEXTPAD_API_VERSION` | `1.2.15` | Antwort von `GET /api` |
-| `NEXTPAD_ALLOW_FREE_PADS` | `false` | freie Pads: Startseite mit „Neues Pad“ und Pad per Name, Gäste schreiben ohne Moodle (Cookie-Identität), `createPad` über die API |
-| `NEXTPAD_ADDONS` | alle | eingeschaltete Addons, kommagetrennt aus `ideen`, `quiz`, `zeichenbrett`; leer = keins, unbekannte Kennung = Startfehler. Ausgeschaltet: keine Kachel, keine Routen, keine Hilfe, kein Moodle-Typ; bestehende Pads zeigen einen Hinweis, ihre Daten bleiben und gehen beim Löschen des Pads mit |
-| `NEXTPAD_FREE_PADS_PER_HOUR` | `20` | höchstens so viele neue freie Pads je Quelladresse und Stunde |
-| `NEXTPAD_AUTHOR_COOKIE` | `nextpad_author` | Name des Gast-Cookies |
-| `NEXTPAD_THEME` | `colibris` | Erscheinungsbild: `colibris` (wie Etherpad) oder `hsd` (Corporate Design der Hochschule Düsseldorf) |
-| `NEXTPAD_THEME_DIR` | leer | Vorgabe-Verzeichnis mit `logo.png`, `background.jpg` und `font.ttf` für das Design; Marke und Hausschrift liegen bewusst nicht im Repo |
-| `NEXTPAD_BACKGROUND_CREDIT` | leer | Bildnachweis für `background.jpg` im Design-Verzeichnis (Hintergrund der HSD-Startseite), z. B. `Foto: Jula2812, CC BY-SA 4.0, Wikimedia Commons`; bei Bildern unter CC-Lizenz Pflicht |
-| `NEXTPAD_BACKGROUND_CREDIT_URL` | leer | Link des Bildnachweises (Dateiseite auf Commons) |
-| `NEXTPAD_HISTORY_DAYS` | `30` | so lange zeigt die Zeitleiste jeden Einzelschritt; ältere Abschnitte nur als Tagesstände (`nextpad compact`) |
-| `NEXTPAD_SITE_NAME` | leer | Betreiberangabe im Fuß der Startseite (z. B. `ZWEK der Hochschule Düsseldorf`) |
-| `NEXTPAD_ADMINS` | leer | Mailadressen aus Moodle (mit Komma getrennt), die das Erscheinungsbild einstellen dürfen; die Moodle-Administration darf es immer |
-| `NEXTPAD_COOKIE_NAME` | `sessionID` | Name des Session-Cookies, das Moodle setzt |
-| `NEXTPAD_PUBLIC_URL` | leer | öffentliche Adresse mit Basis-Pfad, z. B. `https://host/np`; Pflicht für LTI (Rücksprungadresse) und für Links in Mails |
-| `NEXTPAD_LTI_FILE` | `<data>/lti-platforms.json` | Moodle-Instanzen für die Anmeldung per LTI 1.3, fehlt die Datei: keine Anmeldung |
-| `NEXTPAD_LOGIN_COOKIE` | `nextpad_login` | Name des Anmelde-Cookies (14 Tage) |
-| `NEXTPAD_FOOTER_LINKS` | leer | Links im Fuß der Startseite, `Beschriftung|https://…;Beschriftung|https://…` |
-| `NEXTPAD_RETENTION` | `off` | Aufbewahrung freier Pads: `off`, `dry-run` (nur protokollieren), `on` |
-| `NEXTPAD_RETENTION_DAYS` | `365` | Frist ohne Aktivität in Tagen (mindestens 30) |
-| `NEXTPAD_NOTICE_DAYS` | `14` | Ankündigung per Mail so viele Tage vorher |
-| `NEXTPAD_SMTP_URL` / `NEXTPAD_SMTP_URL_FILE` | leer | Mailausgang im lettre-Format, z. B. `smtp://127.0.0.1:25` oder `smtps://user:pass@host:465`; mit Zugangsdaten besser als Datei (systemd `LoadCredential`) |
-| `NEXTPAD_MAIL_FROM` | leer | Absender der Ankündigungen |
-| `RUST_LOG` | `info` | Log-Filter |
+| `NEXTPAD_BIND` | `127.0.0.1:5090` | Address and port |
+| `NEXTPAD_DATA` | `./data` | Data directory (SQLite `nextpad.sqlite`) |
+| `NEXTPAD_API_KEYS_FILE` | `<data>/api-keys.txt` | One key per line, at least 32 characters, optionally followed by the base URL of the matching Moodle (`<key> https://moodle.example.org`): the editor then shows Moodle profile pictures (`user/pix.php/<id>/f1.jpg`, loaded by the browser with its Moodle session) and keeps equal user IDs from different Moodles apart; `#` starts a comment |
+| `NEXTPAD_API_ALLOWED` | `127.0.0.1,::1` | Source addresses allowed for `/api/*`, addresses or networks (CIDR), comma-separated, `*` for all |
+| `NEXTPAD_TRUST_PROXY` | `false` | `true`: source address from `X-Real-IP` or the last `X-Forwarded-For` entry, but only from addresses in `NEXTPAD_TRUSTED_PROXIES` |
+| `NEXTPAD_TRUSTED_PROXIES` | `127.0.0.1,::1` | Reverse proxies whose headers count (CIDR allowed) |
+| `NEXTPAD_ALLOWED_ORIGINS` | empty | Additional allowed origins for WebSocket connections; the own host is always allowed |
+| `NEXTPAD_FRAME_ANCESTORS` | `'self'` | Value for `Content-Security-Policy: frame-ancestors` |
+| `NEXTPAD_BASE_PATH` | empty | Path prefix behind the reverse proxy, e.g. `/np` (only for links in the page; the proxy strips the prefix) |
+| `NEXTPAD_API_VERSION` | `1.2.15` | Response of `GET /api` |
+| `NEXTPAD_ALLOW_FREE_PADS` | `false` | Free pads: start page with "New pad" and pads by name, guests write without Moodle (cookie identity), `createPad` through the API |
+| `NEXTPAD_ADDONS` | all | Enabled add-ons, comma-separated from `ideen`, `quiz`, `zeichenbrett`; empty = none, unknown name = start error. Disabled: no tile, no routes, no help, no Moodle type; existing pads show a notice, their data stays and goes with the pad when it is deleted |
+| `NEXTPAD_FREE_PADS_PER_HOUR` | `20` | At most this many new free pads per source address and hour |
+| `NEXTPAD_AUTHOR_COOKIE` | `nextpad_author` | Name of the guest cookie |
+| `NEXTPAD_THEME` | `colibris` | Look: `colibris` (like Etherpad) or `hsd` (corporate design of Hochschule Düsseldorf) |
+| `NEXTPAD_THEME_DIR` | empty | Default directory with `logo.png`, `background.jpg` and `font.ttf` for the look; brand and house font are deliberately not in the repository |
+| `NEXTPAD_BACKGROUND_CREDIT` | empty | Image credit for `background.jpg` in the theme directory (background of the HSD start page), e.g. `Photo: Jula2812, CC BY-SA 4.0, Wikimedia Commons`; required for images under a CC licence |
+| `NEXTPAD_BACKGROUND_CREDIT_URL` | empty | Link of the image credit (file page on Commons) |
+| `NEXTPAD_HISTORY_DAYS` | `30` | For this long the timeline shows every single step; older parts only as daily versions (`nextpad compact`) |
+| `NEXTPAD_SITE_NAME` | empty | Operator shown in the footer of the start page (e.g. `ZWEK der Hochschule Düsseldorf`) |
+| `NEXTPAD_ADMINS` | empty | Email addresses from Moodle (comma-separated) allowed to change the appearance; Moodle administrators always are |
+| `NEXTPAD_COOKIE_NAME` | `sessionID` | Name of the session cookie set by Moodle |
+| `NEXTPAD_PUBLIC_URL` | empty | Public address including the base path, e.g. `https://host/np`; required for LTI (redirect address) and for links in emails |
+| `NEXTPAD_LTI_FILE` | `<data>/lti-platforms.json` | Moodle instances for sign-in through LTI 1.3; without the file: no sign-in |
+| `NEXTPAD_LOGIN_COOKIE` | `nextpad_login` | Name of the sign-in cookie (14 days) |
+| `NEXTPAD_FOOTER_LINKS` | empty | Links in the footer of the start page, `Label|https://…;Label|https://…` |
+| `NEXTPAD_RETENTION` | `off` | Retention of free pads: `off`, `dry-run` (log only), `on` |
+| `NEXTPAD_RETENTION_DAYS` | `365` | Period without activity in days (at least 30) |
+| `NEXTPAD_NOTICE_DAYS` | `14` | Email notice this many days before |
+| `NEXTPAD_SMTP_URL` / `NEXTPAD_SMTP_URL_FILE` | empty | Outgoing mail in lettre format, e.g. `smtp://127.0.0.1:25` or `smtps://user:pass@host:465`; with credentials better as a file (systemd `LoadCredential`) |
+| `NEXTPAD_MAIL_FROM` | empty | Sender of the notices |
+| `RUST_LOG` | `info` | Log filter |
 
-### LTI-Plattformdatei
+### LTI platform file
 
 ```json
 [{
   "name": "test-moodle",
-  "label": "Mit Moodle anmelden",
+  "label": "Sign in with Moodle",
   "issuer": "https://moodle.example.org",
-  "client_id": "<aus der Werkzeugkonfiguration>",
-  "deployment_ids": ["<id des Werkzeugs>"],
+  "client_id": "<from the tool configuration>",
+  "deployment_ids": ["<id of the tool>"],
   "auth_url": "https://moodle.example.org/mod/lti/auth.php",
   "jwks_url": "https://moodle.example.org/mod/lti/certs.php",
   "start_url": "https://moodle.example.org/mod/lti/launch.php?id=<cmid>"
 }]
 ```
 
-`jwks_file` statt `jwks_url`, wenn der Server die Moodle-Adresse nicht erreicht (etwa hinter einer SSO-Sperre). Dann nach einem Schlüsselwechsel in Moodle die Datei erneuern.
+Use `jwks_file` instead of `jwks_url` when the server cannot reach the Moodle address (for example behind an SSO barrier). Then renew the file after a key change in Moodle. `label` is the text of the sign-in button and is shown as written, in every language.
 
-In Moodle (Website-Administration › Plugins › Externes Tool › Tools verwalten), LTI 1.3:
+In Moodle (Site administration › Plugins › External tool › Manage tools), LTI 1.3:
 
-| Feld | Wert |
+| Field | Value |
 |---|---|
-| Tool-URL | `<public>/lti/launch` |
-| Login-URL | `<public>/lti/login` |
-| Weiterleitungs-URI | `<public>/lti/launch` |
-| Public-Key-Typ | Keyset-URL, `<public>/lti/jwks` (leer, NextPad signiert nichts) |
-| Name senden | immer |
-| E-Mail senden | immer (für die Mail vor dem Löschen) |
-| Standardstart | neues Fenster |
+| Tool URL | `<public>/lti/launch` |
+| Initiate login URL | `<public>/lti/login` |
+| Redirection URI(s) | `<public>/lti/launch` |
+| Public key type | Keyset URL, `<public>/lti/jwks` (empty, NextPad signs nothing) |
+| Share launcher's name with tool | Always |
+| Share launcher's email with tool | Always (for the email before deletion) |
+| Default launch container | New window |
 
-Danach eine Aktivität mit diesem Werkzeug auf der Moodle-Startseite anlegen. Ihre Adresse `mod/lti/launch.php?id=<cmid>` ist `start_url`.
+Then create an activity with this tool on the Moodle front page. Its address `mod/lti/launch.php?id=<cmid>` is `start_url`.
 
-### Pad, Ideensammlung oder Quiz als Kursaktivität
+### Pad, idea collection or quiz as a course activity
 
-Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unter „Mehr anzeigen“ › „Benutzerdefinierte Parameter“ eintragen, was entstehen soll:
+In the course, create an "External tool" activity with this tool and enter what should be created under "Show more" › "Custom parameters":
 
-- `typ=pad`: ein gemeinsames Text-Pad (wie ein Etherpad-Gruppenpad). Alternativ Tool-URL `<public>/lti/pad`.
-- `typ=ideen`: eine Ideensammlung (Details unten).
-- `typ=quiz`: ein Quiz-Raster; Lehrende leiten, der Name der Aktivität wird zum Titel.
+- `typ=pad`: a shared text pad (like an Etherpad group pad). Alternatively tool URL `<public>/lti/pad`.
+- `typ=ideen`: an idea collection (details below).
+- `typ=quiz`: a quiz grid; teachers lead, the name of the activity becomes the title.
 
-Bei jedem Start merkt sich NextPad die Adresse der Aktivität (`<moodle>/mod/lti/view.php?l=<resource_link.id>`, für den QR-Code) und die Kursseite (`<moodle>/course/view.php?id=<context.id>`, für „Zurück zum Kurs“). Beides nur, wenn Moodle Nummern schickt.
+At every launch NextPad remembers the address of the activity (`<moodle>/mod/lti/view.php?l=<resource_link.id>`, for the QR code) and the course page (`<moodle>/course/view.php?id=<context.id>`, for "Back to the course"). Both only if Moodle sends numbers.
 
-### Ideensammlung als Kursaktivität
+### Idea collection as a course activity
 
-Im Kurs eine Aktivität „Externes Tool“ mit diesem Werkzeug anlegen und unter „Mehr anzeigen“ › „Benutzerdefinierte Parameter“ `typ=ideen` eintragen. Der Name der Aktivität wird zur Frage der Sammlung. Alternativ zeigt ein eigener Werkzeugeintrag mit der Tool-URL `<public>/lti/ideen` direkt auf die Sammlung.
+In the course, create an "External tool" activity with this tool and enter `typ=ideen` under "Show more" › "Custom parameters". The name of the activity becomes the question of the collection. Alternatively, a separate tool entry with the tool URL `<public>/lti/ideen` points straight to the collection.
 
-Jede Aktivität bekommt eine eigene Gruppe mit einer Sammlung. Hinein kommt nur, wer die Aktivität aus Moodle startet: NextPad legt dabei eine Sitzung an wie bei Etherpad-Gruppenpads (Cookie `NEXTPAD_COOKIE_NAME`, mehrere Sitzungen durch Komma getrennt, `SameSite=None`, damit die Aktivität auch eingebettet läuft). Rollen Instructor, TeachingAssistant, ContentDeveloper und Administrator moderieren. Löschen lässt sich eine Kurs-Sammlung nicht aus NextPad heraus, sie folgt keiner Aufbewahrungsfrist.
+Each activity gets its own group with one collection. Only those who launch the activity from Moodle get in: NextPad then creates a session as with Etherpad group pads (cookie `NEXTPAD_COOKIE_NAME`, several sessions separated by commas, `SameSite=None` so the activity also works embedded). The roles Instructor, TeachingAssistant, ContentDeveloper and Administrator moderate. A course collection cannot be deleted from within NextPad and is not subject to retention.
 
-### Aufbewahrung prüfen
+### Check retention
 
 ```sh
 NEXTPAD_RETENTION=dry-run nextpad retention-run
 ```
 
-zeigt, welche Pads angekündigt oder gelöscht würden, ohne etwas zu tun.
+shows which pads would be announced or deleted, without doing anything.
 
-### Erscheinungsbild einstellen
+### Set the appearance
 
-Im Design `hsd` stellen Admins unter `/admin/erscheinungsbild` Name und Untertitel im Kopf, die Einrichtung (Name des Logos), das Logo, das Hintergrundbild der Startseite samt Bildnachweis und die Farben ein. Admin ist, wer sich über Moodle (LTI) anmeldet und dort zur Administration gehört (Rolle `institution/person#Administrator` oder `system/person#Administrator`) oder mit seiner Mailadresse in `NEXTPAD_ADMINS` steht. Angemeldete Admins sehen auf der Startseite den Knopf „Erscheinungsbild“.
+With the `hsd` look, admins set the name and subtitle in the header, the institution (name of the logo), the logo, the start page background with its credit and the colours under `/admin/erscheinungsbild`. An admin is whoever signs in through Moodle (LTI) and belongs to the administration there (role `institution/person#Administrator` or `system/person#Administrator`) or is listed with their email address in `NEXTPAD_ADMINS`. Signed-in admins see the "Appearance" button on the start page.
 
-- Farben: eine Akzentfarbe (Kopflinie, Fokusrahmen) und drei Hausfarben. Linien und Tönungen für hell und dunkel leitet NextPad ab (Linien auf mindestens 4,5:1 abgedunkelt, Tönungen als Anteil auf Weiß bzw. Dunkelgrau); wer will, legt sie selbst fest. Kontraste unter WCAG 2.2 meldet die Seite.
-- Logo: PNG, JPEG, WebP oder SVG bis 2 MB; SVG nur ohne Skripte und Ereignisattribute, ausgeliefert mit `sandbox`. Mit Logo der Einrichtung entfällt das NextPad-Zeichen im Kopf.
-- Hintergrundbild: JPEG, PNG oder WebP bis 6 MB.
-- Ohne Einstellung gilt die Vorgabe des Servers (`NEXTPAD_THEME_DIR`, `NEXTPAD_BACKGROUND_CREDIT`). „Alles auf die Vorgabe zurücksetzen“ stellt sie wieder her; hochgeladene Bilder bleiben liegen und sind wieder wählbar.
-- Gespeichert wird in der Datenbank (Tabelle `settings`), Bilder unter `<NEXTPAD_DATA>/erscheinungsbild/`.
+- Colours: one accent colour (header line, focus ring) and three house colours. NextPad derives lines and tints for light and dark (lines darkened to at least 4.5:1, tints as a share on white or dark grey); they can also be set by hand. The page reports contrasts below WCAG 2.2.
+- Logo: PNG, JPEG, WebP or SVG up to 2 MB; SVG only without scripts and event attributes, served with `sandbox`. With the institution's logo, the NextPad mark in the header is dropped.
+- Background image: JPEG, PNG or WebP up to 6 MB.
+- Without a setting, the server default applies (`NEXTPAD_THEME_DIR`, `NEXTPAD_BACKGROUND_CREDIT`). "Reset everything to the default" restores it; uploaded images stay and can be chosen again.
+- Stored in the database (table `settings`), images under `<NEXTPAD_DATA>/erscheinungsbild/`.
 
-## Endpunkte
+### Language
 
-`GET /api` (Version), `GET|POST /api/1.2*/<Funktion>` (siehe `docs/api-spezifikation.md`), `GET /p/<padID>` und `/p/<readOnlyID>` (Editor), `GET /ws/<id>` (Yjs-Sync), `GET /p/<id>/export/html|txt`, `GET /p/<id>/snapshots`, `GET /p/<id>/snapshots/<ts>`, `GET /status`, `GET /static/editor.js|css|print.js`; mit freien Pads zusätzlich `GET /` (Startseite), `GET /new`, `GET /open?padname=`, `POST /me` (eigener Name), `GET /hilfe`, `GET /new?vorlage=gruppenarbeit|protokoll`, `GET /new?typ=zeichenbrett|ideen`, `GET|POST /p/<id>/ideen`, `GET /p/<id>/ideen/live` (Server-Sent Events), `POST /p/<id>/ideen/frage`, `POST /p/<id>/ideen/<n>/stimme`, `POST /p/<id>/ideen/<n>/moderation`, `GET /p/<id>/leinwand`, `POST /p/<id>/extend` und `POST /p/<id>/delete` (nur Besitz), `GET|POST /verlaengern` (Link aus der Mail); mit LTI `GET|POST /lti/login`, `POST /lti/launch` (auch Start einer Kursaktivität), `GET /lti/jwks`, `POST /logout`, `GET|POST /admin/erscheinungsbild` und `POST /admin/erscheinungsbild/vorgabe` (nur Admins), `GET /theme/logo.png` und `/theme/background.jpg` (eingestelltes Bild in seinem Format).
+All pages, messages, help, exports and the email before deletion are available in German and English, including the appearance settings page; a subtitle left empty there uses the default in the page’s language, an entered one is shown as written. The text in pads is not translated. The email before deletion uses the language the owner last chose while signed in through Moodle (column `authors.sprache`, set through `/sprache/…`); without a choice it contains both languages in one email, German first, and the PDF is then German. The idea collection's CSV is separated by semicolons in German and by commas in English, as spreadsheet programs in each language expect; the table of contents in stored versions and in the Etherpad API stays German. The language of a request, in this order:
 
-## Aufbau
+1. Own choice: cookie `nextpad-lang`, set through the "DE | EN" switch (header of the pages, editor toolbar; page frames with `wahl: None` do not show it) or `GET /sprache/de` and `/sprache/en` (`?zurueck=<path>` returns to a path on this server, other targets lead to the start page);
+2. Language from Moodle: cookie `nextpad-lang-moodle`, refreshed from `launch_presentation.locale` at every LTI launch; an unsupported language deletes it;
+3. Browser language (`Accept-Language`, by weight);
+4. German.
 
-`config.rs` Konfiguration · `ids.rs` Kennungen · `store.rs` SQLite (Gruppen, Pads, Autoren, Sessions, Update-Log, Snapshots) · `docs.rs` geladene Dokumente, Broadcast, Persistenz, Snapshots · `sync.rs` WebSocket mit `yrs::sync` · `api.rs` Etherpad-API · `render.rs` Yjs ↔ HTML/Text · `web.rs` Editorseite, Zugriffsprüfung, Export, Status · `look.rs` Erscheinungsbild und Verwaltungsseite · `live.rs` Live-Kanal (Server-Sent Events) für Addons · `qr.rs` QR-Codes.
+Both cookies contain only the language code, last a year and are `HttpOnly; Secure; SameSite=None` (otherwise the choice would not apply in the activity embedded in Moodle). Texts are stored by key in `src/texte/de.rs` and `en.rs`, add-ons carry their own (`Addon::texte`); a unit test checks that both languages have the same keys and placeholders. Keys ending in `_html` contain markup and are not escaped. The help page is `src/texte/hilfe.de.html` and `hilfe.en.html`. Scripts in the browser get their texts from the page: `texte::fuer_skript(sp, "startjs.")` produces JSON for a `<script type="application/json">` block (this is how `start.js` reads the block `#start-texte`). The editor gets `texte` and `lang` in the configuration block `#nextpad-config` (`texte::texte_mit(sp, "editor.")`); `web/src/texte.js` provides `tx()` and the date format for all editor modules.
 
-Addons liegen je in `addons/<kennung>/` und beschreiben sich mit einer `Addon`-Konstante (`addons/mod.rs`): Pad-Art, Tabellen (`daten.rs`, als `Zusatz` an `Store::open`), Routen, Seite, Export, Kachel, Hilfe, Moodle-Typ. Der Kern fragt keinen Pad-Typ einzeln ab. `addons/ideen` Ideensammlung · `addons/quiz` Quiz-Raster mit Buzzer und Buzzer-Messung (`messung.rs`) · `addons/zeichenbrett` Excalidraw-Seite (das Bündel baut `web/build.sh` nach `static/board`). Skripte und Stile der Addons liegen in `addons/<kennung>/static/`, ausgeliefert weiter unter `/static/…`.
+## Endpoints
 
-## Fallen (gefunden im Proof of Concept)
+`GET /api` (version), `GET|POST /api/1.2*/<function>` (see `docs/api-spezifikation.md`), `GET /p/<padID>` and `/p/<readOnlyID>` (editor), `GET /ws/<id>` (Yjs sync), `GET /p/<id>/export/html|txt|md|pdf|print`, `GET /p/<id>/snapshots`, `GET /p/<id>/snapshots/<ts>`, `GET /status`, `GET /static/editor.js|css|print.js`, `GET /sprache/de|en`; with free pads also `GET /` (start page), `GET /new`, `GET /open?padname=`, `POST /me` (own name), `GET /hilfe`, `GET /new?vorlage=gruppenarbeit|protokoll`, `GET /new?typ=zeichenbrett|ideen|quiz`, `GET|POST /p/<id>/ideen`, `GET /p/<id>/ideen/live` (server-sent events), `POST /p/<id>/ideen/frage`, `POST /p/<id>/ideen/<n>/stimme`, `POST /p/<id>/ideen/<n>/moderation`, `GET /p/<id>/leinwand`, `POST /p/<id>/extend` and `POST /p/<id>/delete` (owner only), `GET|POST /verlaengern` (link from the email); with LTI `GET|POST /lti/login`, `POST /lti/launch` (also launches a course activity), `GET /lti/jwks`, `POST /logout`, `GET|POST /admin/erscheinungsbild` and `POST /admin/erscheinungsbild/vorgabe` (admins only), `GET /theme/logo.png` and `/theme/background.jpg` (configured image in its own format).
 
-- yrs rechnet Textpositionen standardmäßig in Bytes; der Browser (Yjs) in UTF-16. Ohne `OffsetKind::Utf16` bricht alles nach dem ersten Umlaut (`docs.rs`).
-- `Text::insert` ohne Attribute erbt die Formatierung des Vorgängers; deshalb immer `insert_with_attributes`, auch mit leerer Attributmenge (`render.rs`).
-- Multipart-Boundary ist groß-/kleinschreibungssensitiv; `Content-Type` nicht vor dem Auslesen in Kleinbuchstaben wandeln (`api.rs`).
+## Structure
 
-## Sicherheitsgrenzen (Review 24.10.2026)
+`config.rs` configuration · `ids.rs` identifiers · `store.rs` SQLite (groups, pads, authors, sessions, update log, snapshots) · `docs.rs` loaded documents, broadcast, persistence, snapshots · `sync.rs` WebSocket with `yrs::sync` · `api.rs` Etherpad API · `render.rs` Yjs ↔ HTML/text · `web.rs` editor page, access checks, export, status · `look.rs` appearance and its settings page · `live.rs` live channel (server-sent events) for add-ons · `qr.rs` QR codes · `texte/` texts in German and English.
 
-- WebSocket: höchstens 1 MiB je Nachricht, 2 MiB Updates je Verbindung und Minute, Origin-Prüfung, Ping alle 30 s, Trennung nach 90 s Stille, Trennung bei Rückstand (Client synchronisiert neu).
-- API-Körper höchstens 16 MiB (setHTML bei Kurs-Wiederherstellung).
-- Lesemodus: Seite nennt nur die r.-Kennung, der WebSocket verwirft Updates.
-- Gäste: Cookie enthält ein geheimes Token, nicht die öffentliche Autorenkennung; Namensänderung nur für Gäste.
-- Exporte und Stände mit eigener CSP (`default-src 'none'`) und `nosniff`; Farbe, Schriftgröße und Ausrichtung nur aus Positivlisten.
-- Gelöschte Pads schreiben weder Updates noch Snapshots (Prüfung in der Datenbank), Löschen in einer Transaktion.
-- Rendern mit Tiefengrenze (48) gegen Stack-Overflow durch verschachtelte Dokumente.
+Add-ons live in `addons/<name>/` and describe themselves with an `Addon` constant (`addons/mod.rs`): pad kind, tables (`daten.rs`, passed as `Zusatz` to `Store::open`), routes, page, export, tile, help, Moodle type, texts. The core never asks for a single pad type. `addons/ideen` idea collection · `addons/quiz` quiz grid with buzzer and buzzer measurement (`messung.rs`) · `addons/zeichenbrett` Excalidraw page (the bundle is built by `web/build.sh` into `static/board`). Scripts and styles of the add-ons live in `addons/<name>/static/` and are still served under `/static/…`.
+
+## Pitfalls (found in the proof of concept)
+
+- By default yrs counts text positions in bytes, the browser (Yjs) in UTF-16. Without `OffsetKind::Utf16` everything breaks after the first umlaut (`docs.rs`).
+- `Text::insert` without attributes inherits the formatting of the preceding text; therefore always use `insert_with_attributes`, even with an empty attribute set (`render.rs`).
+- The multipart boundary is case-sensitive; do not lowercase `Content-Type` before reading it (`api.rs`).
+
+## Security limits (review 2026-10-24)
+
+- WebSocket: at most 1 MiB per message, 2 MiB of updates per connection and minute, origin check, ping every 30 s, disconnect after 90 s of silence, disconnect when falling behind (the client syncs again).
+- API bodies at most 16 MiB (setHTML when restoring a course).
+- Read-only mode: the page names only the r. identifier, the WebSocket discards updates.
+- Guests: the cookie holds a secret token, not the public author ID; only guests can change their name.
+- Exports and versions with their own CSP (`default-src 'none'`) and `nosniff`; colour, font size and alignment only from allow-lists.
+- Deleted pads write neither updates nor snapshots (checked in the database), deletion in one transaction.
+- Rendering with a depth limit (48) against stack overflow from nested documents.

@@ -80,6 +80,16 @@ check('Anmeldung erfolgreich 303', ok.status === 303 && !!loginCookie, `Status $
 const replay = await launch(l, tok)
 check('state nicht wiederverwendbar 400', replay.status === 400)
 
+// Sprache aus Moodle (launch_presentation.locale)
+const LP = 'https://purl.imsglobal.org/spec/lti/claim/launch_presentation'
+const sprachCookie = r => r.headers.getSetCookie().find(c => c.startsWith('nextpad-lang-moodle='))
+check('ohne locale kein Sprach-Cookie', !sprachCookie(ok))
+for (const [locale, want] of [['en_GB', 'nextpad-lang-moodle=en;'], ['de', 'nextpad-lang-moodle=de;'], ['fr', 'nextpad-lang-moodle=;']]) {
+  const li = await login(); const r = await launch(li, jwt(claims(li.nonce, { [LP]: { locale } })))
+  const c = sprachCookie(r) || ''
+  check(`locale ${locale}: Sprach-Cookie ${want}`, r.status === 303 && c.startsWith(want) && /SameSite=None/.test(c) && (want.endsWith('=;') ? /Max-Age=0/.test(c) : true), c)
+}
+
 // Startseite angemeldet
 const start = await (await fetch(`${base}/`, { headers: { cookie: loginCookie } })).text()
 check('Startseite zeigt Namen', start.includes('Erika Muster') && start.includes('Abmelden'))
@@ -97,6 +107,13 @@ check('Pad: angemeldet, Besitzer, Name, Bild', cfg.login === true && cfg.owner =
 check('Pad: Frist bekannt', typeof cfg.expires === 'number' && cfg.expires > Date.now() + 300 * 86400000)
 const html = await (await fetch(`${base}/p/${encodeURIComponent(padId)}/export/html`, { headers: { cookie: loginCookie } })).text()
 check('Vorlage Protokoll übernommen', html.includes('Protokoll') && html.includes('Tagesordnung'))
+
+// Sprachwahl bei Anmeldung über Moodle: für die Mail vor dem Löschen gemerkt
+const { DatabaseSync } = await import('node:sqlite')
+const spracheDb = () => { const db = new DatabaseSync(path.join(dir, 'nextpad.sqlite'), { readOnly: true }); try { return db.prepare('SELECT a.sprache AS s FROM pads p JOIN authors a ON a.id=p.owner_id WHERE p.id=?').get(padId)?.s ?? null } finally { db.close() } }
+check('ohne Wahl keine Sprache gemerkt', spracheDb() === null, String(spracheDb()))
+const wahl = await fetch(`${base}/sprache/en?zurueck=${encodeURIComponent('/')}`, { redirect: 'manual', headers: { cookie: loginCookie } })
+check('Wahl bei Anmeldung gemerkt', wahl.status === 303 && spracheDb() === 'en', `${wahl.status} ${spracheDb()}`)
 
 // Besitzer-Aktionen
 const origin = new URL(base).origin

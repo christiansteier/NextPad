@@ -11,6 +11,7 @@
 //!   Inhalt als PDF und einem Link zum Verlängern um ein Jahr. Gelöscht wird frühestens zwei
 //!   Wochen nach der Mail. Kann die Mail nicht zugestellt werden, wird nicht gelöscht.
 //! - Modus `off` (Standard), `dry-run` (nur protokollieren) oder `on`.
+use crate::texte::{t, tf, Sprache};
 use crate::{ids, store::RetentionRow, AppState};
 use std::sync::Arc;
 
@@ -92,16 +93,18 @@ async fn notify(state: &Arc<AppState>, r: &RetentionRow, delete_after: i64) -> a
     let title = html_escape::decode_html_entities(&title).to_string();
     // Addons haben keinen Text für ein PDF; die Mail nennt nur ihren Namen
     let addon = crate::addons::von_pad(state, &r.id);
-    let title = addon.map_or(title, |a| a.name.to_string());
-    let pdf = if addon.is_some() { Vec::new() } else { crate::web::pad_pdf(state, &r.id, &r.id).await? };
+    let sprache = r.owner_sprache.as_deref().and_then(Sprache::aus_kuerzel);
+    // PDF in der gewählten Sprache; ohne Wahl deutsch, wie der erste Teil der Mail
+    let pdf = if addon.is_some() { Vec::new() } else { crate::web::pad_pdf(state, &r.id, &r.id, sprache.unwrap_or(Sprache::De)).await? };
     let token = format!("{}{}{}", ids::random16(), ids::random16(), ids::random16());
-    let pad_link = format!("{public}/p/{}", crate::web::urlencoding(&r.id));
-    let extend_link = format!("{public}/verlaengern?t={token}");
-    let date = crate::pdf::date_de(delete_after);
-    let name = r.owner_name.clone().filter(|n| !n.trim().is_empty() && n != "Gast");
-    let greeting = name.map(|n| format!("Guten Tag {n},")).unwrap_or_else(|| "Guten Tag,".into());
-    let text = format!("{greeting}\n\ndas Pad „{title}“ wurde seit einem Jahr weder bearbeitet noch geöffnet. Es wird am {date} gelöscht.\n\n{pad_link}\n\n{anhang}\n\nSoll das Pad ein weiteres Jahr bleiben, genügt dieser Link:\n{extend_link}\n\nAuch wer das Pad bis dahin öffnet oder bearbeitet, verlängert es. Ohne Verlängerung ist das Pad nach dem {date} nicht mehr erreichbar.\n\nDiese Mail kommt automatisch von NextPad ({site}). Sie geht an die Person, die das Pad angelegt hat.\n", site = cfg.site_name, anhang = addon.map_or("Im Anhang steht der aktuelle Inhalt als PDF.", |a| a.sichern));
-    let subject = format!("NextPad: Pad „{title}“ wird am {date} gelöscht");
+    let m = Mail {
+        titel: &title, addon,
+        name: r.owner_name.as_deref().filter(|n| !n.trim().is_empty() && *n != "Gast"),
+        pad_link: &format!("{public}/p/{}", crate::web::urlencoding(&r.id)),
+        extend_link: &format!("{public}/verlaengern?t={token}"),
+        delete_after, site: &cfg.site_name,
+    };
+    let (subject, text) = m.inhalt(sprache);
     let from = cfg.mail_from.clone().ok_or_else(|| anyhow::anyhow!("NEXTPAD_MAIL_FROM fehlt"))?;
     let url = cfg.smtp_url.clone().ok_or_else(|| anyhow::anyhow!("SMTP fehlt"))?;
     let filename = format!("pad-{}.pdf", r.id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>());
@@ -123,6 +126,39 @@ async fn notify(state: &Arc<AppState>, r: &RetentionRow, delete_after: i64) -> a
     Ok(())
 }
 
+/// Inhalt der Mail vor dem Löschen, je Sprache zusammengesetzt.
+struct Mail<'a> {
+    titel: &'a str,
+    addon: Option<&'static crate::addons::Addon>,
+    name: Option<&'a str>,
+    pad_link: &'a str,
+    extend_link: &'a str,
+    delete_after: i64,
+    site: &'a str,
+}
+
+impl Mail<'_> {
+    /// Betreff und Text in einer Sprache.
+    fn in_sprache(&self, sp: Sprache) -> (String, String) {
+        // Addons nennen ihren Namen statt eines Titels aus dem Inhalt
+        let titel = self.addon.map_or(self.titel, |a| t(sp, a.name));
+        let datum = crate::pdf::datum(sp, self.delete_after);
+        let anrede = match self.name { Some(n) => tf(sp, "mail.anrede_name", &[("name", n)]), None => t(sp, "mail.anrede").to_string() };
+        let anhang = t(sp, self.addon.map_or("mail.pdf", |a| a.sichern));
+        // Werte der Person zuletzt, damit Klammern in Titel oder Namen nicht ersetzt werden
+        let text = tf(sp, "mail.text", &[("pad_link", self.pad_link), ("anhang", anhang), ("extend_link", self.extend_link), ("site", self.site), ("datum", &datum), ("anrede", &anrede), ("titel", titel)]);
+        (tf(sp, "mail.betreff", &[("datum", &datum), ("titel", titel)]), text)
+    }
+
+    /// In der gewählten Sprache; ohne Wahl beide in einer Mail, Deutsch zuerst.
+    fn inhalt(&self, sprache: Option<Sprache>) -> (String, String) {
+        if let Some(sp) = sprache { return self.in_sprache(sp); }
+        let (betreff, de) = self.in_sprache(Sprache::De);
+        let (subject, en) = self.in_sprache(Sprache::En);
+        (format!("{betreff} / {}", subject.trim_start_matches("NextPad: ")), format!("{}\n\n{de}\n-----\n\n{en}", t(Sprache::De, "mail.englisch_unten")))
+    }
+}
+
 /// Verlängern um die Frist: ab dem späteren Zeitpunkt von jetzt und bisherigem Ablauf,
 /// höchstens zwei Fristen in die Zukunft.
 pub fn extend(state: &AppState, pad_id: &str) -> anyhow::Result<i64> {
@@ -139,7 +175,7 @@ mod tests {
     use super::*;
     const D: i64 = 86_400_000;
     fn row(email: Option<&str>) -> RetentionRow {
-        RetentionRow { id: "x".into(), created: 0, last_edited: 0, last_seen: None, keep_until: None, notice_sent: None, delete_after: None, owner_id: Some("a.1".into()), email: email.map(str::to_string), owner_name: None }
+        RetentionRow { id: "x".into(), created: 0, last_edited: 0, last_seen: None, keep_until: None, notice_sent: None, delete_after: None, owner_id: Some("a.1".into()), email: email.map(str::to_string), owner_name: None, owner_sprache: None }
     }
     #[test]
     fn gast_nach_einem_jahr() {
@@ -165,6 +201,25 @@ mod tests {
     fn ohne_mailversand_nie_loeschen() {
         let r = row(Some("a@b.de"));
         assert_eq!(decide(&r, 900 * D, 365 * D, 14 * D, false), Action::Keep);
+    }
+    fn mail(addon: Option<&'static crate::addons::Addon>) -> Mail<'static> {
+        Mail { titel: "Plan {datum}", addon, name: Some("Kim"), pad_link: "https://x/p/a", extend_link: "https://x/verlaengern?t=1", delete_after: 1_792_800_000_000, site: "HSD" }
+    }
+    #[test]
+    fn mail_in_einer_sprache() {
+        let (b, t) = mail(None).inhalt(Some(Sprache::En));
+        assert_eq!(b, "NextPad: pad “Plan {datum}” will be deleted on 24 October 2026");
+        assert!(t.starts_with("Hello Kim,\n\nthe pad “Plan {datum}”") && t.contains("attached as a PDF") && t.contains("https://x/verlaengern?t=1") && !t.contains("Guten Tag"), "{t}");
+        let (b, t) = mail(Some(&crate::addons::quiz::ADDON)).inhalt(Some(Sprache::De));
+        assert_eq!(b, "NextPad: Pad „Quiz-Raster“ wird am 24.10.2026 gelöscht");
+        assert!(t.contains("im Quiz als Markdown oder Text sichern") && !t.contains("PDF"), "{t}");
+    }
+    #[test]
+    fn mail_ohne_wahl_in_beiden_sprachen() {
+        let (b, t) = mail(None).inhalt(None);
+        assert_eq!(b, "NextPad: Pad „Plan {datum}“ wird am 24.10.2026 gelöscht / pad “Plan {datum}” will be deleted on 24 October 2026");
+        let (de, en) = (t.find("Guten Tag Kim,").unwrap(), t.find("Hello Kim,").unwrap());
+        assert!(t.starts_with("English version below.") && de < en, "{t}");
     }
     #[test]
     fn verlaengert() {

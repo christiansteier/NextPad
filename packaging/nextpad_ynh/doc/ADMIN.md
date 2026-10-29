@@ -1,34 +1,36 @@
-## Dateien
+## Files
 
-| Ort | Inhalt |
+| Location | Content |
 |---|---|
-| `__DATA_DIR__/data/` | Datenbank (SQLite mit WAL) |
-| `__DATA_DIR__/secrets/api-keys.txt` | API-Schlüssel für Moodle; Zeile: `<schlüssel> [https://moodle-adresse]` (mit Adresse zeigt NextPad Profilbilder aus diesem Moodle) |
-| `__DATA_DIR__/secrets/lti-platforms.json` | optional: Moodle-Instanzen für die Anmeldung per LTI 1.3 (Format in `server/README.md` des Projekts) |
-| `__DATA_DIR__/theme/` | optional: `logo.png`, `font.ttf`, `background.jpg` für das HSD-Design (nicht im Paket, freigabepflichtig) |
-| `__INSTALL_DIR__/nextpad.env` | erzeugte Einstellungen; ändern über das Konfigurationsfenster |
+| `__DATA_DIR__/data/` | Database (SQLite with WAL) |
+| `__DATA_DIR__/secrets/api-keys.txt` | API keys for Moodle; line: `<key> [https://moodle-address]` (with an address, NextPad shows profile pictures from that Moodle) |
+| `__DATA_DIR__/secrets/lti-platforms.json` | Optional: Moodle instances for sign-in through LTI 1.3 (format in the project's `server/README.md`) |
+| `__DATA_DIR__/theme/` | Optional: `logo.png`, `font.ttf`, `background.jpg` for the HSD look (not in the package, requires permission) |
+| `__INSTALL_DIR__/nextpad.env` | Generated settings; change them through the configuration panel |
 
-Nach Änderungen an Dateien in `secrets/` oder `theme/`: `systemctl restart __APP__`.
+After changing files in `secrets/` or `theme/`: `systemctl restart __APP__`.
 
-## Moodle einrichten
+## Set up Moodle
 
-Plugin Etherpad Lite (Website-Administration › Plugins › Aktivitäten › Etherpad Lite):
+Etherpad Lite plugin (Site administration › Plugins › Activity modules › Etherpad Lite):
 
-- Server-URL: `https://__DOMAIN____PATH__/` (mit Schrägstrich am Ende)
-- API-Schlüssel: erste Zeile aus `secrets/api-keys.txt`
-- Die Quelladresse des Moodle-Servers im Konfigurationsfenster unter „Quelladressen“ eintragen.
-- Moodle-Adresse unter „Seiten, die NextPad einbetten dürfen“ ergänzen.
+- Server URL: `https://__DOMAIN____PATH__/` (with a trailing slash)
+- API key: first line of `secrets/api-keys.txt`
+- Enter the source address of the Moodle server in the configuration panel under "Source addresses".
+- Add the Moodle address under "Pages allowed to embed NextPad".
 
-## Wartung
+## Maintenance
 
 ```bash
-sudo yunohost app shell __APP__        # Umgebung der App
+sudo yunohost app shell __APP__        # the app's environment
 systemctl status __APP__ ; journalctl -u __APP__ -f
 ```
 
-Zusammenführen des Update-Logs und Probelauf der Aufbewahrung von Hand (mit den Einstellungen des Dienstes):
+Merging the update log and a dry run of retention by hand (with the service's settings):
 
 ```bash
 sudo -u __APP__ bash -c 'set -a; . __INSTALL_DIR__/nextpad.env; __INSTALL_DIR__/nextpad compact'
 sudo -u __APP__ bash -c 'set -a; . __INSTALL_DIR__/nextpad.env; NEXTPAD_RETENTION=dry-run __INSTALL_DIR__/nextpad retention-run'
 ```
+
+The interface is in German and English; each person switches with "DE | EN". The email before deletion uses the language the owner last chose, otherwise both.

@@ -7,7 +7,7 @@ name = "NextPad"
 description.en = "Collaborative pads with timeline, whiteboard and Moodle login; Etherpad API compatible"
 description.de = "Gemeinsam schreiben und zeichnen mit Zeitleiste und Moodle-Anmeldung; Etherpad-kompatibel"
 
-version = "0.15.0~ynh1"
+version = "0.16.0~ynh1"
 
 maintainers = ["ZWEK der Hochschule Düsseldorf"]
 
@@ -44,6 +44,7 @@ ram.runtime = "100M"
     ask.de = "Erscheinungsbild"
     ask.en = "Theme"
     help.de = "„hsd“ braucht Logo und Hausschrift in /home/yunohost.app/nextpad/theme (nicht im Paket)."
+    help.en = "'hsd' needs the logo and house font in /home/yunohost.app/nextpad/theme (not in the package)."
     type = "select"
     choices = ["colibris", "hsd"]
     default = "colibris"
@@ -68,14 +69,14 @@ ram.runtime = "100M"
 
     [install.addon_zeichenbrett]
     ask.de = "Addon Zeichenbrett einschalten?"
-    ask.en = "Enable the drawing board add-on?"
+    ask.en = "Enable the whiteboard add-on?"
     type = "boolean"
     default = true
 
 [resources]
     [resources.sources.main]
-    url = "https://github.com/christiansteier/nextpad/releases/download/v0.15.0/nextpad-0.15.0-amd64"
-    sha256 = "2e7af80fcacb6e8fb10a9eda2831b3e485d13ea0b7167b6b9755ce391387e699"
+    url = "https://github.com/christiansteier/nextpad/releases/download/v0.16.0/nextpad-0.16.0-amd64"
+    sha256 = "a251ebb6b8fa6ca148383b85b7d62603470d99bbc6755894566a9b31a0c37c93"
     extract = false
     rename = "nextpad"
 

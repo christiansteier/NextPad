@@ -1,14 +1,16 @@
-# NextPad für YunoHost
+# NextPad for YunoHost
 
-YunoHost-Paket für NextPad. Installation aus diesem Ordner:
+Deutsche Fassung: [README.de.md](README.de.md)
+
+YunoHost package for NextPad. Install from this folder:
 
 ```bash
 sudo yunohost app install ./nextpad_ynh --args "domain=pads.example.org&path=/np&init_main_permission=visitors&theme=colibris&allow_free_pads=1&addon_ideen=1&addon_quiz=1&addon_zeichenbrett=1"
 ```
 
-Die Installation lädt das Programm aus den GitHub-Releases (https://github.com/christiansteier/nextpad/releases),
-Datei `nextpad-<version>-amd64`; Version, Adresse und Prüfsumme stehen im `manifest.toml`.
+The installation downloads the program from the GitHub releases (https://github.com/christiansteier/nextpad/releases),
+file `nextpad-<version>-amd64`; version, address and checksum are in `manifest.toml`.
 
-Neues Release: Binary für Debian 12 bauen (`cargo build --release` in einem
-`rust:1-bookworm`-Container), als Release-Datei hochladen, `version`, `url` und `sha256`
-im Manifest anpassen, dann `yunohost app upgrade nextpad -f ./nextpad_ynh`.
+New release: build the binary for Debian 12 (`cargo build --release` in a
+`rust:1-bookworm` container), upload it as a release file, adjust `version`, `url` and `sha256`
+in the manifest, then `yunohost app upgrade nextpad -f ./nextpad_ynh`.

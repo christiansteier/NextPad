@@ -186,3 +186,18 @@ html[data-theme="dark"] .rating .rate.up.on { background: #1f3a26; color: #a8e0b
 html[data-theme="dark"] .rating .rate.down.on { background: #46202a; color: #ffb3bf; }
 html[data-theme="dark"] #editor .ProseMirror nav.toc { background: #262626; }
 @media print { #tocbar { display: none; } }
+
+/* Sprachumschalter in der Werkzeugleiste */
+.sprachwahl { display: inline-flex; align-items: center; }
+.sprachwahl .ib { font-size: 13px; font-weight: 700; }
+
+/* Einladen im Menü „Teilen und exportieren“; Ziele im Menü mindestens 44 px hoch */
+.popup a { min-height: 44px; box-sizing: border-box; }
+.popup .einladen { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.popup .einladen .hinweis { margin: 0; font-size: 12px; color: var(--dark); }
+.popup .einladen button { display: flex; align-items: center; gap: 8px; min-height: 44px; font: inherit; padding: 6px 10px; border: 1px solid var(--middle); background: var(--super-light); color: var(--super-dark); cursor: pointer; border-radius: 3px; text-align: left; }
+.popup .einladen button:hover { background: var(--light); }
+.popup .einladen .status { margin: 0; font-size: 12px; color: var(--dark); min-height: 1em; }
+.popup .einladen .status:empty { display: none; }
+.popup .einladen input.link { font: inherit; font-size: 12px; padding: 8px; min-height: 44px; box-sizing: border-box; border: 1px solid var(--middle); border-radius: 3px; width: 100%; }
+.theme-hsd .popup .einladen button, .theme-hsd .popup .einladen input.link { border-radius: 0; }

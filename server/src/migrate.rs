@@ -144,7 +144,7 @@ fn apply_changeset(doc: &mut Vec<Ch>, cs: &str, pool: &Pool) -> Result<()> {
     let body = cs.strip_prefix("Z:").ok_or_else(|| anyhow!("kein Z:-Changeset"))?;
     let dollar = body.find('$').ok_or_else(|| anyhow!("kein $ im Changeset"))?;
     let (head, bank) = (&body[..dollar], &body[dollar + 1..]);
-    let ops_start = head.find(|c: char| matches!(c, '+' | '-' | '=' | '*' | '|')).unwrap_or(head.len());
+    let ops_start = head.find(['+', '-', '=', '*', '|']).unwrap_or(head.len());
     // Kopf: <oldlen>(<|>)<delta>; wir prüfen nur locker
     let ops = parse_ops(&head[ops_start..]);
     let bank: Vec<u16> = bank.encode_utf16().collect();
@@ -500,5 +500,5 @@ fn parse_iso_ms(s: &str) -> Option<i64> {
     let doy = (153 * (m2 - 3) + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146097 + doe - 719468;
-    Some(((days * 86400 + h * 3600 + mi * 60 + sec) * 1000) as i64)
+    Some((days * 86400 + h * 3600 + mi * 60 + sec) * 1000)
 }

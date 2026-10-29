@@ -4,7 +4,7 @@ import { chromium } from 'playwright'
 const base = process.argv[2] || 'http://127.0.0.1:5093'
 let pass = 0, fail = 0
 const check = (n, ok, x = '') => { ok ? pass++ : fail++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${n}${ok ? '' : ' ' + x}`) }
-const b = await chromium.launch(); const p = await (await b.newContext()).newPage()
+const b = await chromium.launch(); const p = await (await b.newContext({ locale: 'de-DE' })).newPage()
 await p.goto(base + '/')
 check('Fehlerfeld anfangs unsichtbar', await p.locator('#padname-error').isHidden())
 await Promise.all([p.waitForURL(/\/p\/[^/]+$/), p.click('button[type=submit]')])

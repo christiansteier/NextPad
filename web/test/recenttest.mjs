@@ -4,7 +4,7 @@ import { chromium } from 'playwright'
 const base = process.argv[2] || 'http://127.0.0.1:5093'
 let fails = 0
 const check = (name, cond, info = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (info ? '  ' + info : '')); if (!cond) fails++ }
-const b = await chromium.launch(); const p = await (await b.newContext()).newPage()
+const b = await chromium.launch(); const p = await (await b.newContext({ locale: 'de-DE' })).newPage()
 const stamp = Date.now().toString(36)
 for (const name of [`zuletzt-a-${stamp}`, `zuletzt-b-${stamp}`]) {
   await p.goto(`${base}/open?padname=${name}`); await p.waitForSelector('.ProseMirror'); await p.waitForTimeout(400)

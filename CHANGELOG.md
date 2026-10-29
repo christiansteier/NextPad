@@ -4,6 +4,57 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.17.0] - 2026-10-29
+
+Upgrade note: the database gains the column `authors.sprache`, added automatically on start. Back up the database
+before updating; an older version keeps working with the extra column.
+
+### Added
+
+- German and English throughout: pages and messages, help, editor, idea collection (including the board for the
+  projector), quiz grid, buzzer measurement, exports, the email before deletion and the appearance settings page for
+  admins. Text in pads and everything people enter stays as written.
+- Language choice, in this order: the person’s own choice through the “DE | EN” switch in the page header and the
+  editor toolbar (remembered for a year, also inside the Moodle activity; it returns to the same page), the language
+  from Moodle at LTI launch (`launch_presentation.locale`), the browser language, otherwise German.
+- Exports follow the language of the request: table of contents in HTML, text, Markdown and PDF; PDF header, date
+  and page numbers (with English hyphenation); print view. The idea collection’s CSV is comma-separated in English
+  (`No,Entry,Votes,Done`, `ideas.csv`) and stays semicolon-separated in German. A quiz question table may start with
+  the English header row `Category | Points | Question | Answer`.
+- The email before deletion uses the language the owner last chose while signed in through Moodle, with the PDF in
+  that language; without a choice it contains both languages, German first.
+- Inviting from the editor: “Share and export” (formerly “Export”) starts with “Copy link” and, where the device
+  offers it, “Share via device”. If copying is blocked, for example inside Moodle, the link appears selected for
+  copying by hand. Only for free pads; menu entries are at least 44 px high.
+- Operating documentation in English and German: `server/README.md` (configuration), `docs/docker.md` and the
+  YunoHost documents are English, with German versions next to them (`*.de.md`, YunoHost `doc/*_de.md`). The YunoHost
+  configuration panel and install questions have English labels throughout.
+
+### Changed
+
+- CI runs the browser and API tests (`web/test/browsertests.sh`) against freshly started servers, with the same
+  script as locally, including the appearance settings test that before only ran by hand; clippy runs with
+  `-D warnings`. Four tests that only printed values (sync, timeline, guests, Markdown) now check them and fail with
+  exit code 1, as do all others.
+- Buzzer and buzzer measurement: each clock sync request gives up after 3 s, so a hanging connection no longer keeps a
+  phone on an old offset. The measurement page and its verdict now say what is measured (how much the clock sync
+  varies, not whether the clock is right) and that the reaction time includes the short query until the button
+  appears; a failed receipt report is retried once and then shown instead of being dropped. Measurement and game
+  share one 50 ms threshold.
+- A lock poisoned by a crash under the lock is still recovered, but now logged as an error with its location.
+- `web/package.json` carries the server version; a unit test keeps both in step. `CITATION.cff` names the current
+  version again.
+
+### Fixed
+
+- The help mentioned a “Share” button that did not exist.
+- The email before deleting an idea collection named a button that is actually called “Teilen, zeigen, sichern”.
+- On English pages in the HSD look, the start page showed the German default subtitle.
+- The read-only label in the editor was German on English pages, and the logo in the editor toolbar was announced as
+  “Hochschule Düsseldorf” regardless of the configured institution.
+
 ## [0.16.0] - 2026-10-29
 
 ### Added

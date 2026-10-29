@@ -1,8 +1,10 @@
 // Ideensammlung: Beiträge eintragen, abstimmen, moderieren. Der Server prüft alles, hier wird nur angezeigt.
 (() => {
   const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
+  const T = cfg.texte || {}
+  const tx = (k, w = {}) => (T[k] || k).replace(/\{(\w+)\}/g, (_, n) => String(w[n] ?? ''))
   // aus Moodle gestartet: zurück in den Kurs, auch aus der eingebetteten Ansicht heraus
-  if (cfg.course) { const a = document.createElement('a'); a.href = cfg.course; a.target = '_top'; a.textContent = 'Zurück zum Kurs'; document.querySelector('.site-header nav')?.prepend(a) }
+  if (cfg.course) { const a = document.createElement('a'); a.href = cfg.course; a.target = '_top'; a.textContent = tx('zum_kurs'); document.querySelector('.site-header nav')?.prepend(a) }
   const base = cfg.basePath || ''
   const pad = encodeURIComponent(cfg.urlId)
   const api = `${base}/p/${pad}/ideen`
@@ -13,7 +15,7 @@
 
   async function post(url, body) {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (!r.ok) throw new Error((await r.text()) || `Fehler ${r.status}`)
+    if (!r.ok) throw new Error((await r.text()) || tx('fehler', { status: r.status }))
     return r.json()
   }
 
@@ -23,7 +25,7 @@
     const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.append(p)
     return s
   }
-  const stimmen = n => `${n} ${n === 1 ? 'Stimme' : 'Stimmen'}`
+  const stimmen = n => tx(n === 1 ? 'stimme' : 'stimmen', { n })
   const ICON = {
     check: 'M5 12.5l4.5 4.5L19 7.5',
     undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
@@ -54,7 +56,7 @@
       const on = voted.has(i.id)
       const b = button('vote', '', `${i.id}:vote`, () => post(`${api}/${i.id}/stimme`, { on: !on }))
       b.setAttribute('aria-pressed', on ? 'true' : 'false')
-      b.setAttribute('aria-label', `${on ? 'Stimme zurücknehmen' : 'Zustimmen'}, ${stimmen(i.votes)}`)
+      b.setAttribute('aria-label', `${on ? tx('zuruecknehmen') : tx('zustimmen')}, ${stimmen(i.votes)}`)
       const n = document.createElement('span'); n.textContent = i.votes
       b.append(icon('M12 5l7 9H5z'), n)
       li.append(b)
@@ -62,16 +64,16 @@
       const n = document.createElement('span'); n.className = 'votes'; n.textContent = stimmen(i.votes)
       meta.append(n)
     }
-    if (i.done) { const d = document.createElement('span'); d.className = 'done-mark'; d.append(icon(ICON.check, 16), 'erledigt'); meta.append(d) }
-    if (mine.has(i.id)) { const m = document.createElement('span'); m.className = 'tag'; m.textContent = 'Dein Beitrag'; meta.append(m) }
+    if (i.done) { const d = document.createElement('span'); d.className = 'done-mark'; d.append(icon(ICON.check, 16), tx('erledigt')); meta.append(d) }
+    if (mine.has(i.id)) { const m = document.createElement('span'); m.className = 'tag'; m.textContent = tx('dein'); meta.append(m) }
     const body = document.createElement('div'); body.className = 'idea-body'
     body.append(text, meta)
     li.append(body)
     if (data.owner) {
       const tools = document.createElement('div'); tools.className = 'mod-tools'
       const mk = (key, label, d, body) => { const b = button('icon-btn', '', `${i.id}:${key}`, () => post(`${api}/${i.id}/moderation`, body)); b.append(icon(d, 20)); b.setAttribute('aria-label', label); b.title = label; return b }
-      if (!i.hidden) tools.append(i.done ? mk('done', 'Wieder öffnen', ICON.undo, { done: false }) : mk('done', 'Als erledigt markieren', ICON.check, { done: true }))
-      tools.append(i.hidden ? mk('hide', 'Wieder einblenden', ICON.show, { hidden: false }) : mk('hide', 'Ausblenden', ICON.hide, { hidden: true }))
+      if (!i.hidden) tools.append(i.done ? mk('done', tx('wieder_oeffnen'), ICON.undo, { done: false }) : mk('done', tx('als_erledigt'), ICON.check, { done: true }))
+      tools.append(i.hidden ? mk('hide', tx('einblenden'), ICON.show, { hidden: false }) : mk('hide', tx('ausblenden'), ICON.hide, { hidden: true }))
       li.append(tools)
     }
     if (known && !known.has(i.id)) li.classList.add('is-new')
@@ -81,8 +83,8 @@
   function render() {
     const focusKey = document.activeElement?.dataset?.key
     const voted = new Set(data.voted), mine = new Set(data.mine)
-    $('prompt').textContent = data.prompt || 'Ideen und Fragen'
-    document.title = `${data.prompt || 'Ideensammlung'} · NextPad`
+    $('prompt').textContent = data.prompt || tx('titel')
+    document.title = `${data.prompt || tx('name')} · NextPad`
     $('prompt-edit').hidden = !data.owner
     if (!data.owner) { $('prompt-form').hidden = true; $('prompt-edit').setAttribute('aria-expanded', 'false') }
     if (data.owner && document.activeElement !== $('prompt-input')) $('prompt-input').value = data.prompt
@@ -100,8 +102,8 @@
     $('done-n').textContent = done.length; $('done-box').hidden = !done.length
     $('hidden-n').textContent = hidden.length; $('hidden-box').hidden = !hidden.length
     $('empty').hidden = open.length > 0
-    $('empty').textContent = items.length > hidden.length ? 'Keine offenen Beiträge.' : cfg.free ? 'Noch keine Beiträge. Den Link teilen, dann können alle mitmachen.' : 'Noch keine Beiträge.'
-    const c = `${open.length} ${open.length === 1 ? 'offener Beitrag' : 'offene Beiträge'}`
+    $('empty').textContent = items.length > hidden.length ? tx('keine_offenen') : cfg.free ? tx('leer_teilen') : tx('leer')
+    const c = tx(open.length === 1 ? 'offen1' : 'offen', { n: open.length })
     if ($('ideas-count').textContent !== c) $('ideas-count').textContent = c
     for (const b of document.querySelectorAll('.sort .tab')) b.setAttribute('aria-pressed', b.dataset.sort === sort ? 'true' : 'false')
     known = new Set(data.items.map(i => i.id))
@@ -114,7 +116,7 @@
     loading = (async () => {
       try {
         const r = await fetch(api, { cache: 'no-store' })
-        if (r.status === 404) { $('ideas-count').textContent = 'Diese Sammlung gibt es nicht mehr.'; return }
+        if (r.status === 404) { $('ideas-count').textContent = tx('weg'); return }
         if (r.ok) { data = await r.json(); render() }
       } catch {}
     })()
@@ -128,7 +130,7 @@
   $('add-form').addEventListener('submit', async e => {
     e.preventDefault()
     const v = text.value.trim()
-    if (!v) { err.textContent = 'Bitte eine Idee oder Frage eingeben.'; err.hidden = false; text.setAttribute('aria-invalid', 'true'); text.focus(); return }
+    if (!v) { err.textContent = tx('eingeben'); err.hidden = false; text.setAttribute('aria-invalid', 'true'); text.focus(); return }
     const b = e.submitter; if (b) b.disabled = true
     // nur leeren, wenn inzwischen nichts Neues eingetippt wurde
     try { await post(api, { text: v }); if (text.value.trim() === v) { text.value = ''; $('add-count').textContent = '0' } err.hidden = true }
@@ -161,23 +163,23 @@
 
   // Teilen: Link zum Mitmachen in die Zwischenablage
   const link = `${location.origin}${base}/p/${encodeURIComponent(cfg.urlId)}`
-  if (cfg.readonly) { $('view-kicker').textContent = 'Ideensammlung · Leseansicht'; $('share-copy').closest('.share-row').hidden = true }
+  if (cfg.readonly) { $('view-kicker').textContent = tx('leseansicht'); $('share-copy').closest('.share-row').hidden = true }
   // Kursaktivität: Zugang nur über Moodle, Links weiterzugeben hilft nicht
   if (!cfg.free) {
     for (const r of document.querySelectorAll('.share-row')) r.hidden = true
-    $('share-h').textContent = 'Zeigen und sichern'
-    const p = document.createElement('p'); p.className = 'hint'; p.textContent = 'Zugang nur über die Aktivität im Moodle-Kurs.'
+    $('share-h').textContent = tx('zeigen_sichern')
+    const p = document.createElement('p'); p.className = 'hint'; p.textContent = tx('nur_moodle')
     $('share-h').after(p)
   }
   $('share-copy').addEventListener('click', async () => {
     const b = $('share-copy')
     let ok = true
     try { await navigator.clipboard.writeText(link) } catch { ok = false }
-    b.textContent = ok ? 'Link kopiert' : link
-    setTimeout(() => { b.textContent = 'Link zum Mitmachen kopieren' }, ok ? 2000 : 8000)
+    b.textContent = ok ? tx('kopiert') : link
+    setTimeout(() => { b.textContent = tx('link_kopieren') }, ok ? 2000 : 8000)
   })
   $('delete-all').addEventListener('click', async () => {
-    if (!confirm('Die Sammlung samt allen Beiträgen und Stimmen löschen? Das lässt sich nicht rückgängig machen.')) return
+    if (!confirm(tx('loeschen_frage'))) return
     const r = await fetch(`${base}/p/${pad}/delete`, { method: 'POST' })
     if (r.ok) {
       try { const l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]').filter(x => x && x.id !== cfg.urlId); localStorage.setItem('nextpad.recent', JSON.stringify(l)) } catch {}
@@ -191,7 +193,7 @@
     try {
       let l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]'); if (!Array.isArray(l)) l = []
       l = l.filter(e => e && e.id !== cfg.urlId)
-      l.unshift({ id: cfg.urlId, t: Date.now(), title: data?.prompt || 'Ideensammlung' })
+      l.unshift({ id: cfg.urlId, t: Date.now(), title: data?.prompt || tx('name') })
       localStorage.setItem('nextpad.recent', JSON.stringify(l.slice(0, 10)))
     } catch {}
   }

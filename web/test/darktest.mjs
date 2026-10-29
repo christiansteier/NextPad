@@ -24,4 +24,4 @@ await p.click('button[title="Dunkler Modus ein/aus"]'); check('zurück auf hell'
 await ctx.close()
 ctx = await b.newContext({ colorScheme: 'dark' }); p = await ctx.newPage(); await p.goto(base + '/open?padname=dunkeltest-geraet'); await p.waitForSelector('.ProseMirror')
 check('dunkel nach Gerät ohne eigene Wahl', await theme(p) === 'dark')
-await b.close(); console.log(`${ok} ok, ${fail} fehlgeschlagen`)
+await b.close(); console.log(`${ok} ok, ${fail} fehlgeschlagen`); process.exit(fail ? 1 : 0)

@@ -295,3 +295,9 @@ label.field-label { display: block; font-weight: 700; margin-bottom: var(--space
 .notice.warn { border-left-color: var(--line-blue); }
 .notice.error { border-left-color: var(--color-error); }
 .reset-form { margin: 0 0 var(--space-6); }
+
+/* Sprachumschalter im Kopf: DE | EN, die aktuelle Sprache fett und unterstrichen */
+.sprachwahl { display: inline-flex; align-items: center; }
+.sprachwahl > span { padding: 0 2px; opacity: .6; }
+.site-header nav .sprachwahl a { min-width: var(--target-min); justify-content: center; padding: 0 var(--space-1, 4px); }
+.sprachwahl a[aria-current] { text-decoration: underline; text-underline-offset: 3px; }

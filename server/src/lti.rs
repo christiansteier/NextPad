@@ -13,6 +13,7 @@
 //! oder Zieladresse `…/lti/pad` bzw. `…/lti/ideen`): je Ressourcen-Link eine eigene Gruppe mit einem
 //! Text-Pad, einer Ideensammlung oder einem Quiz-Raster. Zugang nur über den Start aus Moodle (Sitzung wie
 //! bei Etherpad-Gruppenpads), Lehrende moderieren bzw. leiten.
+use crate::sperre::Sperre;
 use crate::{ids, AppState};
 use axum::{
     body::Bytes,
@@ -95,7 +96,7 @@ pub const LOGIN_SECONDS: i64 = 14 * 24 * 3600;
 impl LtiState {
     pub fn purge(&self) {
         let now = ids::now_ms();
-        self.pending.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, p| now - p.created < PENDING_MS);
+        self.pending.sperren().retain(|_, p| now - p.created < PENDING_MS);
     }
 }
 
@@ -138,7 +139,7 @@ pub async fn login(State(state): State<Arc<AppState>>, Query(q): Query<HashMap<S
     let st = token32();
     let nonce = token32();
     {
-        let mut m = state.lti.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let mut m = state.lti.pending.sperren();
         let now = ids::now_ms();
         m.retain(|_, p| now - p.created < PENDING_MS);
         if m.len() > 10_000 { return page(StatusCode::SERVICE_UNAVAILABLE, "Zu viele Anmeldungen gleichzeitig. Bitte gleich noch einmal."); }
@@ -193,6 +194,14 @@ struct Claims {
     custom: Option<HashMap<String, serde_json::Value>>,
     #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/target_link_uri", default)]
     target_link_uri: Option<String>,
+    #[serde(rename = "https://purl.imsglobal.org/spec/lti/claim/launch_presentation", default)]
+    launch_presentation: Option<Praesentation>,
+}
+
+#[derive(Deserialize)]
+struct Praesentation {
+    #[serde(default)]
+    locale: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -244,13 +253,13 @@ fn key_for(state: &AppState, idx: usize, kid: Option<&str>) -> Result<DecodingKe
     let pl = &state.config.lti[idx];
     let now = ids::now_ms();
     let pick = |set: &JwkSet| match kid { Some(k) => set.find(k).cloned(), None if set.keys.len() == 1 => set.keys.first().cloned(), None => None };
-    let cached = state.lti.jwks.lock().unwrap_or_else(|e| e.into_inner()).get(&idx).cloned().filter(|(t, _)| now - *t < 3_600_000);
+    let cached = state.lti.jwks.sperren().get(&idx).cloned().filter(|(t, _)| now - *t < 3_600_000);
     if let Some((t, set)) = &cached {
         if let Some(j) = pick(set) { return DecodingKey::from_jwk(&j).map_err(|e| format!("Schlüssel: {e}")); }
         if now - *t < 60_000 { return Err("Signaturschlüssel der Plattform unbekannt".into()); }
     }
     let set = fetch_jwks(pl)?;
-    state.lti.jwks.lock().unwrap_or_else(|e| e.into_inner()).insert(idx, (now, set.clone()));
+    state.lti.jwks.sperren().insert(idx, (now, set.clone()));
     let j = pick(&set).ok_or("Signaturschlüssel der Plattform unbekannt")?;
     DecodingKey::from_jwk(&j).map_err(|e| format!("Schlüssel: {e}"))
 }
@@ -285,7 +294,7 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
         return page(StatusCode::FORBIDDEN, msg);
     }
     let (Some(token), Some(st)) = (f.id_token, f.state) else { return page(StatusCode::BAD_REQUEST, "Unvollständige Antwort von Moodle.") };
-    let pending = state.lti.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&st);
+    let pending = state.lti.pending.sperren().remove(&st);
     let Some(pending) = pending.filter(|p| ids::now_ms() - p.created < PENDING_MS) else {
         return page(StatusCode::BAD_REQUEST, "Die Anmeldung ist abgelaufen oder wurde schon benutzt. Bitte in Moodle neu starten.");
     };
@@ -323,7 +332,7 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
     if let Some(typ) = claims.activity() {
         let addon = crate::addons::nach_kennung(typ);
         if let Some(a) = addon.filter(|a| !crate::addons::aktiv(&state, a)) {
-            return page(StatusCode::NOT_FOUND, &format!("„{}“ ist auf diesem NextPad nicht eingeschaltet. Bitte die Verwaltung von NextPad fragen.", a.name));
+            return page(StatusCode::NOT_FOUND, &format!("„{}“ ist auf diesem NextPad nicht eingeschaltet. Bitte die Verwaltung von NextPad fragen.", crate::texte::t(crate::texte::Sprache::De, a.name)));
         }
         let kind = addon.map_or("pad", |a| a.art);
         let (Some(ctx), Some(link)) = (&claims.context, &claims.resource_link) else {
@@ -379,6 +388,14 @@ pub async fn launch(State(state): State<Arc<AppState>>, headers: HeaderMap, axum
         format!("{}={token}; Path={path}; Max-Age={LOGIN_SECONDS}; HttpOnly; Secure; SameSite=Lax", state.config.login_cookie),
         format!("{STATE_COOKIE}=; Path={path}lti/; Max-Age=0; HttpOnly; Secure; SameSite=None"),
     ] { if let Ok(v) = HeaderValue::from_str(&c) { h.append(header::SET_COOKIE, v); } }
+    // Sprache aus Moodle bei jedem Start auffrischen; eine Sprache, die NextPad nicht kann, löscht sie
+    if let Some(locale) = claims.launch_presentation.as_ref().and_then(|p| p.locale.as_deref()) {
+        let c = match crate::texte::Sprache::aus_kuerzel(locale) {
+            Some(sp) => format!("{}={}; Path={path}; Max-Age=31536000; HttpOnly; Secure; SameSite=None", crate::texte::MOODLE_COOKIE, sp.kuerzel()),
+            None => format!("{}=; Path={path}; Max-Age=0; HttpOnly; Secure; SameSite=None", crate::texte::MOODLE_COOKIE),
+        };
+        if let Ok(v) = HeaderValue::from_str(&c) { h.append(header::SET_COOKIE, v); }
+    }
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     resp
 }

@@ -65,6 +65,7 @@ API-Schlüssel und die Liste erlaubter Adressen bleiben Aufgabe des Betriebs.
 - Ideensammlung nach dem Vorbild von [liveask](https://github.com/liveask/liveask): Ideen und Fragen ohne Namen eintragen, abstimmen, live für alle, mit Leinwand-Ansicht und QR-Code für den Beamer. Der Server zählt eine Stimme je Person, moderieren darf nur, wer die Sammlung angelegt hat. Im Moodle-Kurs läuft sie als Aktivität „Externes Tool“ (LTI 1.3) mit Zugang nur für Kursmitglieder, dort moderieren die Lehrenden.
 - Anmeldung über Moodle per LTI 1.3 (Namen und Profilbilder).
 - Freie Pads mit Besitz- und Aufbewahrungsregeln.
+- Oberfläche, Hilfe, Exporte und Mails auf Deutsch und Englisch, von jeder Person umschaltbar.
 - Ein Rust-Binary, SQLite, rund 50 MB RAM unter Last.
 
 ## Stand
@@ -78,8 +79,8 @@ in `web/test/`.
 | Datei | Inhalt |
 |---|---|
 | `docs/api-spezifikation.md` | Die nachzubildende Etherpad-API, aus dem Plugin-Quellcode abgeleitet |
-| `docs/docker.md` | Betrieb als Container |
-| `server/README.md` | Konfiguration (Umgebungsvariablen), Befehle |
+| `docs/docker.de.md` | Betrieb als Container |
+| `server/README.de.md` | Konfiguration (Umgebungsvariablen), Befehle |
 | `web/README.md` | Editor-Bündel und Browsertests |
 | `packaging/nextpad_ynh/` | YunoHost-App |
 

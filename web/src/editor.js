@@ -16,6 +16,7 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror'
 import { DOMSerializer } from '@tiptap/pm/model'
+import { tx, locale } from './texte.js'
 
 const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
 const testFlags = new URLSearchParams(location.search) // nur für Tests: ?nocaret=1 schaltet die Cursor-Anzeige ab
@@ -169,7 +170,7 @@ const ydoc = new Y.Doc()
 const wsBase = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + cfg.basePath + '/ws'
 const provider = new WebsocketProvider(wsBase, encodeURIComponent(cfg.urlId), ydoc, { disableBc: true })
 const remoteBatch = batchRemoteUpdates(provider)
-const myName = cfg.author.guest ? 'Gast' : (cfg.author.name || 'Gast')
+const myName = cfg.author.guest ? tx('gast') : (cfg.author.name || tx('gast'))
 provider.awareness.setLocalStateField('user', { name: myName, color: cfg.author.color, id: cfg.author.id, avatar: cfg.author.avatar || null })
 provider.awareness.on('change', () => {
   provider.awareness.getStates().forEach(s => { if (s.user && s.user.id) names.set(s.user.id, s.user.name) })
@@ -190,7 +191,7 @@ function renderCaret(user) {
   const caret = document.createElement('span'); caret.className = 'collaboration-carets__caret'; caret.style.borderColor = user.color
   const label = document.createElement('div'); label.className = 'collaboration-carets__label'; label.style.backgroundColor = user.color
   if (user.avatar) label.appendChild(avatarEl(user, 18))
-  label.appendChild(document.createTextNode(user.name || 'Gast'))
+  label.appendChild(document.createTextNode(user.name || tx('gast')))
   caret.appendChild(label); return caret
 }
 
@@ -198,7 +199,7 @@ const editor = new Editor({
   element: document.getElementById('editor'),
   editable: !cfg.readonly,
   // Name der Schreibfläche für Screenreader (TipTap setzt role=textbox ohne Namen)
-  editorProps: { attributes: { 'aria-label': cfg.readonly ? 'Text des Pads, nur lesen' : 'Text des Pads', 'aria-multiline': 'true' } },
+  editorProps: { attributes: { 'aria-label': cfg.readonly ? tx('text_lesen') : tx('text'), 'aria-multiline': 'true' } },
   extensions: [
     StarterKit.configure({ undoRedo: false, link: false, codeBlock: false, blockquote: false, horizontalRule: false, heading: { levels: [1, 2, 3, 4] } }),
     TextStyle, Color, FontSize,
@@ -232,44 +233,44 @@ function select(parent, title, label, entries, onChange) {
   parent.appendChild(sel); return sel
 }
 const menuLeft = document.createElement('div'); menuLeft.className = 'menu_left'; tb.appendChild(menuLeft)
-if (cfg.logo) { const lg = document.createElement('img'); lg.src = cfg.logo; lg.alt = 'Hochschule Düsseldorf'; lg.className = 'toolbar-logo'; menuLeft.appendChild(lg); const s0 = document.createElement('span'); s0.className = 'separator'; menuLeft.appendChild(s0) }
+if (cfg.logo) { const lg = document.createElement('img'); lg.src = cfg.logo; lg.alt = cfg.logoAlt || ''; lg.className = 'toolbar-logo'; menuLeft.appendChild(lg); const s0 = document.createElement('span'); s0.className = 'separator'; menuLeft.appendChild(s0) }
 const menuRight = document.createElement('div'); menuRight.className = 'menu_right'; tb.appendChild(menuRight)
 if (!cfg.readonly) {
-  ibtn(menuLeft, I.bold, 'Fett (Strg+B)', () => editor.chain().toggleBold().run(), () => editor.isActive('bold'))
-  ibtn(menuLeft, I.italic, 'Kursiv (Strg+I)', () => editor.chain().toggleItalic().run(), () => editor.isActive('italic'))
-  ibtn(menuLeft, I.underline, 'Unterstrichen (Strg+U)', () => editor.chain().toggleUnderline().run(), () => editor.isActive('underline'))
-  ibtn(menuLeft, I.strike, 'Durchgestrichen', () => editor.chain().toggleStrike().run(), () => editor.isActive('strike'))
+  ibtn(menuLeft, I.bold, tx('fett'), () => editor.chain().toggleBold().run(), () => editor.isActive('bold'))
+  ibtn(menuLeft, I.italic, tx('kursiv'), () => editor.chain().toggleItalic().run(), () => editor.isActive('italic'))
+  ibtn(menuLeft, I.underline, tx('unterstrichen'), () => editor.chain().toggleUnderline().run(), () => editor.isActive('underline'))
+  ibtn(menuLeft, I.strike, tx('durchgestrichen'), () => editor.chain().toggleStrike().run(), () => editor.isActive('strike'))
   sep(menuLeft)
-  ibtn(menuLeft, I.ol, 'Nummerierte Liste', () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
-  ibtn(menuLeft, I.ul, 'Aufzählung', () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
-  ibtn(menuLeft, I.tasks, 'Aufgabenliste zum Abhaken (Markdown: - [ ] Aufgabe)', () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
-  ibtn(menuLeft, I.indent, 'Einrücken (Tab)', () => { editor.commands.focus(); inList(editor) ? editor.commands.sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.indent() })
-  ibtn(menuLeft, I.outdent, 'Ausrücken (Umschalt+Tab)', () => { editor.commands.focus(); inList(editor) ? editor.commands.liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.outdent() })
+  ibtn(menuLeft, I.ol, tx('nummeriert'), () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
+  ibtn(menuLeft, I.ul, tx('aufzaehlung'), () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
+  ibtn(menuLeft, I.tasks, tx('aufgaben'), () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
+  ibtn(menuLeft, I.indent, tx('einruecken'), () => { editor.commands.focus(); inList(editor) ? editor.commands.sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.indent() })
+  ibtn(menuLeft, I.outdent, tx('ausruecken'), () => { editor.commands.focus(); inList(editor) ? editor.commands.liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.outdent() })
   sep(menuLeft)
-  ibtn(menuLeft, I.undo, 'Rückgängig (Strg+Z)', () => editor.chain().undo().run())
-  ibtn(menuLeft, I.redo, 'Wiederholen (Strg+Y)', () => editor.chain().redo().run())
+  ibtn(menuLeft, I.undo, tx('rueckgaengig'), () => editor.chain().undo().run())
+  ibtn(menuLeft, I.redo, tx('wiederholen'), () => editor.chain().redo().run())
   sep(menuLeft)
 }
 ibtn(menuLeft, I.eye, 'Autorenfarben ein/aus', () => { showColors = !showColors; document.getElementById('editor').classList.toggle('no-colors', !showColors) }, () => !showColors)
 if (!cfg.readonly) {
   sep(menuLeft)
-  select(menuLeft, 'Schriftgröße', 'Schriftgröße', [['', 'Standard'], ...[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 24, 30, 36, 48].map(n => [n + 'px', String(n)])], v => v ? editor.chain().setFontSize(v).run() : editor.chain().unsetFontSize().run())
-  select(menuLeft, 'Textfarbe', 'Farbe', [['', 'Schwarz'], ['#e60028', 'Rot'], ['#2e8b57', 'Grün'], ['#1e5bc6', 'Blau'], ['#c9a800', 'Gelb'], ['#e07a00', 'Orange'], ['#6f42c1', 'Violett'], ['#8b4513', 'Braun']], v => v ? editor.chain().setColor(v).run() : editor.chain().unsetColor().run())
+  select(menuLeft, tx('schriftgroesse'), tx('schriftgroesse'), [['', tx('standard')], ...[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 24, 30, 36, 48].map(n => [n + 'px', String(n)])], v => v ? editor.chain().setFontSize(v).run() : editor.chain().unsetFontSize().run())
+  select(menuLeft, tx('textfarbe'), tx('farbe'), [['', tx('schwarz')], ['#e60028', tx('rot')], ['#2e8b57', tx('gruen')], ['#1e5bc6', tx('blau')], ['#c9a800', tx('gelb')], ['#e07a00', tx('orange')], ['#6f42c1', tx('violett')], ['#8b4513', tx('braun')]], v => v ? editor.chain().setColor(v).run() : editor.chain().unsetColor().run())
   sep(menuLeft)
-  ibtn(menuLeft, I.alignL, 'Linksbündig', () => editor.chain().setTextAlign('left').run(), () => editor.isActive({ textAlign: 'left' }))
-  ibtn(menuLeft, I.alignC, 'Zentriert', () => editor.chain().setTextAlign('center').run(), () => editor.isActive({ textAlign: 'center' }))
-  ibtn(menuLeft, I.alignR, 'Rechtsbündig', () => editor.chain().setTextAlign('right').run(), () => editor.isActive({ textAlign: 'right' }))
-  ibtn(menuLeft, I.alignJ, 'Blocksatz', () => editor.chain().setTextAlign('justify').run(), () => editor.isActive({ textAlign: 'justify' }))
+  ibtn(menuLeft, I.alignL, tx('links'), () => editor.chain().setTextAlign('left').run(), () => editor.isActive({ textAlign: 'left' }))
+  ibtn(menuLeft, I.alignC, tx('zentriert'), () => editor.chain().setTextAlign('center').run(), () => editor.isActive({ textAlign: 'center' }))
+  ibtn(menuLeft, I.alignR, tx('rechts'), () => editor.chain().setTextAlign('right').run(), () => editor.isActive({ textAlign: 'right' }))
+  ibtn(menuLeft, I.alignJ, tx('blocksatz'), () => editor.chain().setTextAlign('justify').run(), () => editor.isActive({ textAlign: 'justify' }))
   sep(menuLeft)
-  select(menuLeft, 'Absatzstil', 'Stil', [['p', 'Normal'], ['1', 'Überschrift 1'], ['2', 'Überschrift 2'], ['3', 'Überschrift 3'], ['4', 'Überschrift 4']], v => v === 'p' ? editor.chain().setParagraph().run() : editor.chain().setHeading({ level: +v }).run())
+  select(menuLeft, tx('absatzstil'), tx('stil'), [['p', tx('normal')], ...[1, 2, 3, 4].map(n => [String(n), tx('ueberschrift', { n })])], v => v === 'p' ? editor.chain().setParagraph().run() : editor.chain().setHeading({ level: +v }).run())
   sep(menuLeft)
-  ibtn(menuLeft, I.md, 'Markdown-Text einfügen (auch per Einfügen aus der Zwischenablage)', () => openMarkdownDialog())
+  ibtn(menuLeft, I.md, tx('markdown'), () => openMarkdownDialog())
   sep(menuLeft)
   addTableTools(editor, menuLeft, { ibtn, select, icon: I.table })
-  const rateBtn = ibtn(menuLeft, '', 'Bewertung einfügen (Daumen hoch / runter)', () => editor.chain().focus().insertRating().run())
+  const rateBtn = ibtn(menuLeft, '', tx('bewertung'), () => editor.chain().focus().insertRating().run())
   rateBtn.querySelector('.buttonicon').innerHTML = thumbSvg('up', 15)
 }
-const tocBtn = ibtn(menuRight, I.toc, 'Inhaltsverzeichnis ein/aus', () => toc.toggle(), () => toc.open)
+const tocBtn = ibtn(menuRight, I.toc, tx('inhalt_umschalten'), () => toc.toggle(), () => toc.open)
 const toc = createTocSidebar(editor, edBox, { readonly: cfg.readonly, onChange: open => { tocBtn.classList.toggle('selected', open); tocBtn.setAttribute('aria-pressed', String(open)) } })
 // Dunkler Modus: eigene Wahl merkt sich der Browser, sonst gilt die Einstellung des Geräts
 const THEME_KEY = 'nextpad.theme'
@@ -281,15 +282,27 @@ function applyTheme() {
   if (darkBtn) { darkBtn.classList.toggle('selected', isDark()); darkBtn.setAttribute('aria-pressed', String(isDark())) }
 }
 let darkBtn = null
-darkBtn = ibtn(menuRight, '\u25D0', 'Dunkler Modus ein/aus', () => {
+darkBtn = ibtn(menuRight, '\u25D0', tx('dunkel'), () => {
   try { localStorage.setItem(THEME_KEY, isDark() ? 'light' : 'dark') } catch {}
   applyTheme()
 }, isDark)
 darkQuery.addEventListener('change', () => { if (!storedTheme()) applyTheme() })
 applyTheme()
+// Sprache wählen (DE | EN), führt auf dieses Pad zurück
+{
+  const w = document.createElement('span'); w.className = 'sprachwahl'
+  const zurueck = encodeURIComponent(location.pathname + location.search)
+  for (const [l, kurz, name] of [['de', 'DE', 'Deutsch'], ['en', 'EN', 'English']]) {
+    const a = document.createElement('a'); a.className = 'ib' + (cfg.lang === l ? ' selected' : ''); a.href = `${cfg.basePath}/sprache/${l}?zurueck=${zurueck}`
+    a.lang = l; a.hreflang = l; a.textContent = kurz; a.setAttribute('aria-label', name)
+    if (cfg.lang === l) a.setAttribute('aria-current', 'true')
+    w.appendChild(a)
+  }
+  menuRight.appendChild(w)
+}
 // aus Moodle gestartet: zurück in den Kurs, auch aus der eingebetteten Ansicht heraus
-if (cfg.course) { const k = document.createElement('a'); k.className = 'ib'; k.href = cfg.course; k.target = '_top'; k.textContent = 'Zurück zum Kurs'; menuRight.appendChild(k) }
-if (cfg.free) { const home = document.createElement('a'); home.className = 'ib'; home.href = `${cfg.basePath}/`; home.title = 'Startseite'; home.innerHTML = '<span class="buttonicon" aria-hidden="true"></span>'; menuRight.appendChild(home) }
+if (cfg.course) { const k = document.createElement('a'); k.className = 'ib'; k.href = cfg.course; k.target = '_top'; k.textContent = tx('zum_kurs'); menuRight.appendChild(k) }
+if (cfg.free) { const home = document.createElement('a'); home.className = 'ib'; home.href = `${cfg.basePath}/`; home.title = tx('startseite'); home.innerHTML = '<span class="buttonicon" aria-hidden="true"></span>'; menuRight.appendChild(home) }
 
 window.nextpad = { editor, provider, ydoc, remoteBatch }
 
@@ -313,19 +326,44 @@ editor.on('transaction', () => { for (const b of tb.querySelectorAll('button')) 
 // Fußleiste wie bei Etherpad: links Zeitleiste und Export, rechts Teilnehmende
 const fl = document.createElement('div'); fl.className = 'menu_left'; sb.appendChild(fl)
 const fr = document.createElement('div'); fr.className = 'menu_right'; sb.appendChild(fr)
-ibtn(fl, I.history, 'Frühere Stände ansehen', () => toggleTimeline(), () => timelineOpen)
-const exportBtn = ibtn(fl, I.share, 'Exportieren', () => togglePopup(exportPopup))
+ibtn(fl, I.history, tx('staende'), () => toggleTimeline(), () => timelineOpen)
+const exportBtn = ibtn(fl, I.share, tx('exportieren'), () => togglePopup(exportPopup))
 const exportPopup = document.createElement('div'); exportPopup.className = 'popup'; exportPopup.hidden = true
-exportPopup.innerHTML = '<h2>Aktuelles Pad exportieren</h2>'
-for (const [label, fmt, icon, title] of [['HTML', 'html', I.code, 'Als HTML öffnen'], ['Markdown', 'md', I.md, 'Als Markdown öffnen'], ['Text', 'txt', I.file, 'Als Text öffnen'], ['PDF', 'pdf', I.pdf, 'Als PDF öffnen'], ['Drucken', 'print', I.pdf, 'Druckansicht im Browser']]) {
+// Einladen nur bei freien Pads: Gruppenpads aus Moodle erreicht nur, wer im Kurs ist
+if (cfg.free) exportPopup.appendChild(einladen())
+exportPopup.insertAdjacentHTML('beforeend', `<h2>${tx('export_titel')}</h2>`)
+for (const [label, fmt, icon, title] of [['HTML', 'html', I.code, tx('export_als', { format: 'HTML' })], ['Markdown', 'md', I.md, tx('export_als', { format: 'Markdown' })], [tx('export_text'), 'txt', I.file, tx('export_als', { format: tx('export_text') })], ['PDF', 'pdf', I.pdf, tx('export_als', { format: 'PDF' })], [tx('drucken'), 'print', I.pdf, tx('druckansicht')]]) {
   const a = document.createElement('a'); a.href = `${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/export/${fmt}`; a.target = '_blank'; a.rel = 'noopener'; a.title = title
   a.innerHTML = `<span class="buttonicon" aria-hidden="true">${icon}</span> ${label}`; exportPopup.appendChild(a)
 }
 sb.appendChild(exportPopup)
 const conn = document.createElement('span'); conn.className = 'conn'; fl.appendChild(conn)
-const usersBtn = document.createElement('button'); usersBtn.type = 'button'; usersBtn.className = 'ib users'; usersBtn.title = 'Teilnehmende'; usersBtn.innerHTML = `<span class="buttonicon" aria-hidden="true">${I.users}</span> <span class="count">1</span>`
+const usersBtn = document.createElement('button'); usersBtn.type = 'button'; usersBtn.className = 'ib users'; usersBtn.title = tx('teilnehmende'); usersBtn.innerHTML = `<span class="buttonicon" aria-hidden="true">${I.users}</span> <span class="count">1</span>`
 usersBtn.addEventListener('click', () => togglePopup(usersPopup)); fr.appendChild(usersBtn)
 const usersPopup = document.createElement('div'); usersPopup.className = 'popup right'; usersPopup.hidden = true; sb.appendChild(usersPopup)
+// Link zum Pad kopieren oder über das Teilen-Menü des Geräts weitergeben; ohne Zwischenablage markiert zum Selbstkopieren
+function einladen() {
+  const box = document.createElement('div'); box.className = 'einladen'
+  const link = `${location.origin}${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}`
+  box.innerHTML = `<h2>${tx('einladen')}</h2><p class="hinweis">${tx(cfg.readonly ? 'link_hinweis_lesen' : 'link_hinweis')}</p>`
+  const status = document.createElement('p'); status.className = 'status'; status.setAttribute('role', 'status')
+  const knopf = (text, icon, fn) => { const b = document.createElement('button'); b.type = 'button'; b.innerHTML = `<span class="buttonicon" aria-hidden="true">${icon}</span> <span>${text}</span>`; b.addEventListener('click', fn); box.appendChild(b); return b }
+  const kopieren = knopf(tx('link_kopieren'), I.file, async () => {
+    try {
+      await navigator.clipboard.writeText(link)
+      status.textContent = tx('link_kopiert'); kopieren.lastChild.textContent = tx('link_kopiert')
+      setTimeout(() => { kopieren.lastChild.textContent = tx('link_kopieren'); status.textContent = '' }, 2500)
+    } catch {
+      status.textContent = tx('link_selbst')
+      let f = box.querySelector('input.link')
+      if (!f) { f = document.createElement('input'); f.className = 'link'; f.readOnly = true; f.value = link; f.setAttribute('aria-label', tx('link_feld')); box.appendChild(f) }
+      f.focus(); f.select()
+    }
+  })
+  if (navigator.share) knopf(tx('link_teilen'), I.share, () => navigator.share({ title: document.title, url: link }).catch(() => {}))
+  box.appendChild(status)
+  return box
+}
 function togglePopup(p) { const open = p.hidden; for (const x of sb.querySelectorAll('.popup')) x.hidden = true; p.hidden = !open }
 document.addEventListener('click', e => { if (!sb.contains(e.target)) for (const x of sb.querySelectorAll('.popup')) x.hidden = true })
 
@@ -333,15 +371,15 @@ function renderStatus() {
   if (!sb) return
   const users = []
   provider.awareness.getStates().forEach(s => { if (s.user) users.push(s.user) })
-  conn.textContent = provider.wsconnected ? 'verbunden' : 'getrennt …'; conn.className = 'conn ' + (provider.wsconnected ? 'ok' : 'warn')
+  conn.textContent = provider.wsconnected ? tx('verbunden') : tx('getrennt'); conn.className = 'conn ' + (provider.wsconnected ? 'ok' : 'warn')
   usersBtn.querySelector('.count').textContent = String(users.length)
-  usersPopup.innerHTML = '<h2>Teilnehmende</h2>'
+  usersPopup.innerHTML = `<h2>${tx('teilnehmende')}</h2>`
   if (cfg.free && !cfg.readonly && !cfg.login) {
     const row = document.createElement('div'); row.className = 'me'
-    const lab = document.createElement('label'); lab.textContent = 'Mein Name'; lab.htmlFor = 'myname'
-    const nameInput = document.createElement('input'); nameInput.type = 'text'; nameInput.id = 'myname'; nameInput.value = cfg.author.name || 'Gast'; nameInput.maxLength = 60; nameInput.className = 'myname'; nameInput.style.backgroundColor = cfg.author.color
+    const lab = document.createElement('label'); lab.textContent = tx('mein_name'); lab.htmlFor = 'myname'
+    const nameInput = document.createElement('input'); nameInput.type = 'text'; nameInput.id = 'myname'; nameInput.value = cfg.author.name || tx('gast'); nameInput.maxLength = 60; nameInput.className = 'myname'; nameInput.style.backgroundColor = cfg.author.color
     nameInput.addEventListener('change', async () => {
-      const name = nameInput.value.trim() || 'Gast'
+      const name = nameInput.value.trim() || tx('gast')
       const r = await fetch(`${cfg.basePath}/me`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) })
       if (r.ok) { cfg.author.name = name; provider.awareness.setLocalStateField('user', { name, color: cfg.author.color, id: cfg.author.id }); names.set(cfg.author.id, name) }
     })
@@ -350,35 +388,35 @@ function renderStatus() {
   if (cfg.login) {
     // über Moodle angemeldet: Abmelden auch im Pad, nicht nur auf der Startseite
     const box = document.createElement('div'); box.className = 'me login'
-    const who = document.createElement('p'); who.textContent = `Über Moodle angemeldet als ${cfg.author.name || ''}`
+    const who = document.createElement('p'); who.textContent = tx('angemeldet_als', { name: cfg.author.name || '' })
     const form = document.createElement('form'); form.method = 'post'; form.action = `${cfg.basePath}/logout`
-    const out = document.createElement('button'); out.type = 'submit'; out.textContent = 'Abmelden'
+    const out = document.createElement('button'); out.type = 'submit'; out.textContent = tx('abmelden')
     form.appendChild(out); box.append(who, form); usersPopup.appendChild(box)
   }
   if (cfg.owner && !cfg.readonly) {
     const box = document.createElement('div'); box.className = 'owner'
-    const h = document.createElement('h3'); h.textContent = 'Mein Pad'
+    const h = document.createElement('h3'); h.textContent = tx('mein_pad')
     const info = document.createElement('p'); info.className = 'exp'
-    const fmt = ms => new Date(ms).toLocaleDateString('de-DE')
-    const setInfo = () => { info.textContent = cfg.expires ? `Bleibt bis ${fmt(cfg.expires)}. Öffnen oder Bearbeiten verlängert die Frist.` : 'Angelegt von mir.' }
+    const fmt = ms => new Date(ms).toLocaleDateString(locale)
+    const setInfo = () => { info.textContent = cfg.expires ? tx('bleibt_bis', { datum: fmt(cfg.expires) }) : tx('von_mir') }
     setInfo(); box.append(h, info)
     const row2 = document.createElement('div'); row2.className = 'actions'
     if (cfg.expires) {
-      const ext = document.createElement('button'); ext.type = 'button'; ext.textContent = 'Um ein Jahr verlängern'
+      const ext = document.createElement('button'); ext.type = 'button'; ext.textContent = tx('verlaengern')
       ext.addEventListener('click', async e => { e.stopPropagation(); const r = await fetch(`${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/extend`, { method: 'POST' }); if (r.ok) { const j = await r.json(); cfg.expires = j.until; setInfo() } })
       row2.appendChild(ext)
     }
-    const del = document.createElement('button'); del.type = 'button'; del.className = 'danger'; del.textContent = 'Pad löschen'
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'danger'; del.textContent = tx('loeschen')
     del.addEventListener('click', async e => {
       e.stopPropagation()
-      if (!confirm('Pad endgültig löschen? Alle, die es geöffnet haben, verlieren den Zugang. Vorher bei Bedarf exportieren.')) return
+      if (!confirm(tx('loeschen_frage'))) return
       const r = await fetch(`${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/delete`, { method: 'POST' })
       if (r.ok) { try { const l = JSON.parse(localStorage.getItem('nextpad.recent') || '[]').filter(x => x && x.id !== cfg.urlId); localStorage.setItem('nextpad.recent', JSON.stringify(l)) } catch {} location.href = `${cfg.basePath}/` }
     })
     row2.appendChild(del); box.appendChild(row2); usersPopup.appendChild(box)
   }
-  for (const u of users) { const el = document.createElement('div'); el.className = 'user'; el.append(avatarEl(u, 28), document.createTextNode(u.name || 'Gast')); usersPopup.appendChild(el) }
-  if (cfg.readonly) { const ro = document.createElement('span'); ro.textContent = 'nur lesen'; ro.className = 'warn ro'; if (!fl.querySelector('.ro')) fl.appendChild(ro) }
+  for (const u of users) { const el = document.createElement('div'); el.className = 'user'; el.append(avatarEl(u, 28), document.createTextNode(u.name || tx('gast'))); usersPopup.appendChild(el) }
+  if (cfg.readonly) { const ro = document.createElement('span'); ro.textContent = tx('nur_lesen'); ro.className = 'warn ro'; if (!fl.querySelector('.ro')) fl.appendChild(ro) }
 }
 provider.on('status', renderStatus)
 renderStatus()
@@ -386,9 +424,9 @@ renderStatus()
 // Markdown-Dialog: Text eingeben oder einfügen, wird an der Cursorposition als formatierter Text übernommen
 function openMarkdownDialog() {
   const dlg = document.createElement('dialog'); dlg.id = 'mddialog'
-  dlg.innerHTML = `<form method="dialog"><label for="mdtext">Markdown einfügen</label>
-    <textarea id="mdtext" rows="10" placeholder="# Überschrift&#10;&#10;- Punkt&#10;- **fett** und *kursiv*"></textarea>
-    <div class="row"><button type="submit" value="ok">Übernehmen</button> <button type="submit" value="abbrechen">Abbrechen</button></div></form>`
+  dlg.innerHTML = `<form method="dialog"><label for="mdtext">${tx('md_titel')}</label>
+    <textarea id="mdtext" rows="10" placeholder="${tx('md_beispiel')}"></textarea>
+    <div class="row"><button type="submit" value="ok">${tx('uebernehmen')}</button> <button type="submit" value="abbrechen">${tx('abbrechen')}</button></div></form>`
   document.body.appendChild(dlg)
   dlg.addEventListener('close', () => { if (dlg.returnValue === 'ok') { const md = dlg.querySelector('textarea').value; if (md.trim()) editor.chain().focus().insertContent(md, { contentType: 'markdown' }).run() } dlg.remove() })
   dlg.showModal(); dlg.querySelector('textarea').focus()
@@ -404,12 +442,12 @@ async function toggleTimeline() {
   timelineOpen = true
   panel = document.createElement('div'); panel.id = 'timeline'
   panel.innerHTML = `<div class="tl-controls">
-      <button type="button" class="tl-prev" title="Ein Schritt zurück" aria-label="Ein Schritt zurück">◀</button>
-      <button type="button" class="tl-play" title="Abspielen" aria-label="Abspielen">▶</button>
-      <button type="button" class="tl-next" title="Ein Schritt vor" aria-label="Ein Schritt vor">▶|</button>
-      <input type="range" class="tl-slider" min="0" max="0" value="0" aria-label="Zeitpunkt">
+      <button type="button" class="tl-prev" title="${tx('schritt_zurueck')}" aria-label="${tx('schritt_zurueck')}">◀</button>
+      <button type="button" class="tl-play" title="${tx('abspielen')}" aria-label="${tx('abspielen')}">▶</button>
+      <button type="button" class="tl-next" title="${tx('schritt_vor')}" aria-label="${tx('schritt_vor')}">▶|</button>
+      <input type="range" class="tl-slider" min="0" max="0" value="0" aria-label="${tx('zeitpunkt')}">
       <span class="tl-pos"></span>
-      <button type="button" class="tl-restore" hidden>Diesen Stand wiederherstellen</button>
+      <button type="button" class="tl-restore" hidden>${tx('wiederherstellen')}</button>
     </div>
     <div class="tl-info"></div>
     <div class="tl-authors"></div>
@@ -417,7 +455,7 @@ async function toggleTimeline() {
   document.getElementById('app').appendChild(panel)
   const slider = panel.querySelector('.tl-slider'), info = panel.querySelector('.tl-info'), pos = panel.querySelector('.tl-pos'), view = panel.querySelector('.snapshot'), authorsEl = panel.querySelector('.tl-authors')
   const res = await fetch(`${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/history`)
-  if (!res.ok) { info.textContent = 'Verlauf nicht abrufbar.'; return }
+  if (!res.ok) { info.textContent = tx('verlauf_fehlt'); return }
   const h = await res.json()
   if (h.truncated) info.dataset.truncated = '1'
   const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0))
@@ -426,7 +464,7 @@ async function toggleTimeline() {
   for (const sn of h.snapshots) points.push({ kind: 'snapshot', ts: sn.ts, label: sn.label, bytes: b64(sn.state) })
   for (const u of h.updates) points.push({ kind: 'update', ts: u.ts, seq: u.seq, author: u.author, bytes: b64(u.bytes) })
   points.sort((a, b) => a.ts - b.ts || (a.kind === 'snapshot' ? -1 : 1))
-  if (!points.length) { info.textContent = 'Noch kein Verlauf.'; return }
+  if (!points.length) { info.textContent = tx('kein_verlauf'); return }
   for (const a of Object.keys(h.authors || {})) names.set(a, h.authors[a].name)
   slider.max = String(points.length - 1); slider.value = slider.max
   const serializer = DOMSerializer.fromSchema(editor.schema)
@@ -451,9 +489,9 @@ async function toggleTimeline() {
     view.innerHTML = ''
     view.appendChild(serializer.serializeFragment(node.content))
     const p = points[k]
-    const when = new Date(p.ts).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'medium' })
-    const who = p.kind === 'update' && p.author ? (names.get(p.author) || p.author) : (p.kind === 'snapshot' ? p.label : 'unbekannt')
-    info.textContent = `${when} · ${p.kind === 'snapshot' ? 'Stand' : 'Änderung'} · ${who}`
+    const when = new Date(p.ts).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'medium' })
+    const who = p.kind === 'update' && p.author ? (names.get(p.author) || p.author) : (p.kind === 'snapshot' ? p.label : tx('unbekannt'))
+    info.textContent = `${when} · ${p.kind === 'snapshot' ? tx('stand') : tx('aenderung')} · ${who}`
     pos.textContent = `${k + 1} / ${points.length}`
     restoreBtn.disabled = k === points.length - 1
     // Autoren bis hierher
@@ -467,12 +505,12 @@ async function toggleTimeline() {
   restoreBtn.hidden = !cfg.restore
   restoreBtn.addEventListener('click', async () => {
     const p = points[+slider.value]
-    const when = new Date(p.ts).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
-    if (!confirm(`Den Stand vom ${when} wiederherstellen? Der jetzige Text bleibt in der Zeitleiste erhalten.`)) return
+    const when = new Date(p.ts).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+    if (!confirm(tx('wiederherstellen_frage', { wann: when }))) return
     restoreBtn.disabled = true
     const r = await fetch(`${cfg.basePath}/p/${encodeURIComponent(cfg.urlId)}/wiederherstellen`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p.kind === 'snapshot' ? { ts: p.ts } : { seq: p.seq }) })
     if (r.ok) { toggleTimeline(); return }
-    info.textContent = `Wiederherstellen fehlgeschlagen: ${(await r.text()) || r.status}`
+    info.textContent = tx('wiederherstellen_fehler', { grund: (await r.text()) || r.status })
     restoreBtn.disabled = false
   })
   let playing = null

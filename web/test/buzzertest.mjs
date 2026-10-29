@@ -159,6 +159,7 @@ await l2.waitForFunction(() => document.getElementById('q-countdown').textConten
 check('Countdown abgelaufen: „Zeit um“', (await l2.textContent('#q-countdown')) === 'Zeit um')
 await rot2.waitForFunction(() => document.getElementById('buzz-info').textContent === 'Die Zeit ist um.', null, { timeout: 3000 }).catch(() => {})
 check('Handy: Buzzer weg, „Die Zeit ist um.“', await rot2.isHidden('#buzz-btn') && (await rot2.textContent('#buzz-info')) === 'Die Zeit ist um.')
+await sleep(300) // jenseits der 50 ms Kulanz auf die Druckzeit
 const spaet = await rot2.evaluate(async u => {
   const q = await (await fetch(u + '/quiz', { cache: 'no-store' })).json()
   return (await fetch(u + '/quiz/buzzer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dev: sessionStorage.getItem('nextpad-geraet'), team: 1, field: q.current.id, t: performance.timeOrigin + performance.now(), off: 0, rtt: 10 }) })).status

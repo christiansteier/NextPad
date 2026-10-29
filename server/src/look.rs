@@ -2,6 +2,8 @@
 //! Admin ist, wer über Moodle angemeldet ist und dort Administrator ist oder in NEXTPAD_ADMINS steht.
 //! Einstellungen liegen als JSON in der Datenbank, hochgeladene Bilder im Datenverzeichnis.
 //! Ohne Einstellung gilt die Vorgabe des Servers (NEXTPAD_THEME_DIR, NEXTPAD_BACKGROUND_CREDIT).
+use crate::texte::{t, tf, Sprache};
+use crate::sperre::LeseSperre;
 use crate::{web, AppState};
 use axum::{
     extract::{Multipart, State},
@@ -52,7 +54,7 @@ pub fn load(store: &crate::store::Store) -> Look {
     store.setting("look").ok().flatten().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
-pub fn get(state: &AppState) -> Look { state.look.read().unwrap_or_else(|e| e.into_inner()).clone() }
+pub fn get(state: &AppState) -> Look { state.look.lesen().clone() }
 
 fn dir(state: &AppState) -> std::path::PathBuf { state.config.data_dir.join("erscheinungsbild") }
 
@@ -70,7 +72,8 @@ const DARK: Rgb = (0x1e, 0x1e, 0x1e);
 
 impl Look {
     pub fn product(&self) -> &str { if self.product.is_empty() { "NextPad" } else { &self.product } }
-    pub fn tagline(&self) -> &str { if self.tagline.is_empty() { "Gemeinsam schreiben an der HSD" } else { &self.tagline } }
+    /// Eingetragener Untertitel (Inhalt, nicht übersetzt), sonst die Vorgabe in der Sprache der Seite
+    pub fn tagline(&self, sp: Sprache) -> &str { if self.tagline.is_empty() { t(sp, "look.untertitel") } else { &self.tagline } }
     pub fn institution(&self) -> &str { if self.institution.is_empty() { "Hochschule Düsseldorf" } else { &self.institution } }
     fn accent(&self) -> &str { or(&self.accent, D_ACCENT) }
     fn color(&self, i: usize) -> &str { or([&self.color1, &self.color2, &self.color3][i], D_COLORS[i]) }
@@ -83,6 +86,7 @@ impl Look {
         let mut p = Palette { accent: self.accent().into(), accent_dark: D_ACCENT_DARK.into(), colors: D_COLORS.map(String::from), lines: D_LINES.map(String::from),
             tints: D_TINTS.map(String::from), lines_dark: D_LINES_DARK.map(String::from), tints_dark: D_TINTS_DARK.map(String::from) };
         if let Some(a) = parse(self.accent()).filter(|_| !same(self.accent(), D_ACCENT)) { p.accent_dark = hex(lift(a, DARK, 4.5)); }
+        #[allow(clippy::needless_range_loop)] // i greift auf vier gleich lange Felder zugleich zu
         for i in 0..3 {
             p.colors[i] = self.color(i).into();
             let Some(c) = parse(self.color(i)) else { continue };
@@ -98,16 +102,17 @@ impl Look {
     }
 
     /// Hinweise zu Kontrasten, die WCAG 2.2 nicht erreichen.
-    pub fn warnings(&self) -> Vec<String> {
+    pub fn warnings(&self, sp: Sprache) -> Vec<String> {
         let p = self.palette();
         let mut w = Vec::new();
         let r = |a: &str, b: Rgb| parse(a).map(|a| ratio(a, b)).unwrap_or(21.0);
-        if r(&p.accent, WHITE) < 3.0 { w.push(format!("Akzentfarbe: nur {:.1}:1 auf Weiß. Kopflinie und Fokusrahmen brauchen mindestens 3:1.", r(&p.accent, WHITE))); }
-        for (i, n) in ["Farbe 1", "Farbe 2"].iter().enumerate() {
-            if r(&p.lines[i], WHITE) < 3.0 { w.push(format!("{n}, Linie: nur {:.1}:1 auf Weiß, mindestens 3:1 nötig.", r(&p.lines[i], WHITE))); }
+        let farbe = |i: usize| tf(sp, "look.farbe_n", &[("n", &(i + 1).to_string())]);
+        if r(&p.accent, WHITE) < 3.0 { w.push(tf(sp, "look.w.akzent", &[("r", &zahl(sp, r(&p.accent, WHITE)))])); }
+        for i in 0..2 {
+            if r(&p.lines[i], WHITE) < 3.0 { w.push(tf(sp, "look.w.linie", &[("r", &zahl(sp, r(&p.lines[i], WHITE))), ("farbe", &farbe(i))])); }
         }
-        for (i, n) in ["Farbe 1", "Farbe 2", "Farbe 3"].iter().enumerate() {
-            if r(&p.tints[i], BLACK) < 4.5 { w.push(format!("{n}, Tönung: schwarzer Text nur {:.1}:1, mindestens 4,5:1 nötig.", r(&p.tints[i], BLACK))); }
+        for i in 0..3 {
+            if r(&p.tints[i], BLACK) < 4.5 { w.push(tf(sp, "look.w.toenung", &[("r", &zahl(sp, r(&p.tints[i], BLACK))), ("farbe", &farbe(i))])); }
         }
         w
     }
@@ -214,122 +219,146 @@ pub async fn static_js() -> Response {
 
 fn esc(s: &str) -> String { html_escape::encode_double_quoted_attribute(s).into_owned() }
 
-fn denied(state: &AppState) -> Response {
+/// Kontrastwert mit einer Nachkommastelle, deutsch mit Komma.
+fn zahl(sp: Sprache, x: f64) -> String {
+    let z = format!("{x:.1}");
+    if sp == Sprache::De { z.replace('.', ",") } else { z }
+}
+
+fn denied(state: &AppState, sp: Sprache) -> Response {
     let base = &state.config.base_path;
-    let content = format!(r#"<main id="inhalt" class="doc" tabindex="-1"><h1>Erscheinungsbild</h1><p>Diese Seite ist nur für Admins. Bitte über Moodle mit einem Administrationskonto anmelden und die Seite neu laden.</p><p><a href="{base}/">Zur Startseite</a></p></main>"#);
-    let mut r = web::start_page(state, "Erscheinungsbild · NextPad", &content, "");
+    let content = format!(r#"<main id="inhalt" class="doc" tabindex="-1"><h1>{titel}</h1><p>{text}</p><p><a href="{base}/">{start}</a></p></main>"#,
+        titel = t(sp, "look.titel"), text = t(sp, "look.nur_admins"), start = t(sp, "look.zur_startseite"));
+    let mut r = web::start_page(state, sp, Some(PFAD), &format!("{} · NextPad", t(sp, "look.titel")), &content, "");
     *r.status_mut() = StatusCode::FORBIDDEN;
     r
 }
 
-fn color_field(name: &str, label: &str, value: &str, default: &str, hint: &str) -> String {
+/// Adresse der Seite ohne Basis-Pfad, für den Sprachumschalter
+const PFAD: &str = "/admin/erscheinungsbild";
+
+fn color_field(sp: Sprache, name: &str, label: &str, value: &str, default: &str, hint: &str) -> String {
     let shown = if value.is_empty() { default } else { value };
     format!(r##"<div class="color-field"><label class="field-label" for="f-{name}">{label}</label>
-<div class="color-row"><input type="color" id="c-{name}" value="{shown}" aria-label="{label}: Farbe wählen" data-for="f-{name}"><input type="text" id="f-{name}" name="{name}" value="{v}" placeholder="{default}" pattern="#[0-9a-fA-F]{{6}}" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="h-{name}"></div>
-<p class="hint" id="h-{name}">{hint} Leer lassen für die Vorgabe {default}.</p></div>"##, v = esc(value))
+<div class="color-row"><input type="color" id="c-{name}" value="{shown}" aria-label="{waehlen}" data-for="f-{name}"><input type="text" id="f-{name}" name="{name}" value="{v}" placeholder="{default}" pattern="#[0-9a-fA-F]{{6}}" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="h-{name}"></div>
+<p class="hint" id="h-{name}">{hint} {leer}</p></div>"##, v = esc(value),
+        waehlen = esc(&tf(sp, "look.farbe_waehlen", &[("label", label)])), leer = tf(sp, "look.leer_vorgabe", &[("vorgabe", default)]))
 }
 
-fn swatches(p: &Palette) -> String {
+fn swatches(sp: Sprache, p: &Palette) -> String {
     // Linien gegen Weiß, Tönungen gegen schwarzen Text
-    let sw = |c: &str, label: &str| {
-        let (against, what) = if label.starts_with("Tönung") { (BLACK, "Text darauf") } else { (WHITE, "auf Weiß") };
-        let r = parse(c).map(|x| format!("{:.1}:1", ratio(x, against)).replace('.', ",")).unwrap_or_default();
+    let sw = |c: &str, label: String, toenung: bool| {
+        let (against, what) = if toenung { (BLACK, t(sp, "look.text_darauf")) } else { (WHITE, t(sp, "look.auf_weiss")) };
+        let r = parse(c).map(|x| format!("{}:1", zahl(sp, ratio(x, against)))).unwrap_or_default();
         format!(r#"<li><span class="swatch" style="background:{c}"></span><span>{label}<br><code>{c}</code> · {r} {what}</span></li>"#)
     };
-    let items = [sw(&p.accent, "Akzent"), sw(&p.lines[0], "Linie 1"), sw(&p.lines[1], "Linie 2"), sw(&p.tints[0], "Tönung 1"), sw(&p.tints[1], "Tönung 2"), sw(&p.tints[2], "Tönung 3")].concat();
-    format!(r#"<ul class="swatches" aria-label="Verwendete Farben">{items}</ul>"#)
+    let n = |k: &'static str, i: usize| tf(sp, k, &[("n", &i.to_string())]);
+    let items = [sw(&p.accent, t(sp, "look.akzent").to_string(), false), sw(&p.lines[0], n("look.linie_n", 1), false), sw(&p.lines[1], n("look.linie_n", 2), false),
+        sw(&p.tints[0], n("look.toenung_n", 1), true), sw(&p.tints[1], n("look.toenung_n", 2), true), sw(&p.tints[2], n("look.toenung_n", 3), true)].concat();
+    format!(r#"<ul class="swatches" aria-label="{}">{items}</ul>"#, t(sp, "look.verwendet"))
 }
 
-fn radios(name: &str, cur: Source, has_default: bool, has_own: bool, what: &str) -> String {
+/// Auswahl Vorgabe / eigenes / keins; `eigen` und `keins` sind Schlüssel der Beschriftung.
+fn radios(sp: Sprache, name: &str, cur: Source, has_default: bool, has_own: bool, eigen: &'static str, keins: &'static str) -> String {
     let opt = |v: &str, label: &str, on: bool, enabled: bool| {
         if !enabled { return String::new(); }
         format!(r#"<label class="choice"><input type="radio" name="{name}" value="{v}"{}> {label}</label>"#, if on { " checked" } else { "" })
     };
     let cur = match cur { Source::Eigen if !has_own => Source::Vorgabe, c => c };
-    [opt("vorgabe", if has_default { "Vorgabe des Servers" } else { "Vorgabe (keine hinterlegt)" }, cur == Source::Vorgabe, true),
-     opt("eigen", &format!("Eigenes {what}"), cur == Source::Eigen, has_own),
-     opt("keins", &format!("Kein {what}"), cur == Source::Keins, true)].concat()
+    [opt("vorgabe", t(sp, if has_default { "look.r.vorgabe" } else { "look.r.vorgabe_fehlt" }), cur == Source::Vorgabe, true),
+     opt("eigen", t(sp, eigen), cur == Source::Eigen, has_own),
+     opt("keins", t(sp, keins), cur == Source::Keins, true)].concat()
 }
 
-fn form(state: &AppState, l: &Look, notice: &str) -> String {
+fn form(state: &AppState, sp: Sprache, l: &Look, notice: &str) -> String {
     let base = &state.config.base_path;
     let p = l.palette();
     let has_own_logo = dir(state).join("logo").is_file();
     let has_own_bg = dir(state).join("hintergrund").is_file();
-    let logo_prev = if has_logo(state) { format!(r#"<img class="preview-logo" src="{base}/theme/logo.png?v={v}" alt="Aktuelles Logo">"#, v = l.version) } else { r#"<p class="hint">Zurzeit kein Logo.</p>"#.into() };
-    let bg_prev = if has_background(state) { format!(r#"<img class="preview-bg" src="{base}/theme/background.jpg?v={v}" alt="Aktuelles Hintergrundbild">"#, v = l.version) } else { r#"<p class="hint">Zurzeit kein Hintergrundbild.</p>"#.into() };
-    let warnings: String = l.warnings().iter().map(|w| format!("<li>{}</li>", html_escape::encode_text(w))).collect();
-    let warnings = if warnings.is_empty() { String::new() } else { format!(r#"<div class="notice warn" role="status"><p><strong>Kontrast prüfen:</strong></p><ul>{warnings}</ul></div>"#) };
+    let logo_prev = if has_logo(state) { format!(r#"<img class="preview-logo" src="{base}/theme/logo.png?v={v}" alt="{alt}">"#, v = l.version, alt = t(sp, "look.logo_aktuell")) } else { format!(r#"<p class="hint">{}</p>"#, t(sp, "look.logo_keins")) };
+    let bg_prev = if has_background(state) { format!(r#"<img class="preview-bg" src="{base}/theme/background.jpg?v={v}" alt="{alt}">"#, v = l.version, alt = t(sp, "look.bild_aktuell")) } else { format!(r#"<p class="hint">{}</p>"#, t(sp, "look.bild_keins")) };
+    let warnings: String = l.warnings(sp).iter().map(|w| format!("<li>{}</li>", html_escape::encode_text(w))).collect();
+    let warnings = if warnings.is_empty() { String::new() } else { format!(r#"<div class="notice warn" role="status"><p><strong>{}</strong></p><ul>{warnings}</ul></div>"#, t(sp, "look.kontrast")) };
     let checked = if l.custom_shades { " checked" } else { "" };
-    format!(r##"<main id="inhalt" class="doc admin" tabindex="-1"><p><a href="{base}/">← Zur Startseite</a></p>
-<p class="kicker">Verwaltung</p><h1>Erscheinungsbild</h1>
-<p>Gilt für Startseite, Hilfe, Pads und Ideensammlungen im Design „hsd“. Die Hausfarben sind Ausgangswerte; Linien und Tönungen leitet NextPad daraus ab und prüft den Kontrast.</p>
+    let farbe = |k: &'static str, i: usize| tf(sp, k, &[("n", &i.to_string())]);
+    format!(r##"<main id="inhalt" class="doc admin" tabindex="-1"><p><a href="{base}/">← {start}</a></p>
+<p class="kicker">{verwaltung}</p><h1>{titel}</h1>
+<p>{einleitung}</p>
 {notice}{warnings}
 <form method="post" action="{base}/admin/erscheinungsbild" enctype="multipart/form-data" class="admin-form">
-<fieldset><legend>Name</legend>
-<label class="field-label" for="f-product">Name im Kopf</label><input type="text" id="f-product" name="product" maxlength="40" value="{product}" placeholder="NextPad">
-<label class="field-label" for="f-tagline">Untertitel</label><input type="text" id="f-tagline" name="tagline" maxlength="80" value="{tagline}" placeholder="Gemeinsam schreiben an der HSD">
-<label class="field-label" for="f-institution">Einrichtung</label><input type="text" id="f-institution" name="institution" maxlength="80" value="{institution}" placeholder="Hochschule Düsseldorf" aria-describedby="h-institution">
-<p class="hint" id="h-institution">Name des Logos für Screenreader und der Startseiten-Verweis.</p>
+<fieldset><legend>{name}</legend>
+<label class="field-label" for="f-product">{name_kopf}</label><input type="text" id="f-product" name="product" maxlength="40" value="{product}" placeholder="NextPad">
+<label class="field-label" for="f-tagline">{untertitel_feld}</label><input type="text" id="f-tagline" name="tagline" maxlength="80" value="{tagline}" placeholder="{untertitel}">
+<label class="field-label" for="f-institution">{einrichtung}</label><input type="text" id="f-institution" name="institution" maxlength="80" value="{institution}" placeholder="Hochschule Düsseldorf" aria-describedby="h-institution">
+<p class="hint" id="h-institution">{einrichtung_hinweis}</p>
 </fieldset>
-<fieldset><legend>Logo der Einrichtung</legend>
+<fieldset><legend>{logo_titel}</legend>
 {logo_prev}
 <div class="choices">{logo_radios}</div>
-<label class="field-label" for="f-logo">Neues Logo hochladen</label><input type="file" id="f-logo" name="logo_file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="h-logo">
-<p class="hint" id="h-logo">PNG, JPEG, WebP oder SVG, höchstens 2 MB. Mit Logo der Einrichtung entfällt das NextPad-Zeichen im Kopf.</p>
+<label class="field-label" for="f-logo">{logo_hoch}</label><input type="file" id="f-logo" name="logo_file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-describedby="h-logo">
+<p class="hint" id="h-logo">{logo_hinweis}</p>
 </fieldset>
-<fieldset><legend>Hintergrundbild der Startseite</legend>
+<fieldset><legend>{bild_titel}</legend>
 {bg_prev}
 <div class="choices">{bg_radios}</div>
-<label class="field-label" for="f-bg">Neues Bild hochladen</label><input type="file" id="f-bg" name="background_file" accept="image/png,image/jpeg,image/webp" aria-describedby="h-bg">
-<p class="hint" id="h-bg">JPEG, PNG oder WebP, höchstens 6 MB, quer, mindestens 1600 px breit.</p>
-<label class="field-label" for="f-credit">Bildnachweis</label><input type="text" id="f-credit" name="credit" maxlength="200" value="{credit}" placeholder="Foto: …">
-<label class="field-label" for="f-credit-url">Link zum Bildnachweis</label><input type="url" id="f-credit-url" name="credit_url" maxlength="300" value="{credit_url}" placeholder="https://…">
+<label class="field-label" for="f-bg">{bild_hoch}</label><input type="file" id="f-bg" name="background_file" accept="image/png,image/jpeg,image/webp" aria-describedby="h-bg">
+<p class="hint" id="h-bg">{bild_hinweis}</p>
+<label class="field-label" for="f-credit">{nachweis}</label><input type="text" id="f-credit" name="credit" maxlength="200" value="{credit}" placeholder="{nachweis_platzhalter}">
+<label class="field-label" for="f-credit-url">{nachweis_link}</label><input type="url" id="f-credit-url" name="credit_url" maxlength="300" value="{credit_url}" placeholder="https://…">
 </fieldset>
-<fieldset><legend>Farben</legend>
+<fieldset><legend>{farben}</legend>
 {accent}{c1}{c2}{c3}
-<label class="choice"><input type="checkbox" name="custom_shades" id="f-custom" value="1"{checked}> Linien und Tönungen selbst festlegen</label>
+<label class="choice"><input type="checkbox" name="custom_shades" id="f-custom" value="1"{checked}> {selbst}</label>
 <div class="shades" id="shades">{l1}{l2}{t1}{t2}{t3}</div>
-<h3>So sieht es aus</h3>{swatches}
+<h3>{vorschau}</h3>{swatches}
 </fieldset>
-<p><button type="submit" class="btn btn-primary">Speichern</button></p>
+<p><button type="submit" class="btn btn-primary">{speichern}</button></p>
 </form>
-<form method="post" action="{base}/admin/erscheinungsbild/vorgabe" class="reset-form"><button type="submit" class="btn btn-secondary">Alles auf die Vorgabe zurücksetzen</button></form>
+<form method="post" action="{base}/admin/erscheinungsbild/vorgabe" class="reset-form"><button type="submit" class="btn btn-secondary">{zuruecksetzen}</button></form>
 </main>"##,
+        start = t(sp, "look.zur_startseite"), verwaltung = t(sp, "look.verwaltung"), titel = t(sp, "look.titel"), einleitung = t(sp, "look.einleitung"),
+        name = t(sp, "look.name"), name_kopf = t(sp, "look.name_kopf"), untertitel_feld = t(sp, "look.untertitel_feld"), untertitel = t(sp, "look.untertitel"),
+        einrichtung = t(sp, "look.einrichtung"), einrichtung_hinweis = t(sp, "look.einrichtung_hinweis"),
+        logo_titel = t(sp, "look.logo_titel"), logo_hoch = t(sp, "look.logo_hoch"), logo_hinweis = t(sp, "look.logo_hinweis"),
+        bild_titel = t(sp, "look.bild_titel"), bild_hoch = t(sp, "look.bild_hoch"), bild_hinweis = t(sp, "look.bild_hinweis"),
+        nachweis = t(sp, "look.nachweis"), nachweis_platzhalter = t(sp, "look.nachweis_platzhalter"), nachweis_link = t(sp, "look.nachweis_link"),
+        farben = t(sp, "look.farben"), selbst = t(sp, "look.selbst"), vorschau = t(sp, "look.vorschau"), speichern = t(sp, "look.speichern"), zuruecksetzen = t(sp, "look.zuruecksetzen"),
         product = esc(&l.product), tagline = esc(&l.tagline), institution = esc(&l.institution), credit = esc(&l.credit), credit_url = esc(&l.credit_url),
-        logo_radios = radios("logo", l.logo, default_exists(state, "logo.png"), has_own_logo, "Logo"),
-        bg_radios = radios("background", l.background, default_exists(state, "background.jpg"), has_own_bg, "Bild"),
-        accent = color_field("accent", "Akzentfarbe", &l.accent, D_ACCENT, "Kopflinie und Fokusrahmen."),
-        c1 = color_field("color1", "Farbe 1", &l.color1, D_COLORS[0], "Gewählte Werkzeuge, Stimmen, Vorlage Gruppenarbeit."),
-        c2 = color_field("color2", "Farbe 2", &l.color2, D_COLORS[1], "Erledigt, Vorlage Protokoll."),
-        c3 = color_field("color3", "Farbe 3", &l.color3, D_COLORS[2], "Neue Beiträge, Vorlage Ideensammlung."),
-        l1 = color_field("line1", "Linie 1", &l.line1, &p.lines[0], "Rahmen und Unterstreichung zu Farbe 1, mindestens 3:1 auf Weiß."),
-        l2 = color_field("line2", "Linie 2", &l.line2, &p.lines[1], "Häkchen zu Farbe 2."),
-        t1 = color_field("tint1", "Tönung 1", &l.tint1, &p.tints[0], "Fläche zu Farbe 1, schwarzer Text darauf."),
-        t2 = color_field("tint2", "Tönung 2", &l.tint2, &p.tints[1], "Fläche zu Farbe 2."),
-        t3 = color_field("tint3", "Tönung 3", &l.tint3, &p.tints[2], "Fläche zu Farbe 3."),
-        swatches = swatches(&p))
+        logo_radios = radios(sp, "logo", l.logo, default_exists(state, "logo.png"), has_own_logo, "look.r.eigenes_logo", "look.r.kein_logo"),
+        bg_radios = radios(sp, "background", l.background, default_exists(state, "background.jpg"), has_own_bg, "look.r.eigenes_bild", "look.r.kein_bild"),
+        accent = color_field(sp, "accent", t(sp, "look.akzentfarbe"), &l.accent, D_ACCENT, t(sp, "look.h.akzent")),
+        c1 = color_field(sp, "color1", &farbe("look.farbe_n", 1), &l.color1, D_COLORS[0], t(sp, "look.h.farbe1")),
+        c2 = color_field(sp, "color2", &farbe("look.farbe_n", 2), &l.color2, D_COLORS[1], t(sp, "look.h.farbe2")),
+        c3 = color_field(sp, "color3", &farbe("look.farbe_n", 3), &l.color3, D_COLORS[2], t(sp, "look.h.farbe3")),
+        l1 = color_field(sp, "line1", &farbe("look.linie_n", 1), &l.line1, &p.lines[0], t(sp, "look.h.linie1")),
+        l2 = color_field(sp, "line2", &farbe("look.linie_n", 2), &l.line2, &p.lines[1], t(sp, "look.h.linie2")),
+        t1 = color_field(sp, "tint1", &farbe("look.toenung_n", 1), &l.tint1, &p.tints[0], t(sp, "look.h.toenung1")),
+        t2 = color_field(sp, "tint2", &farbe("look.toenung_n", 2), &l.tint2, &p.tints[1], t(sp, "look.h.toenung2")),
+        t3 = color_field(sp, "tint3", &farbe("look.toenung_n", 3), &l.tint3, &p.tints[2], t(sp, "look.h.toenung3")),
+        swatches = swatches(sp, &p))
 }
 
-fn render(state: &AppState, l: &Look, notice: &str, status: StatusCode) -> Response {
+fn render(state: &AppState, sp: Sprache, l: &Look, notice: &str, status: StatusCode) -> Response {
     let base = &state.config.base_path;
     let scripts = format!(r#"<script src="{base}/static/admin.js?v={}"></script>"#, env!("CARGO_PKG_VERSION"));
-    let mut r = web::start_page(state, "Erscheinungsbild · NextPad", &form(state, l, notice), &scripts);
+    let mut r = web::start_page(state, sp, Some(PFAD), &format!("{} · NextPad", t(sp, "look.titel")), &form(state, sp, l, notice), &scripts);
     *r.status_mut() = status;
     r
 }
 
 pub async fn page(State(state): State<Arc<AppState>>, headers: HeaderMap, q: axum::extract::Query<std::collections::HashMap<String, String>>) -> Response {
-    if web::login_admin(&state, &headers).is_none() { return denied(&state); }
-    let notice = if q.contains_key("gespeichert") { r#"<div class="notice ok" role="status"><p>Gespeichert.</p></div>"# } else { "" };
-    render(&state, &get(&state), notice, StatusCode::OK)
+    let sp = Sprache::aus_anfrage(&headers);
+    if web::login_admin(&state, &headers).is_none() { return denied(&state, sp); }
+    let notice = if q.contains_key("gespeichert") { format!(r#"<div class="notice ok" role="status"><p>{}</p></div>"#, t(sp, "look.gespeichert")) } else { String::new() };
+    render(&state, sp, &get(&state), &notice, StatusCode::OK)
 }
 
 fn clean(s: &str, max: usize) -> String { s.chars().filter(|c| !c.is_control()).take(max).collect::<String>().trim().to_string() }
 
 pub async fn save(State(state): State<Arc<AppState>>, headers: HeaderMap, mut mp: Multipart) -> Response {
     if !web::origin_ok(&state, &headers) { return StatusCode::FORBIDDEN.into_response(); }
-    let Some(admin) = web::login_admin(&state, &headers) else { return denied(&state) };
+    let sp = Sprache::aus_anfrage(&headers);
+    let Some(admin) = web::login_admin(&state, &headers) else { return denied(&state, sp) };
     let old = get(&state);
     let mut l = Look { version: old.version + 1, ..Look::default() };
     let (mut logo_up, mut bg_up) = (None, None);
@@ -338,10 +367,10 @@ pub async fn save(State(state): State<Arc<AppState>>, headers: HeaderMap, mut mp
         let field = match mp.next_field().await {
             Ok(Some(f)) => f,
             Ok(None) => break,
-            Err(_) => { errors.push("Das Formular kam nicht vollständig an. Ist ein Bild zu groß?".into()); break; }
+            Err(_) => { errors.push(t(sp, "look.e.formular").into()); break; }
         };
         let name = field.name().unwrap_or("").to_string();
-        let Ok(bytes) = field.bytes().await else { errors.push("Das Formular kam nicht vollständig an. Ist ein Bild zu groß?".into()); break };
+        let Ok(bytes) = field.bytes().await else { errors.push(t(sp, "look.e.formular").into()); break };
         match name.as_str() {
             "logo_file" if !bytes.is_empty() => logo_up = Some(bytes),
             "background_file" if !bytes.is_empty() => bg_up = Some(bytes),
@@ -360,7 +389,7 @@ pub async fn save(State(state): State<Arc<AppState>>, headers: HeaderMap, mut mp
                     "custom_shades" => l.custom_shades = v == "1",
                     "accent" | "color1" | "color2" | "color3" | "line1" | "line2" | "tint1" | "tint2" | "tint3" => {
                         let v = v.trim().to_ascii_lowercase();
-                        if !v.is_empty() && parse(&v).is_none() { errors.push(format!("„{}“ ist keine Farbe im Format #rrggbb.", clean(&v, 20))); }
+                        if !v.is_empty() && parse(&v).is_none() { errors.push(tf(sp, "look.e.farbe", &[("wert", &clean(&v, 20))])); }
                         let slot = match name.as_str() { "accent" => &mut l.accent, "color1" => &mut l.color1, "color2" => &mut l.color2, "color3" => &mut l.color3,
                             "line1" => &mut l.line1, "line2" => &mut l.line2, "tint1" => &mut l.tint1, "tint2" => &mut l.tint2, _ => &mut l.tint3 };
                         *slot = v;
@@ -370,23 +399,23 @@ pub async fn save(State(state): State<Arc<AppState>>, headers: HeaderMap, mut mp
             }
         }
     }
-    if !l.credit_url.is_empty() && !l.credit_url.starts_with("https://") { errors.push("Der Link zum Bildnachweis muss mit https:// beginnen.".into()); }
+    if !l.credit_url.is_empty() && !l.credit_url.starts_with("https://") { errors.push(t(sp, "look.e.link").into()); }
     if let Some(b) = &logo_up {
-        if b.len() > MAX_LOGO { errors.push("Das Logo ist größer als 2 MB.".into()); }
-        else if sniff(b, true).is_none() { errors.push("Das Logo ist kein PNG, JPEG, WebP oder sicheres SVG (ohne Skripte).".into()); }
+        if b.len() > MAX_LOGO { errors.push(t(sp, "look.e.logo_gross").into()); }
+        else if sniff(b, true).is_none() { errors.push(t(sp, "look.e.logo_art").into()); }
         else { l.logo = Source::Eigen; }
     }
     if let Some(b) = &bg_up {
-        if b.len() > MAX_BACKGROUND { errors.push("Das Hintergrundbild ist größer als 6 MB.".into()); }
-        else if sniff(b, false).is_none() { errors.push("Das Hintergrundbild ist kein JPEG, PNG oder WebP.".into()); }
+        if b.len() > MAX_BACKGROUND { errors.push(t(sp, "look.e.bild_gross").into()); }
+        else if sniff(b, false).is_none() { errors.push(t(sp, "look.e.bild_art").into()); }
         else { l.background = Source::Eigen; }
     }
     if l.logo == Source::Eigen && logo_up.is_none() && !dir(&state).join("logo").is_file() { l.logo = Source::Vorgabe; }
     if l.background == Source::Eigen && bg_up.is_none() && !dir(&state).join("hintergrund").is_file() { l.background = Source::Vorgabe; }
     if !errors.is_empty() {
         let items: String = errors.iter().map(|e| format!("<li>{}</li>", html_escape::encode_text(e))).collect();
-        let notice = format!(r#"<div class="notice error" role="alert"><p><strong>Nicht gespeichert.</strong></p><ul>{items}</ul></div>"#);
-        return render(&state, &Look { logo: old.logo, background: old.background, ..l }, &notice, StatusCode::BAD_REQUEST);
+        let notice = format!(r#"<div class="notice error" role="alert"><p><strong>{}</strong></p><ul>{items}</ul></div>"#, t(sp, "look.nicht_gespeichert"));
+        return render(&state, sp, &Look { logo: old.logo, background: old.background, ..l }, &notice, StatusCode::BAD_REQUEST);
     }
     let d = dir(&state);
     let written = std::fs::create_dir_all(&d).and_then(|_| {
@@ -407,7 +436,7 @@ fn write_atomic(path: &std::path::Path, b: &[u8]) -> std::io::Result<()> {
 fn store(state: &AppState, l: Look, who: &str) -> Response {
     let json = serde_json::to_string(&l).unwrap_or_default();
     if let Err(e) = state.store.set_setting("look", &json) { tracing::error!("Erscheinungsbild speichern: {e}"); return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
-    *state.look.write().unwrap_or_else(|e| e.into_inner()) = l;
+    *state.look.schreiben() = l;
     tracing::info!("Erscheinungsbild geändert von {who}");
     (StatusCode::SEE_OTHER, [(header::LOCATION, format!("{}/admin/erscheinungsbild?gespeichert=1", state.config.base_path))]).into_response()
 }
@@ -415,7 +444,7 @@ fn store(state: &AppState, l: Look, who: &str) -> Response {
 /// Alles zurück auf die Vorgabe; hochgeladene Bilder bleiben liegen und sind wieder wählbar.
 pub async fn reset(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !web::origin_ok(&state, &headers) { return StatusCode::FORBIDDEN.into_response(); }
-    let Some(admin) = web::login_admin(&state, &headers) else { return denied(&state) };
+    let Some(admin) = web::login_admin(&state, &headers) else { return denied(&state, Sprache::aus_anfrage(&headers)) };
     let version = get(&state).version + 1;
     store(&state, Look { version, ..Look::default() }, &admin.name)
 }
@@ -430,7 +459,8 @@ mod tests {
         let p = l.palette();
         assert_eq!(p.lines[0], "#007a96");
         assert_eq!(p.tints[2], "#fff9b2");
-        assert!(l.warnings().is_empty());
+        assert!(l.warnings(Sprache::De).is_empty());
+        assert_eq!(l.tagline(Sprache::En), "Writing together at HSD");
     }
     #[test]
     fn derived_lines_reach_contrast() {
@@ -438,7 +468,8 @@ mod tests {
         let p = l.palette();
         assert!(ratio(parse(&p.lines[0]).unwrap(), WHITE) >= 4.5);
         assert!(ratio(parse(&p.lines_dark[0]).unwrap(), DARK) >= 4.5);
-        assert!(l.warnings().iter().any(|w| w.starts_with("Akzentfarbe")));
+        assert!(l.warnings(Sprache::De).iter().any(|w| w.starts_with("Akzentfarbe: nur 1,") && w.ends_with("mindestens 3:1.")));
+        assert!(l.warnings(Sprache::En).iter().any(|w| w.starts_with("Accent colour: only 1.")));
         assert!(l.css().contains("--hsd-red:#ffcc00"));
     }
     #[test]

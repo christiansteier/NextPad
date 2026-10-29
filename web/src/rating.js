@@ -4,6 +4,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Fragment, Slice } from '@tiptap/pm/model'
+import { tx } from './texte.js'
 
 export const RATINGS_MAP = 'ratings'
 
@@ -74,7 +75,7 @@ export function createRating({ ydoc, me, readonly }) {
           b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); vote(id, dir === 'up' ? 1 : -1) })
           b._label = label; dom.appendChild(b); return b
         }
-        const up = mk('up', 'Daumen hoch'), down = mk('down', 'Daumen runter')
+        const up = mk('up', tx('daumen_hoch')), down = mk('down', tx('daumen_runter'))
         const view = {
           dom,
           refresh() {
@@ -82,7 +83,7 @@ export function createRating({ ydoc, me, readonly }) {
             for (const [b, n, on] of [[up, t.up, mine === 1], [down, t.down, mine === -1]]) {
               b.querySelector('.n').textContent = String(n)
               b.setAttribute('aria-pressed', String(on)); b.classList.toggle('on', on)
-              b.title = `${b._label}: ${n}${on ? ' (meine Stimme, noch einmal klicken nimmt sie zurück)' : ''}`
+              b.title = `${b._label}: ${n}${on ? tx('meine_stimme') : ''}`
               b.setAttribute('aria-label', b.title)
             }
           },

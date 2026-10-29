@@ -175,6 +175,7 @@ impl Store {
         Ok(true)
     }
     /// Druck; je Gerät und Runde zählt nur der erste. false, wenn es die Runde nicht gibt.
+    #[allow(clippy::too_many_arguments)] // eine Zeile der Tabelle, Spalte für Spalte
     pub fn mess_druck(&self, pad_id: &str, nr: i64, runde: i64, t: f64, ts_ein: f64, off: f64, rtt: f64) -> Result<bool> {
         let c = self.c();
         if c.query_row("SELECT 1 FROM messung_runde WHERE pad_id=?1 AND runde=?2", params![pad_id, runde], |_| Ok(())).optional()?.is_none() { return Ok(false); }

@@ -30,7 +30,21 @@ jobs:
           workspaces: server
       - run: cargo build --locked
       - run: cargo test --locked
-      - run: cargo clippy --locked
+      - run: cargo clippy --locked -- -D warnings
+      # Browser- und API-Tests gegen frisch gestartete Server, dasselbe Skript wie lokal
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: ${{ runner.temp }}/web
+      - run: bash web/test/browsertests.sh server/target/debug/nextpad
+        working-directory: .
+        env:
+          NEXTPAD_WEB_BUILD: ${{ runner.temp }}/web
+          NEXTPAD_TEST_LOGS: ${{ runner.temp }}/browsertests
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browsertests
+          path: ${{ runner.temp }}/browsertests
+          if-no-files-found: ignore
       # bekannte Schwachstellen in Abhängigkeiten (RustSec), Ausnahmen mit Begründung in .cargo/audit.toml
       - uses: taiki-e/install-action@v2
         with:

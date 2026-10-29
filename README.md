@@ -62,6 +62,7 @@ the list of allowed addresses remain the operator's job.
 - Idea collection modelled on [liveask](https://github.com/liveask/liveask): post ideas and questions without a name, vote, live for everyone, with a projector view and QR code. The server counts one vote per person, only whoever created the collection can moderate. In a Moodle course it runs as an "External tool" activity (LTI 1.3), open only to course members and moderated by the teachers.
 - Moodle sign-in through LTI 1.3 (names and avatars).
 - Guest pads with ownership and retention rules.
+- Interface, help, exports and emails in German and English, switchable by each person.
 - One Rust binary, SQLite, roughly 50 MB RAM under load.
 
 ## Status

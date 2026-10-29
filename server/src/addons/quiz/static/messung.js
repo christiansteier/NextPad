@@ -2,6 +2,8 @@
 // Rechnen tut der Server; hier wird nur gemessen und angezeigt.
 (() => {
   const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
+  const T = cfg.texte || {}
+  const tx = (k, w = {}) => (T[k] || k).replace(/\{(\w+)\}/g, (_, n) => String(w[n] ?? ''))
   const base = cfg.basePath || ''
   const pad = `${base}/p/${encodeURIComponent(cfg.urlId)}`
   const api = pad + '/messung'
@@ -9,10 +11,12 @@
   // hochauflösend und monoton; der Versatz zur Serveruhr wird ohnehin laufend neu bestimmt
   const now = () => performance.timeOrigin + performance.now()
   const ms = x => x == null ? '–' : `${Math.round(x)} ms`
+  // Zeitgrenze je Anfrage: eine hängende Verbindung hält sonst den Abgleich minutenlang auf
+  const frist = t => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? { signal: AbortSignal.timeout(t) } : {}
 
   async function post(path, body) {
     const r = await fetch(api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
-    if (!r.ok) throw new Error((await r.text()) || `Fehler ${r.status}`)
+    if (!r.ok) throw new Error((await r.text()) || tx('fehler', { status: r.status }))
     return r.json()
   }
   const stand = async () => (await fetch(api + '/stand', { cache: 'no-store' })).json()
@@ -34,7 +38,7 @@
     const s = []
     for (let i = 0; i < 5; i++) {
       const t0 = now()
-      const j = await (await fetch(api + '/zeit', { cache: 'no-store' })).json()
+      const j = await (await fetch(api + '/zeit', { cache: 'no-store', ...frist(3000) })).json()
       const t1 = now()
       s.push({ rtt: t1 - t0, off: j.t - (t0 + t1) / 2 })
     }
@@ -43,11 +47,11 @@
     recent.push(b); if (recent.length > 3) recent.shift()
     await post('/probe', { dev, rtt: b.rtt, rttMed: b.rttMed, off: b.off })
     abgleiche++
-    $('m-status').textContent = `Misst mit: ${abgleiche} Abgleiche, Laufzeit zuletzt ${ms(b.rtt)}. Bitte offen lassen.`
+    $('m-status').textContent = tx('misst', { n: abgleiche, laufzeit: ms(b.rtt) })
   }
   async function loop() {
     while (started) {
-      try { await serie() } catch (e) { $('m-status').textContent = `Unterbrochen (${e.message}), versuche es gleich wieder …` }
+      try { await serie() } catch (e) { $('m-status').textContent = tx('unterbrochen', { grund: e.message }) }
       await new Promise(r => setTimeout(r, 3000))
     }
   }
@@ -63,7 +67,7 @@
     const b = $('m-buzzer')
     b.disabled = !an
     b.classList.toggle('is-jetzt', an)
-    b.textContent = an ? 'Jetzt drücken!' : 'Warten auf das Signal'
+    b.textContent = an ? tx('jetzt') : tx('warten')
   }
   async function signalPruefen(tr) {
     if (!started) return
@@ -76,14 +80,17 @@
     $('m-reaktion').textContent = ''
     zeigeBuzzer(true)
     clearTimeout(closeTimer); closeTimer = setTimeout(() => zeigeBuzzer(false), 10000)
-    post('/empfang', { dev, runde, t: tr, off: b.off, rtt: b.rtt }).catch(() => {})
+    const meldung = { dev, runde, t: tr, off: b.off, rtt: b.rtt }
+    // einmal wiederholen; geht es dann nicht, sieht es die Person, statt dass die Runde still fehlt
+    post('/empfang', meldung).catch(() => new Promise(r => setTimeout(r, 500)).then(() => post('/empfang', meldung)))
+      .catch(e => { $('m-reaktion').textContent = tx('empfang_fehlt', { grund: e.message }) })
   }
   $('m-buzzer').addEventListener('click', () => {
     const tp = now()
     const b = best()
     zeigeBuzzer(false); clearTimeout(closeTimer)
-    $('m-reaktion').textContent = `Gedrückt nach ${ms(tp - signalT)}.`
-    post('/druck', { dev, runde, t: tp, off: b.off, rtt: b.rtt }).catch(e => { $('m-reaktion').textContent = `Nicht angekommen: ${e.message}` })
+    $('m-reaktion').textContent = tx('gedrueckt_nach', { zeit: ms(tp - signalT) })
+    post('/druck', { dev, runde, t: tp, off: b.off, rtt: b.rtt }).catch(e => { $('m-reaktion').textContent = tx('nicht_angekommen', { grund: e.message }) })
   })
   $('m-start').addEventListener('click', async () => {
     if (started) return
@@ -107,17 +114,17 @@
     $('m-urteil').textContent = a.urteil
     const v = a.vergleich
     $('m-werte').replaceChildren(
-      ...wert('Geräte, Abgleiche, Runden', `${a.geraete} · ${a.abgleiche} · ${a.runden}`),
-      ...wert('Laufzeit hin und zurück', `Median ${ms(a.laufzeit.median)}, 95 % unter ${ms(a.laufzeit.p95)}, über 300 ms: ${a.laufzeit.ueber300} %`),
-      ...wert('Uhr nach Abgleich (Abweichung)', `Median ${ms(a.uhr.median)}, 95 % unter ${ms(a.uhr.p95)}`),
-      ...wert('Signal erreicht die Handys', `nach ${ms(a.signal.median)} (95 %: ${ms(a.signal.p95)}); zwischen erstem und letztem Handy je Runde ${ms(a.signal.spanneMedian)}, höchstens ${ms(a.signal.spanneMax)}`),
-      ...wert('Netz verschiebt den Druck', `um ${ms(a.eingang.median)} (95 %: ${ms(a.eingang.p95)}); Unterschied zwischen Handys je Runde ${ms(a.eingang.spanneMedian)}, höchstens ${ms(a.eingang.spanneMax)}`),
-      ...wert('Reaktionszeit', `Median ${ms(a.reaktion.median)}`),
-      ...wert('Wer war zuerst?', v.runden ? `${v.runden} Runden mit mindestens zwei Drücken: Erster nach Eingang beim Server falsch in ${v.wechselEingang}, Erster nach Reaktionszeit anders in ${v.wechselReaktion}, knapper als 50 ms in ${v.knapp}` : 'noch keine Runde mit zwei Drücken'),
+      ...wert(tx('w_geraete'), `${a.geraete} · ${a.abgleiche} · ${a.runden}`),
+      ...wert(tx('w_laufzeit'), tx('w_laufzeit_wert', { median: ms(a.laufzeit.median), p95: ms(a.laufzeit.p95), ueber: a.laufzeit.ueber300 })),
+      ...wert(tx('w_uhr'), tx('w_uhr_wert', { median: ms(a.uhr.median), p95: ms(a.uhr.p95) })),
+      ...wert(tx('w_signal'), tx('w_signal_wert', { median: ms(a.signal.median), p95: ms(a.signal.p95), spanne: ms(a.signal.spanneMedian), max: ms(a.signal.spanneMax) })),
+      ...wert(tx('w_netz'), tx('w_netz_wert', { median: ms(a.eingang.median), p95: ms(a.eingang.p95), spanne: ms(a.eingang.spanneMedian), max: ms(a.eingang.spanneMax) })),
+      ...wert(tx('w_reaktion'), tx('w_reaktion_wert', { median: ms(a.reaktion.median) })),
+      ...wert(tx('w_erster'), v.runden ? tx('w_erster_wert', { runden: v.runden, eingang: v.wechselEingang, reaktion: v.wechselReaktion, knapp: v.knapp }) : tx('w_erster_keine')),
     )
     $('m-liste').replaceChildren(...a.liste.map(g => {
       const tr = document.createElement('tr')
-      for (const x of [`Gerät ${g.nr}`, g.art, g.abgleiche, ms(g.laufzeit), ms(g.uhr), g.druecke, g.zuletztS == null ? '–' : `vor ${g.zuletztS} s`]) {
+      for (const x of [tx('geraet', { n: g.nr }), g.art === 'andere' ? tx('andere') : g.art, g.abgleiche, ms(g.laufzeit), ms(g.uhr), g.druecke, g.zuletztS == null ? '–' : tx('vor', { n: g.zuletztS })]) {
         const td = document.createElement('td'); td.textContent = x; tr.append(td)
       }
       return tr
@@ -131,7 +138,7 @@
   }
   $('m-signal').addEventListener('click', signal)
   $('m-loeschen').addEventListener('click', async () => {
-    if (!confirm('Alle Messdaten dieses Quiz löschen? Vorher die CSV sichern, wenn sie gebraucht wird.')) return
+    if (!confirm(tx('loeschen_frage'))) return
     try { await post('/loeschen') } catch (e) { alert(e.message) }
     auswertung()
   })

@@ -12,12 +12,14 @@ name = "NextPad"
         ask.de = "Quelladressen, die die Etherpad-API nutzen dürfen"
         ask.en = "Source addresses allowed to use the Etherpad API"
         help.de = "Moodle-Server, kommagetrennt, Netze mit CIDR (z. B. 192.0.2.0/24). Der API-Schlüssel steht in /home/yunohost.app/nextpad/secrets/api-keys.txt."
+        help.en = "Moodle servers, comma-separated, networks with CIDR (e.g. 192.0.2.0/24). The API key is in /home/yunohost.app/nextpad/secrets/api-keys.txt."
         type = "string"
 
         [main.moodle.frame_ancestors]
         ask.de = "Seiten, die NextPad einbetten dürfen"
         ask.en = "Pages allowed to embed NextPad"
         help.de = "Wert für frame-ancestors, z. B. 'self' https://moodle.example.org"
+        help.en = "Value for frame-ancestors, e.g. 'self' https://moodle.example.org"
         type = "string"
 
     [main.appearance]
@@ -26,33 +28,42 @@ name = "NextPad"
 
         [main.appearance.theme]
         ask.de = "Design"
+        ask.en = "Look"
         type = "select"
         choices = ["colibris", "hsd"]
 
         [main.appearance.admins]
         ask.de = "Admins für das Erscheinungsbild"
+        ask.en = "Admins for the appearance"
         help.de = "Mailadressen aus Moodle, mit Komma getrennt. Moodle-Administration ist immer Admin. Logo, Farben und Startbild stellen Admins unter /admin/erscheinungsbild ein."
+        help.en = "Email addresses from Moodle, comma-separated. Moodle administrators are always admins. Admins set the logo, colours and start image under /admin/erscheinungsbild."
         type = "string"
         optional = true
 
         [main.appearance.site_name]
         ask.de = "Betreiber in der Fußzeile"
+        ask.en = "Operator in the footer"
         type = "string"
 
         [main.appearance.footer_links]
         ask.de = "Links in der Fußzeile"
+        ask.en = "Links in the footer"
         help.de = "Beschriftung|https://… getrennt mit ;, z. B. Datenschutz|https://…;Impressum|https://…"
+        help.en = "Label|https://… separated by ;, e.g. Privacy|https://…;Legal notice|https://…"
         type = "string"
         optional = true
 
         [main.appearance.background_credit]
         ask.de = "Bildnachweis für das Hintergrundbild"
+        ask.en = "Credit for the background image"
         help.de = "Nur nötig, wenn theme/background.jpg liegt (bei Bildern unter CC-Lizenz Pflicht)"
+        help.en = "Only needed if theme/background.jpg exists (required for images under a CC licence)"
         type = "string"
         optional = true
 
         [main.appearance.background_credit_url]
         ask.de = "Link des Bildnachweises"
+        ask.en = "Link of the image credit"
         type = "string"
         optional = true
 
@@ -60,17 +71,21 @@ name = "NextPad"
     name.de = "Addons"
     name.en = "Add-ons"
     help.de = "Ausgeschaltet: keine Kachel, kein Moodle-Typ; bestehende Inhalte bleiben und sind nach dem Einschalten wieder da."
+    help.en = "Disabled: no tile, no Moodle type; existing content stays and is back once enabled again."
 
         [main.addons.addon_ideen]
         ask.de = "Ideensammlung"
+        ask.en = "Idea collection"
         type = "boolean"
 
         [main.addons.addon_quiz]
         ask.de = "Quiz-Raster mit Buzzer und Buzzer-Messung"
+        ask.en = "Quiz grid with buzzer and buzzer measurement"
         type = "boolean"
 
         [main.addons.addon_zeichenbrett]
         ask.de = "Zeichenbrett"
+        ask.en = "Whiteboard"
         type = "boolean"
 
     [main.pads]
@@ -79,22 +94,27 @@ name = "NextPad"
 
         [main.pads.allow_free_pads]
         ask.de = "Freie Pads von der Startseite erlauben"
+        ask.en = "Allow free pads from the start page"
         type = "boolean"
 
         [main.pads.free_pads_per_hour]
         ask.de = "Höchstens neue freie Pads je Adresse und Stunde"
+        ask.en = "Maximum new free pads per address and hour"
         type = "number"
         min = 1
         max = 1000
 
         [main.pads.retention]
         ask.de = "Aufbewahrung freier Pads"
+        ask.en = "Retention of free pads"
         help.de = "off: nichts löschen · dry-run: nur protokollieren · on: nach Frist löschen, vorher Mail an angemeldete Besitzer"
+        help.en = "off: delete nothing · dry-run: log only · on: delete after the period, with an email to signed-in owners first"
         type = "select"
         choices = ["off", "dry-run", "on"]
 
         [main.pads.history_days]
         ask.de = "Tage mit jedem Einzelschritt in der Zeitleiste"
+        ask.en = "Days with every single step in the timeline"
         type = "number"
         min = 1
         max = 3650

@@ -78,7 +78,7 @@ fn plain(s: &str) -> String {
 struct Page { ops: Vec<u8> }
 
 /// PDF aus Titelzeile und Markdown-Text.
-pub fn from_markdown(header: &str, md: &str) -> Vec<u8> {
+pub fn from_markdown(header: &str, md: &str, sp: crate::texte::Sprache) -> Vec<u8> {
     let mut pages: Vec<Page> = vec![Page { ops: Vec::new() }];
     let mut y = H - M;
     let max = W - 2.0 * M;
@@ -132,7 +132,7 @@ pub fn from_markdown(header: &str, md: &str) -> Vec<u8> {
     // Seitenzahlen
     let n = pages.len();
     for (i, p) in pages.iter_mut().enumerate() {
-        p.ops.extend_from_slice(format!("BT /F1 8 Tf {:.1} 30 Td (Seite {} von {n}) Tj ET\n", W - M - 60.0, i + 1).as_bytes());
+        p.ops.extend_from_slice(format!("BT /F1 8 Tf {:.1} 30 Td ({} {} {} {n}) Tj ET\n", W - M - 60.0, crate::texte::t(sp, "export.seite"), i + 1, crate::texte::t(sp, "export.von")).as_bytes());
     }
     write(&pages)
 }
@@ -171,6 +171,21 @@ fn write(pages: &[Page]) -> Vec<u8> {
 
 /// Datum aus Millisekunden seit 1970 als TT.MM.JJJJ (UTC).
 pub fn date_de(ms: i64) -> String {
+    let (y, m, d) = ymd(ms);
+    format!("{d:02}.{m:02}.{y}")
+}
+
+/// Datum in der Sprache: deutsch TT.MM.JJJJ, englisch britisch „24 October 2026“ (UTC).
+pub fn datum(sp: crate::texte::Sprache, ms: i64) -> String {
+    const MONATE: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    match sp {
+        crate::texte::Sprache::De => date_de(ms),
+        crate::texte::Sprache::En => { let (y, m, d) = ymd(ms); format!("{d} {} {y}", MONATE[(m - 1) as usize]) }
+    }
+}
+
+/// Jahr, Monat, Tag (UTC) aus Millisekunden seit 1970.
+fn ymd(ms: i64) -> (i64, i64, i64) {
     let days = ms.div_euclid(86_400_000);
     // Umrechnung nach Howard Hinnant (civil_from_days)
     let z = days + 719_468;
@@ -183,17 +198,20 @@ pub fn date_de(ms: i64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
-    format!("{d:02}.{m:02}.{y}")
+    (y, m, d)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn datum() { assert_eq!(date_de(0), "01.01.1970"); assert_eq!(date_de(1_792_800_000_000), "24.10.2026"); }
+    fn datum_de_en() {
+        assert_eq!(date_de(0), "01.01.1970"); assert_eq!(date_de(1_792_800_000_000), "24.10.2026");
+        assert_eq!(datum(crate::texte::Sprache::En, 1_792_800_000_000), "24 October 2026"); assert_eq!(datum(crate::texte::Sprache::En, 0), "1 January 1970");
+    }
     #[test]
     fn pdf_grundform() {
-        let p = from_markdown("Kopf", "# Titel\n\nAbsatz mit Ümlaut und (Klammer).\n\n- eins\n- zwei\n1. erstens\n");
+        let p = from_markdown("Kopf", "# Titel\n\nAbsatz mit Ümlaut und (Klammer).\n\n- eins\n- zwei\n1. erstens\n", crate::texte::Sprache::De);
         assert!(p.starts_with(b"%PDF-1.4"));
         assert!(p.ends_with(b"%%EOF\n"));
         let s = String::from_utf8_lossy(&p);

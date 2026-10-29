@@ -77,6 +77,8 @@ pub struct Options<'a> {
     /// Fußzeile links (Pad-Name)
     pub footer: &'a str,
     pub title: &'a str,
+    /// Sprache für Silbentrennung und „Seite x von y“
+    pub sprache: crate::texte::Sprache,
 }
 
 /// Vorlage: HSD (Logo, rote Linie, Arial, HSD Sans nur für Ebene 1 ab 20 pt) oder neutral.
@@ -85,12 +87,15 @@ fn template(o: &Options, logo: Option<&str>, body: &str) -> String {
     let head_left = match logo { Some(path) if o.hsd => format!("image({}, height: 11mm)", q(path)), _ => format!("text(size: 13pt, weight: \"bold\")[#{}]", q(o.product)) };
     let accent = if o.hsd { format!("rgb({})", q(o.accent)) } else { "luma(160)".to_string() };
     let h1 = if o.hsd { "#show heading.where(level: 1): set text(font: (\"HSD Sans\", \"Arial\", \"Liberation Sans\", \"Noto Emoji\"), weight: \"regular\", size: 22pt)" } else { "#show heading.where(level: 1): set text(size: 20pt)" };
+    let seite = q(crate::texte::t(o.sprache, "export.seite"));
+    let von = q(crate::texte::t(o.sprache, "export.von"));
+    let (lang, region) = match o.sprache { crate::texte::Sprache::De => ("\"de\"", "\"de\""), crate::texte::Sprache::En => ("\"en\"", "\"gb\"") };
     format!(r#"#set document(title: {title}, author: "NextPad")
 #set page(paper: "a4", margin: (top: 34mm, bottom: 24mm, left: 25mm, right: 22mm),
   header: [#grid(columns: (1fr, auto), align: (left + horizon, right + horizon), {head_left}, text(size: 8pt, fill: luma(80))[#{header}])
     #v(-1.5mm) #line(length: 100%, stroke: 0.8pt + {accent})],
-  footer: context [#set text(size: 8pt, fill: luma(80)); #{footer} #h(1fr) Seite #counter(page).display() von #counter(page).final().first()])
-#set text(font: ("Arial", "Liberation Sans", "Noto Emoji"), size: 10.5pt, lang: "de", region: "de", hyphenate: true)
+  footer: context [#set text(size: 8pt, fill: luma(80)); #{footer} #h(1fr) #{seite} #counter(page).display() #{von} #counter(page).final().first()])
+#set text(font: ("Arial", "Liberation Sans", "Noto Emoji"), size: 10.5pt, lang: {lang}, region: {region}, hyphenate: true)
 #set par(leading: 0.62em, spacing: 0.9em, justify: false)
 #set list(indent: 0.6em, body-indent: 0.5em, marker: ([•], [–], [·]))
 #set enum(indent: 0.6em, body-indent: 0.5em)
@@ -131,7 +136,7 @@ mod tests {
     use super::*;
     #[test]
     fn satz_mit_sonderzeichen() {
-        let o = Options { hsd: true, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "NextPad · Stand 24.10.2026", footer: "Pad \"x\" #1", title: "Test" };
+        let o = Options { hsd: true, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "NextPad · Stand 24.10.2026", footer: "Pad \"x\" #1", title: "Test", sprache: crate::texte::Sprache::De };
         let body = format!("#heading(level: 1)[#{}]\n\n#{} #strong[#{}]\n\n- #{}\n", crate::render::typst_str("Überschrift #1 *x*"), crate::render::typst_str("Text mit \\ und \" und $ und ] und <a>"), crate::render::typst_str("fett"), crate::render::typst_str("Punkt"));
         let p = pdf(&o, &body).expect("PDF");
         assert!(p.starts_with(b"%PDF"));
@@ -139,12 +144,12 @@ mod tests {
     #[test]
     fn satz_mit_svg_logo_und_akzent() {
         let svg = include_bytes!("../static/logo.svg").to_vec();
-        let o = Options { hsd: true, theme_dir: None, logo: Some((svg, "image/svg+xml")), accent: "#007a96", product: "Pads", header: "Kopf", footer: "Fuß", title: "Test" };
+        let o = Options { hsd: true, theme_dir: None, logo: Some((svg, "image/svg+xml")), accent: "#007a96", product: "Pads", header: "Kopf", footer: "Fuß", title: "Test", sprache: crate::texte::Sprache::De };
         assert!(pdf(&o, "Text").expect("PDF").starts_with(b"%PDF"));
     }
     #[test]
     fn emoji_aus_eingebauter_schrift() {
-        let o = Options { hsd: true, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "Kopf", footer: "Fuß", title: "Test" };
+        let o = Options { hsd: true, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "Kopf", footer: "Fuß", title: "Test", sprache: crate::texte::Sprache::De };
         let body = format!("#heading(level: 1)[#{}]\n\n#{}\n", crate::render::typst_str("Abstimmung 👍"), crate::render::typst_str("Stimmen: 👍 15 · 👎 2"));
         let p = pdf(&o, &body).expect("PDF");
         assert!(p.windows(9).any(|w| w == b"NotoEmoji"), "Noto Emoji fehlt im PDF");

@@ -47,6 +47,17 @@ check('Startseite: Verweis nur für Admins', (await (await get('/', admin)).text
 check('Speichern als Lehrende 403', (await save(user, { product: 'X' })).status === 403)
 check('Speichern von fremder Seite 403', (await save(admin, { product: 'X' }, {}, 'https://evil.test')).status === 403)
 
+// Englisch: Seite, Umschalter, Abweisung, Fehlermeldung beim Speichern
+const en = { 'accept-language': 'en-GB' }
+const enPage = await (await fetch(base + '/admin/erscheinungsbild', { headers: { cookie: admin, ...en } })).text()
+check('Seite englisch mit Umschalter', enPage.includes('<html lang="en"') && enPage.includes('<h1>Appearance</h1>') && enPage.includes('Reset everything to the default') && enPage.includes('class="sprachwahl"') && !enPage.includes('Speichern'))
+check('Seite deutsch', (await (await get('/admin/erscheinungsbild', admin)).text()).includes('<h1>Erscheinungsbild</h1>'))
+const enDenied = await fetch(base + '/admin/erscheinungsbild', { headers: { cookie: user, ...en } })
+check('Abweisung englisch', enDenied.status === 403 && (await enDenied.text()).includes('This page is for admins only.'))
+const enBad = new FormData(); enBad.append('accent', 'rot')
+const enBadText = await (await fetch(base + '/admin/erscheinungsbild', { method: 'POST', body: enBad, headers: { cookie: admin, ...en } })).text()
+check('Fehlermeldung englisch', enBadText.includes('Not saved.') && enBadText.includes('is not a colour in the format #rrggbb.'))
+
 const bad = await save(admin, { accent: 'rot', product: 'Nicht' })
 check('ungültige Farbe: 400 mit Meldung', bad.status === 400 && (await bad.text()).includes('Nicht gespeichert'))
 const evil = await save(admin, {}, { logo_file: [Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'), 'image/svg+xml'] })
@@ -58,6 +69,7 @@ const ok = await save(admin, { product: 'Testpads', tagline: 'Schreiben im Test'
 check('Speichern 303 mit Rückmeldung', ok.status === 303 && ok.headers.get('location').endsWith('?gespeichert=1'))
 const start = await (await get('/')).text()
 check('Name, Untertitel, Einrichtung im Kopf', start.includes('<strong>Testpads</strong>') && start.includes('Schreiben im Test') && start.includes('alt="Testhochschule"'))
+check('eingetragener Untertitel bleibt auf Englisch unübersetzt', (await (await fetch(base + '/', { headers: en })).text()).includes('Schreiben im Test'))
 check('Farben als Stilangaben', start.includes('--hsd-red:#007a96') && start.includes('--hsd-blue:#7fd4ff') && /--line-blue:#[0-9a-f]{6}/.test(start))
 const logo = await get('/theme/logo.png')
 check('eigenes Logo als SVG, abgeschottet', logo.status === 200 && logo.headers.get('content-type') === 'image/svg+xml' && (logo.headers.get('content-security-policy') || '').includes('sandbox'))
@@ -98,4 +110,6 @@ await b.close()
 const reset = await fetch(`${base}/admin/erscheinungsbild/vorgabe`, { method: 'POST', redirect: 'manual', headers: { cookie: admin } })
 const after = await (await get('/')).text()
 check('Zurücksetzen: Vorgabe gilt wieder', reset.status === 303 && after.includes('<strong>NextPad</strong>') && !after.includes('--hsd-red:'))
+const afterEn = await (await fetch(base + '/', { headers: en })).text()
+check('Vorgabe-Untertitel je Sprache', after.includes('Gemeinsam schreiben an der HSD') && afterEn.includes('Writing together at HSD') && !afterEn.includes('Gemeinsam schreiben'))
 console.log(`\n${pass} ok, ${fail} fehlgeschlagen`); process.exit(fail ? 1 : 0)

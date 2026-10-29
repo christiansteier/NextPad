@@ -137,10 +137,10 @@ fn text_html<T: ReadTxn>(txn: &T, t: &XmlTextRef) -> String {
 }
 
 /// Zustand beim HTML-Export: Überschriften fürs Inhaltsverzeichnis und ihre Sprungmarken.
-struct HtmlCtx { headings: Vec<(u8, String)>, next_heading: usize, in_table: usize }
+struct HtmlCtx { headings: Vec<(u8, String)>, next_heading: usize, in_table: usize, toc: &'static str }
 
 fn toc_html(cx: &HtmlCtx, out: &mut String) {
-    out.push_str("<nav data-type=\"toc\" class=\"toc\"><div class=\"toc-title\">Inhaltsverzeichnis</div><ol>");
+    out.push_str(&format!("<nav data-type=\"toc\" class=\"toc\"><div class=\"toc-title\">{}</div><ol>", cx.toc));
     let min = cx.headings.iter().map(|h| h.0).min().unwrap_or(1);
     for (i, (level, text)) in cx.headings.iter().enumerate() {
         out.push_str(&format!("<li class=\"lvl{}\"><a href=\"#abschnitt-{}\">{}</a></li>", level - min + 1, i + 1, esc(text)));
@@ -222,17 +222,23 @@ fn node_html<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
     }
 }
 
+/// Titel des Inhaltsverzeichnisses, wo keine Sprache bekannt ist (Speicherung, Etherpad-API).
+pub const VERZEICHNIS: &str = "Inhaltsverzeichnis";
+
 /// Vollständiges HTML-Dokument wie Etherpads getHTML.
-pub fn to_html<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String {
+pub fn to_html<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String { to_html_mit(txn, frag, VERZEICHNIS) }
+
+/// HTML mit eigenem Titel des Inhaltsverzeichnisses (Export in der Sprache der Anfrage).
+pub fn to_html_mit<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, toc: &'static str) -> String {
     let mut body = String::new();
-    let mut cx = HtmlCtx { headings: crate::bausteine::headings(txn, frag), next_heading: 0, in_table: 0 };
+    let mut cx = HtmlCtx { headings: crate::bausteine::headings(txn, frag), next_heading: 0, in_table: 0, toc };
     for c in frag.children(txn) {
         node_html(txn, &c, &mut body, 0, &mut cx);
     }
     format!("<!DOCTYPE HTML><html><body>{body}</body></html>")
 }
 
-fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize, ordered: Option<&mut usize>) {
+fn node_text<T: ReadTxn>(txn: &T, toc: &str, node: &XmlOut, out: &mut String, depth: usize, ordered: Option<&mut usize>) {
     if depth > MAX_DEPTH { return; }
     match node {
         XmlOut::Text(t) => {
@@ -242,7 +248,7 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
         }
         XmlOut::Fragment(f) => {
             for c in f.children(txn) {
-                node_text(txn, &c, out, depth, None);
+                node_text(txn, toc, &c, out, depth, None);
             }
         }
         XmlOut::Element(el) => {
@@ -260,17 +266,17 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
                                 if let XmlOut::Element(e) = &lc {
                                     let t = e.tag().to_string();
                                     if t == "bulletList" || t == "orderedList" || t == "taskList" {
-                                        node_text(txn, &lc, out, depth + 1, None);
+                                        node_text(txn, toc, &lc, out, depth + 1, None);
                                         continue;
                                     }
                                     if !first { out.push_str(&"  ".repeat(depth + 1)); }
                                     let mut inner = String::new();
-                                    for ic in e.children(txn) { node_text(txn, &ic, &mut inner, depth, None); }
+                                    for ic in e.children(txn) { node_text(txn, toc, &ic, &mut inner, depth, None); }
                                     out.push_str(&inner);
                                     out.push('\n');
                                     first = false;
                                 } else {
-                                    node_text(txn, &lc, out, depth, None);
+                                    node_text(txn, toc, &lc, out, depth, None);
                                 }
                             }
                         }
@@ -280,7 +286,7 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
                     for row in el.children(txn) {
                         let cells: Vec<String> = row_cells(txn, &row).iter().map(|(_, c)| {
                             let mut t = String::new();
-                            for b in c.children(txn) { node_text(txn, &b, &mut t, depth + 1, None); }
+                            for b in c.children(txn) { node_text(txn, toc, &b, &mut t, depth + 1, None); }
                             t.trim_end().replace('\n', " / ")
                         }).collect();
                         out.push_str(&cells.join(" | ")); out.push('\n');
@@ -288,7 +294,7 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
                 }
                 "rating" => out.push_str(&rating_text(txn, el)),
                 "tableOfContents" => {
-                    out.push_str("Inhaltsverzeichnis\n");
+                    out.push_str(toc); out.push('\n');
                     let hs = doc_headings(txn);
                     let min = hs.iter().map(|h| h.0).min().unwrap_or(1);
                     for (l, t) in hs { out.push_str(&format!("{}- {t}\n", "  ".repeat((l - min) as usize))); }
@@ -298,7 +304,7 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
                 _ => {
                     if tag == "paragraph" || tag == "heading" { out.push_str(&"    ".repeat(indent_level(txn, el))); }
                     for c in el.children(txn) {
-                        node_text(txn, &c, out, depth + 1, None);
+                        node_text(txn, toc, &c, out, depth + 1, None);
                     }
                     out.push('\n');
                 }
@@ -309,10 +315,12 @@ fn node_text<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize,
 }
 
 /// Reiner Text wie Etherpads getText: Blöcke zeilenweise, Listen mit Präfix.
-pub fn to_text<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String {
+pub fn to_text<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String { to_text_mit(txn, frag, VERZEICHNIS) }
+
+pub fn to_text_mit<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, toc: &str) -> String {
     let mut out = String::new();
     for c in frag.children(txn) {
-        node_text(txn, &c, &mut out, 0, None);
+        node_text(txn, toc, &c, &mut out, 0, None);
     }
     out
 }
@@ -363,7 +371,7 @@ fn inline_md_d<T: ReadTxn>(txn: &T, el: &XmlElementRef, depth: usize) -> String 
     out
 }
 
-fn block_md<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) {
+fn block_md<T: ReadTxn>(txn: &T, toc: &str, node: &XmlOut, out: &mut String, depth: usize) {
     if depth > MAX_DEPTH { return; }
     let XmlOut::Element(el) = node else { return };
     let tag = el.tag().to_string();
@@ -383,7 +391,7 @@ fn block_md<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) 
                 for lc in li.children(txn) {
                     if let XmlOut::Element(e) = &lc {
                         let t = e.tag().to_string();
-                        if t == "bulletList" || t == "orderedList" || t == "taskList" { block_md(txn, &lc, out, depth + 1); continue; }
+                        if t == "bulletList" || t == "orderedList" || t == "taskList" { block_md(txn, toc, &lc, out, depth + 1); continue; }
                         if first { out.push_str(&prefix); } else { out.push_str(&"  ".repeat(depth + 1)); }
                         out.push_str(&inline_md(txn, e)); out.push('\n');
                         first = false;
@@ -410,7 +418,7 @@ fn block_md<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) 
         "tableOfContents" => {
             let hs = doc_headings(txn);
             if hs.is_empty() { return; }
-            out.push_str("**Inhaltsverzeichnis**\n\n");
+            out.push_str(&format!("**{toc}**\n\n"));
             let min = hs.iter().map(|h| h.0).min().unwrap_or(1);
             for (l, t) in hs { out.push_str(&format!("{}- {}\n", "  ".repeat((l - min) as usize), t.replace('&', "&amp;").replace('<', "&lt;"))); }
             out.push('\n');
@@ -421,9 +429,11 @@ fn block_md<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) 
 }
 
 /// Markdown-Export (CommonMark; Unterstreichung als <u>, Farben und Größen entfallen).
-pub fn to_markdown<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String {
+pub fn to_markdown<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String { to_markdown_mit(txn, frag, VERZEICHNIS) }
+
+pub fn to_markdown_mit<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, toc: &str) -> String {
     let mut out = String::new();
-    for c in frag.children(txn) { block_md(txn, &c, &mut out, 0); }
+    for c in frag.children(txn) { block_md(txn, toc, &c, &mut out, 0); }
     out.trim_end().to_string() + "\n"
 }
 
@@ -503,7 +513,7 @@ fn aligned<T: ReadTxn>(txn: &T, el: &XmlElementRef, body: String) -> String {
     }
 }
 
-fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usize) {
+fn block_typst<T: ReadTxn>(txn: &T, toc: &str, node: &XmlOut, out: &mut String, depth: usize) {
     if depth > MAX_DEPTH { return; }
     let XmlOut::Element(el) = node else { return };
     let tag = el.tag().to_string();
@@ -534,7 +544,7 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
                 for lc in li.children(txn) {
                     let XmlOut::Element(e) = &lc else { continue };
                     let t = e.tag().to_string();
-                    if t == "bulletList" || t == "orderedList" || t == "taskList" { if first { out.push_str(&format!("{ind}{marker} #[]\n")); first = false; } block_typst(txn, &lc, out, depth + 1); continue; }
+                    if t == "bulletList" || t == "orderedList" || t == "taskList" { if first { out.push_str(&format!("{ind}{marker} #[]\n")); first = false; } block_typst(txn, toc, &lc, out, depth + 1); continue; }
                     let body = inline_typst(txn, e, 0);
                     let body = if body.is_empty() { "#[]".to_string() } else { body };
                     if first { out.push_str(&format!("{ind}{marker} {check}{body}\n")); first = false; } else { out.push_str(&format!("{ind}  {body}\n")); }
@@ -555,7 +565,7 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
             let header = rows.first().is_some_and(|r| r.iter().all(|(h, _)| *h));
             let cell = |c: &XmlElementRef, head: bool| {
                 let mut body = String::new();
-                for b in c.children(txn) { block_typst(txn, &b, &mut body, depth + 1); }
+                for b in c.children(txn) { block_typst(txn, toc, &b, &mut body, depth + 1); }
                 let body = body.trim_end().to_string();
                 let body = if head { format!("#strong[{body}]") } else { body };
                 let span = |k: &str| attr_string(c.get_attribute(txn, k)).and_then(|v| v.parse::<usize>().ok()).filter(|n| *n > 1 && *n <= 100);
@@ -572,7 +582,7 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
             out.push_str(")\n\n");
         }
         "tableOfContents" => {
-            if !doc_headings(txn).is_empty() { out.push_str("#outline(title: [Inhaltsverzeichnis], depth: 4)\n\n"); }
+            if !doc_headings(txn).is_empty() { out.push_str(&format!("#outline(title: [#{}], depth: 4)\n\n", typst_str(toc))); }
         }
         _ => { let body = inline_typst(txn, el, 0); if !body.is_empty() { out.push_str(&body); out.push_str("\n\n"); } }
     }
@@ -583,9 +593,11 @@ fn block_typst<T: ReadTxn>(txn: &T, node: &XmlOut, out: &mut String, depth: usiz
 const THUMB_UP: &str = r#"<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>"#;
 const THUMB_DOWN: &str = r#"<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>"#;
 
-pub fn to_typst<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String {
+pub fn to_typst<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef) -> String { to_typst_mit(txn, frag, VERZEICHNIS) }
+
+pub fn to_typst_mit<T: ReadTxn>(txn: &T, frag: &XmlFragmentRef, toc: &str) -> String {
     let mut out = String::new();
-    for c in frag.children(txn) { block_typst(txn, &c, &mut out, 0); }
+    for c in frag.children(txn) { block_typst(txn, toc, &c, &mut out, 0); }
     out
 }
 
@@ -1029,6 +1041,20 @@ mod tests {
     }
 
     #[test]
+    fn verzeichnis_in_der_sprache_des_exports() {
+        let doc = pad();
+        let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
+        let txn = doc.transact();
+        let toc = "Table of contents";
+        assert!(to_html_mit(&txn, &frag, toc).contains(r#"<div class="toc-title">Table of contents</div>"#));
+        assert!(to_markdown_mit(&txn, &frag, toc).contains("**Table of contents**\n\n- Planung"));
+        assert!(to_text_mit(&txn, &frag, toc).contains("Table of contents\n"));
+        let typ = to_typst_mit(&txn, &frag, toc);
+        assert!(typ.contains("#outline(title: [#\"Table of contents\"]"), "{typ}");
+        assert!(!typ.contains("Inhaltsverzeichnis") && to_typst(&txn, &frag).contains("Inhaltsverzeichnis"));
+    }
+
+    #[test]
     fn eingerueckte_absaetze_in_den_exporten() {
         let doc = Doc::new();
         let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
@@ -1068,7 +1094,7 @@ mod tests {
         let doc = pad();
         let frag = doc.get_or_insert_xml_fragment(FRAGMENT);
         let body = { let txn = doc.transact(); to_typst(&txn, &frag) };
-        let o = crate::typeset::Options { hsd: false, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "Test", footer: "pad", title: "Test" };
+        let o = crate::typeset::Options { hsd: false, theme_dir: None, logo: None, accent: "#e60028", product: "NextPad", header: "Test", footer: "pad", title: "Test", sprache: crate::texte::Sprache::De };
         let pdf = crate::typeset::pdf(&o, &body).expect("Satz gelingt");
         assert!(pdf.starts_with(b"%PDF"));
     }

@@ -1,7 +1,7 @@
 //! Zeichenbrett: Excalidraw über den Yjs-Server des Kerns. Das Addon bringt nur Seite und Bündel mit;
 //! Verbindung, Speichern und Zeitleiste laufen wie beim Text-Pad.
 use super::{Addon, Seite};
-use crate::{web, AppState};
+use crate::{texte::{self, Sprache}, web, AppState};
 use axum::{
     extract::Path,
     http::{header, HeaderValue, StatusCode},
@@ -11,21 +11,36 @@ use axum::{
 };
 use std::sync::Arc;
 
+const TEXTE_DE: &[(&str, &str)] = &[
+    ("zeichenbrett.sichern", "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG oder SVG sichern."),
+    ("zeichenbrett.name", "Zeichenbrett"),
+    ("zeichenbrett.kachel_html", r#"<li><a class="template" href="{base}/new?typ=zeichenbrett"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3M4 20h16"/></svg><span class="template-name">Zeichenbrett</span><span class="template-desc">Gemeinsam skizzieren</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>"#),
+    ("zeichenbrett.hilfe_html", r#"<h2>Zeichenbrett</h2><p>„Zeichenbrett“ legt eine gemeinsame Zeichenfläche an: Formen, Pfeile, Freihand und Text, alle sehen die Zeiger der anderen. Gesichert wird über das Menü links oben als PNG, SVG oder Excalidraw-Datei. Bilder einfügen ist noch nicht möglich. Die Zeichenfläche ist mit Screenreadern kaum nutzbar; für zugängliche Zusammenarbeit eignet sich ein Text-Pad.</p>"#),
+    ("zeichenbrett.export_formate", "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG, SVG oder Excalidraw-Datei sichern."),
+];
+const TEXTE_EN: &[(&str, &str)] = &[
+    ("zeichenbrett.sichern", "Whiteboards can be saved as PNG or SVG from the whiteboard’s menu."),
+    ("zeichenbrett.name", "Whiteboard"),
+    ("zeichenbrett.kachel_html", r#"<li><a class="template" href="{base}/new?typ=zeichenbrett"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3M4 20h16"/></svg><span class="template-name">Whiteboard</span><span class="template-desc">Sketch together</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>"#),
+    ("zeichenbrett.hilfe_html", r#"<h2>Whiteboard</h2><p>“Whiteboard” creates a shared drawing area: shapes, arrows, freehand and text; everyone sees the others’ pointers. It is saved from the menu at the top left as PNG, SVG or Excalidraw file. Inserting images is not possible yet. The whiteboard is hardly usable with screen readers; for accessible collaboration, a text pad is the better choice.</p>"#),
+    ("zeichenbrett.export_formate", "Whiteboards can be saved from the whiteboard menu as PNG, SVG or Excalidraw file."),
+];
+
 pub const ADDON: Addon = Addon {
     kennung: "zeichenbrett",
     art: "board",
-    name: "Zeichenbrett",
+    name: "zeichenbrett.name",
     daten: None,
     routen,
     seite,
     export,
-    kachel: r#"<li><a class="template" href="{base}/new?typ=zeichenbrett"><svg class="template-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M4 20l4-1L19 8l-3-3L5 16zM14 7l3 3M4 20h16"/></svg><span class="template-name">Zeichenbrett</span><span class="template-desc">Gemeinsam skizzieren</span><svg class="chev" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6"/></svg></a></li>"#,
-    sichern: "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG oder SVG sichern.",
-    hilfe: HILFE,
+    kachel: "zeichenbrett.kachel_html",
+    sichern: "zeichenbrett.sichern",
+    hilfe: "zeichenbrett.hilfe_html",
     moodle: None,
+    texte: (TEXTE_DE, TEXTE_EN),
 };
 
-const HILFE: &str = r#"<h2>Zeichenbrett</h2><p>„Zeichenbrett“ legt eine gemeinsame Zeichenfläche an: Formen, Pfeile, Freihand und Text, alle sehen die Zeiger der anderen. Gesichert wird über das Menü links oben als PNG, SVG oder Excalidraw-Datei. Bilder einfügen ist noch nicht möglich. Die Zeichenfläche ist mit Screenreadern kaum nutzbar; für zugängliche Zusammenarbeit eignet sich ein Text-Pad.</p>"#;
 
 fn routen() -> Router<Arc<AppState>> { Router::new().route("/static/board/{*path}", get(static_board)) }
 
@@ -61,8 +76,8 @@ fn seite(s: Seite) -> Response {
     resp
 }
 
-fn export(_state: &AppState, _pad: &str, _format: &str) -> Response {
-    web::error_page(StatusCode::CONFLICT, "Zeichenbretter lassen sich im Zeichenbrett über das Menü als PNG, SVG oder Excalidraw-Datei sichern.")
+fn export(_state: &AppState, _pad: &str, _format: &str, sp: Sprache) -> Response {
+    web::error_page(sp, StatusCode::CONFLICT, texte::t(sp, "zeichenbrett.export_formate"))
 }
 
 async fn static_board(Path(path): Path<String>) -> Response {

@@ -1,4 +1,5 @@
 //! Persistenz: SQLite mit Metadaten, Update-Log und Snapshots.
+use crate::sperre::Sperre;
 use crate::ids;
 use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -26,9 +27,16 @@ pub fn hat_spalte(conn: &Connection, tabelle: &str, spalte: &str) -> rusqlite::R
 }
 
 /// Aufträge an den Schreib-Thread. Reihenfolge bleibt erhalten.
+/// Wartungsauftrag für den Schreib-Thread
+type Job = Box<dyn FnOnce(&Connection) -> rusqlite::Result<()> + Send>;
+/// Update-Log: Nummer, Zeit (ms), Autor, Yjs-Update
+pub type UpdateRow = (i64, i64, Option<String>, Vec<u8>);
+/// Vollstand: Zeit (ms), letzte enthaltene Nummer, Bezeichnung, Yjs-Zustand
+pub type SnapshotRow = (i64, i64, String, Vec<u8>);
+
 pub enum WriteOp {
     Append { pad: String, seq: i64, ts: i64, author: Option<String>, bytes: Vec<u8> },
-    Exec(Box<dyn FnOnce(&Connection) -> rusqlite::Result<()> + Send>),
+    Exec(Job),
     Flush(mpsc::Sender<bool>),
 }
 
@@ -124,6 +132,8 @@ pub struct RetentionRow {
     pub owner_id: Option<String>,
     pub email: Option<String>,
     pub owner_name: Option<String>,
+    /// zuletzt gewählte Sprache (`de`, `en`), leer wenn nie gewählt
+    pub owner_sprache: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -187,6 +197,9 @@ impl Store {
         // Schema-Ergänzung 26.10.2026: Admin-Recht einer Anmeldung über Moodle
         let has_admin: bool = conn.prepare("SELECT 1 FROM pragma_table_info('logins') WHERE name='admin'")?.exists([])?;
         if !has_admin { conn.execute_batch("ALTER TABLE logins ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;")?; }
+        // Schema-Ergänzung 29.10.2026: zuletzt gewählte Sprache einer über Moodle angemeldeten Person (für die Mail vor dem Löschen)
+        let has_sprache: bool = conn.prepare("SELECT 1 FROM pragma_table_info('authors') WHERE name='sprache'")?.exists([])?;
+        if !has_sprache { conn.execute_batch("ALTER TABLE authors ADD COLUMN sprache TEXT;")?; }
         for z in zusaetze { conn.execute_batch(z.schema)?; (z.ergaenzen)(&conn)?; }
         let wconn = Connection::open(path)?;
         wconn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
@@ -196,7 +209,7 @@ impl Store {
     }
 
     pub(crate) fn c(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+        self.conn.sperren()
     }
 
     // Gruppen
@@ -339,11 +352,11 @@ impl Store {
     }
     pub fn retention_rows(&self) -> Result<Vec<RetentionRow>> {
         let c = self.c();
-        let mut st = c.prepare("SELECT p.id, p.created, p.last_edited, p.last_seen, p.keep_until, p.notice_sent, p.delete_after, p.owner_id, a.email, a.name
+        let mut st = c.prepare("SELECT p.id, p.created, p.last_edited, p.last_seen, p.keep_until, p.notice_sent, p.delete_after, p.owner_id, a.email, a.name, a.sprache
             FROM pads p LEFT JOIN authors a ON a.id=p.owner_id WHERE p.group_id IS NULL")?;
         let rows = st.query_map([], |r| Ok(RetentionRow {
             id: r.get(0)?, created: r.get(1)?, last_edited: r.get(2)?, last_seen: r.get(3)?, keep_until: r.get(4)?,
-            notice_sent: r.get(5)?, delete_after: r.get(6)?, owner_id: r.get(7)?, email: r.get(8)?, owner_name: r.get(9)?,
+            notice_sent: r.get(5)?, delete_after: r.get(6)?, owner_id: r.get(7)?, email: r.get(8)?, owner_name: r.get(9)?, owner_sprache: r.get(10)?,
         }))?.collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -364,6 +377,10 @@ impl Store {
     }
     pub fn pad_by_extend_token(&self, token: &str) -> Result<Option<String>> {
         Ok(self.c().query_row("SELECT id FROM pads WHERE extend_token=?1", params![token], |r| r.get(0)).optional()?)
+    }
+    pub fn set_author_sprache(&self, author_id: &str, sprache: &str) -> Result<()> {
+        self.c().execute("UPDATE authors SET sprache=?2 WHERE id=?1", params![author_id, sprache])?;
+        Ok(())
     }
     pub fn set_author_email(&self, author_id: &str, email: Option<&str>) -> Result<()> {
         self.c().execute("UPDATE authors SET email=?2 WHERE id=?1", params![author_id, email])?;
@@ -514,7 +531,7 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?)
     }
     /// Alle Updates eines Pads (seq, ts, author, bytes) für die Zeitleiste.
-    pub fn updates_all(&self, pad_id: &str) -> Result<Vec<(i64, i64, Option<String>, Vec<u8>)>> {
+    pub fn updates_all(&self, pad_id: &str) -> Result<Vec<UpdateRow>> {
         Ok(self
             .c()
             .prepare("SELECT seq, ts, author_id, bytes FROM updates WHERE pad_id=?1 ORDER BY seq")?
@@ -522,7 +539,7 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?)
     }
     /// Alle Snapshots eines Pads (ts, seq, label, state).
-    pub fn snapshots_all(&self, pad_id: &str) -> Result<Vec<(i64, i64, String, Vec<u8>)>> {
+    pub fn snapshots_all(&self, pad_id: &str) -> Result<Vec<SnapshotRow>> {
         Ok(self
             .c()
             .prepare("SELECT ts, seq, label, state FROM snapshots WHERE pad_id=?1 ORDER BY ts")?
@@ -646,6 +663,25 @@ mod tests {
         assert!(store.delete_pad("p1").unwrap());
         let n = |p: &str| store.c().query_row("SELECT COUNT(*) FROM probe WHERE pad_id=?1", params![p], |r| r.get::<_, i64>(0)).unwrap();
         assert_eq!((n("p1"), n("p2")), (0, 1));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Ältere Datenbank ohne Spalte `authors.sprache`: wird ergänzt, Bestand bleibt, die Wahl landet in der Aufbewahrung.
+    #[test]
+    fn sprache_der_person_fuer_die_mail() {
+        let dir = std::env::temp_dir().join(format!("nextpad-test-s-{}-{}", std::process::id(), ids::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.sqlite");
+        let store = Store::open(&path, &[]).unwrap();
+        let a = store.create_author("Kim", Some("moodle:1")).unwrap();
+        store.create_pad("p1", None).unwrap(); store.set_owner("p1", &a.id).unwrap();
+        drop(store);
+        Connection::open(&path).unwrap().execute_batch("ALTER TABLE authors DROP COLUMN sprache;").unwrap();
+        let store = Store::open(&path, &[]).unwrap();
+        assert_eq!(store.retention_row("p1").unwrap().unwrap().owner_sprache, None);
+        store.set_author_sprache(&a.id, "en").unwrap();
+        let r = store.retention_row("p1").unwrap().unwrap();
+        assert_eq!((r.owner_name.as_deref(), r.owner_sprache.as_deref()), (Some("Kim"), Some("en")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

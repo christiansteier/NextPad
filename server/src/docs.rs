@@ -1,5 +1,6 @@
 //! Geladene Dokumente: je Pad ein yrs-Dokument mit Awareness, Broadcast an Verbindungen,
 //! Persistenz jedes Updates im Log, Snapshots nur bei Änderungen, Entladen im Leerlauf.
+use crate::sperre::Sperre;
 use crate::{ids, render, store::Store};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -54,15 +55,15 @@ impl Rooms {
     pub fn new(store: Arc<Store>) -> Self { Rooms { store, rooms: Mutex::new(HashMap::new()) } }
 
     /// Verbundene Clients eines Pads (0, wenn nicht geladen).
-    pub fn clients_of(&self, pad_id: &str) -> usize { self.rooms.lock().unwrap_or_else(|e| e.into_inner()).get(pad_id).map(|r| r.clients()).unwrap_or(0) }
+    pub fn clients_of(&self, pad_id: &str) -> usize { self.rooms.sperren().get(pad_id).map(|r| r.clients()).unwrap_or(0) }
 
-    pub fn loaded(&self) -> usize { self.rooms.lock().unwrap_or_else(|e| e.into_inner()).len() }
+    pub fn loaded(&self) -> usize { self.rooms.sperren().len() }
 
     /// Lädt ein Pad (Snapshot plus Update-Log) oder liefert das bereits geladene.
     pub fn get(&self, pad_id: &str) -> Result<Arc<Room>> {
-        if let Some(r) = self.rooms.lock().unwrap_or_else(|e| e.into_inner()).get(pad_id) { r.touch(); return Ok(r.clone()); }
+        if let Some(r) = self.rooms.sperren().get(pad_id) { r.touch(); return Ok(r.clone()); }
         let room = self.load(pad_id)?;
-        let mut map = self.rooms.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.rooms.sperren();
         let r = map.entry(pad_id.to_string()).or_insert(room).clone();
         r.touch();
         Ok(r)
@@ -71,11 +72,11 @@ impl Rooms {
     /// Wie `get`, zählt die Verbindung aber unter derselben Sperre (kein Entladen dazwischen).
     pub fn join(&self, pad_id: &str) -> Result<ClientGuard> {
         {
-            let map = self.rooms.lock().unwrap_or_else(|e| e.into_inner());
+            let map = self.rooms.sperren();
             if let Some(r) = map.get(pad_id) { r.clients.fetch_add(1, Ordering::SeqCst); r.touch(); return Ok(ClientGuard { room: r.clone() }); }
         }
         let room = self.load(pad_id)?;
-        let mut map = self.rooms.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.rooms.sperren();
         let r = map.entry(pad_id.to_string()).or_insert(room).clone();
         r.clients.fetch_add(1, Ordering::SeqCst);
         r.touch();
@@ -144,7 +145,7 @@ impl Rooms {
 
     /// Raum entladen, wenn niemand verbunden ist und er noch der aktuelle Eintrag ist.
     fn unload_if_idle(&self, room: &Arc<Room>) {
-        let mut map = self.rooms.lock().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.rooms.sperren();
         if room.clients() == 0 && map.get(&room.pad_id).is_some_and(|r| Arc::ptr_eq(r, room)) { map.remove(&room.pad_id); }
     }
 
@@ -157,7 +158,7 @@ impl Rooms {
 
     /// Wartung im Minutentakt: Snapshot nach Ruhephase oder Höchstabstand, Entladen unbenutzter Räume.
     pub async fn maintain(&self, idle_ms: i64, max_ms: i64, unload_ms: i64) {
-        let rooms: Vec<Arc<Room>> = self.rooms.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect();
+        let rooms: Vec<Arc<Room>> = self.rooms.sperren().values().cloned().collect();
         let now = ids::now_ms();
         for room in rooms {
             let lu = room.last_update.load(Ordering::Relaxed);
@@ -172,7 +173,7 @@ impl Rooms {
 
     /// Snapshot aller geladenen Pads mit Änderungen (beim Beenden).
     pub async fn snapshot_all(&self, label: &str) {
-        let rooms: Vec<Arc<Room>> = self.rooms.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect();
+        let rooms: Vec<Arc<Room>> = self.rooms.sperren().values().cloned().collect();
         for room in rooms { if room.dirty() { let _ = self.snapshot(&room, label).await; } }
     }
 
@@ -188,6 +189,11 @@ impl Rooms {
     pub async fn text(&self, pad_id: &str) -> Result<String> { self.read(pad_id, |t, f| render::to_text(t, f)).await }
     pub async fn markdown(&self, pad_id: &str) -> Result<String> { self.read(pad_id, |t, f| render::to_markdown(t, f)).await }
     pub async fn typst(&self, pad_id: &str) -> Result<String> { self.read(pad_id, |t, f| render::to_typst(t, f)).await }
+    /// Exporte in der Sprache der Anfrage: `toc` ist der Titel des Inhaltsverzeichnisses.
+    pub async fn html_mit(&self, pad_id: &str, toc: &'static str) -> Result<String> { self.read(pad_id, |t, f| render::to_html_mit(t, f, toc)).await }
+    pub async fn text_mit(&self, pad_id: &str, toc: &'static str) -> Result<String> { self.read(pad_id, |t, f| render::to_text_mit(t, f, toc)).await }
+    pub async fn markdown_mit(&self, pad_id: &str, toc: &'static str) -> Result<String> { self.read(pad_id, |t, f| render::to_markdown_mit(t, f, toc)).await }
+    pub async fn typst_mit(&self, pad_id: &str, toc: &'static str) -> Result<String> { self.read(pad_id, |t, f| render::to_typst_mit(t, f, toc)).await }
 
     async fn write(&self, pad_id: &str, label: &str, f: impl FnOnce(&mut TransactionMut, &yrs::XmlFragmentRef)) -> Result<()> {
         let room = self.get(pad_id)?;
@@ -239,7 +245,7 @@ impl Rooms {
 
     /// Pad gelöscht: Raum sperren, aus dem Speicher nehmen, Verbindungen schließen.
     pub fn evict(&self, pad_id: &str) {
-        if let Some(room) = self.rooms.lock().unwrap_or_else(|e| e.into_inner()).remove(pad_id) {
+        if let Some(room) = self.rooms.sperren().remove(pad_id) {
             room.deleted.store(true, Ordering::SeqCst);
             let _ = room.tx.send(Arc::new(Vec::new())); // leere Nachricht = Verbindung schließen
         }

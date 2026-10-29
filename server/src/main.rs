@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+// Fehlerfall der Handler ist eine fertige axum-Antwort; groß, aber nur auf dem Fehlerpfad und nie gespeichert
+#![allow(clippy::result_large_err)]
 mod addons;
 mod api;
 mod bausteine;
@@ -14,11 +16,14 @@ mod pdf;
 mod qr;
 mod retention;
 mod render;
+mod sperre;
+mod texte;
 mod store;
 mod sync;
 mod typeset;
 mod web;
 
+use crate::sperre::Sperre;
 use axum::{routing::get, Router};
 
 // mimalloc statt Systemallokator: auf Alpine (musl) ist dessen malloc bei vielen Threads deutlich langsamer
@@ -90,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/open", get(web::open_pad))
         .route("/me", axum::routing::post(web::rename_me))
         .route("/hilfe", get(web::help))
+        .route("/sprache/{kuerzel}", get(web::sprache))
         .route("/verlaengern", get(web::extend_page).post(web::extend_by_token))
         .route("/p/{id}/extend", axum::routing::post(web::extend_owner))
         .route("/p/{id}/delete", axum::routing::post(web::delete_owner))
@@ -139,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
             st.rooms.maintain(180_000, 3_600_000, 600_000).await;
             st.lti.purge();
             // Ratenbegrenzung: leere Einträge entfernen
-            st.free_creations.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, v| { let now = ids::now_ms(); v.retain(|t| now - *t < 3_600_000); !v.is_empty() });
+            st.free_creations.sperren().retain(|_, v| { let now = ids::now_ms(); v.retain(|t| now - *t < 3_600_000); !v.is_empty() });
         }
     });
     // abgelaufene Sessions stündlich entfernen
@@ -203,4 +209,15 @@ async fn shutdown_signal() {
     let term = std::future::pending::<()>();
     tokio::select! { _ = ctrl_c => {}, _ = term => {} }
     tracing::info!("Signal empfangen, beende");
+}
+
+#[cfg(test)]
+mod tests {
+    // Web-Bündel und Server tragen dieselbe Versionsnummer
+    #[test]
+    fn web_paket_hat_die_version_des_servers() {
+        let paket = include_str!("../../web/package.json");
+        let zeile = paket.lines().find(|l| l.trim_start().starts_with("\"version\"")).expect("version in web/package.json");
+        assert!(zeile.contains(&format!("\"{}\"", env!("CARGO_PKG_VERSION"))), "web/package.json: {zeile}, Cargo.toml: {}", env!("CARGO_PKG_VERSION"));
+    }
 }

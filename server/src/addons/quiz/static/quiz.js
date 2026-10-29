@@ -2,8 +2,10 @@
 // erst nach dem Aufdecken an Mitsehende heraus; hier wird nur angezeigt.
 (() => {
   const cfg = JSON.parse(document.getElementById('nextpad-config').textContent)
+  const T = cfg.texte || {}
+  const tx = (k, w = {}) => (T[k] || k).replace(/\{(\w+)\}/g, (_, n) => String(w[n] ?? ''))
   // aus Moodle gestartet: zurück in den Kurs, auch aus der eingebetteten Ansicht heraus
-  if (cfg.course) { const a = document.createElement('a'); a.href = cfg.course; a.target = '_top'; a.textContent = 'Zurück zum Kurs'; document.querySelector('.site-header nav')?.prepend(a) }
+  if (cfg.course) { const a = document.createElement('a'); a.href = cfg.course; a.target = '_top'; a.textContent = tx('zum_kurs'); document.querySelector('.site-header nav')?.prepend(a) }
   const base = cfg.basePath || ''
   const api = `${base}/p/${encodeURIComponent(cfg.urlId)}/quiz`
   const $ = id => document.getElementById(id)
@@ -27,11 +29,13 @@
   let syncing = false, lastQ = null, buzzTimer = 0
   const pressed = new Set()
   const bestSync = () => recent.reduce((a, b) => (!a || b.rtt < a.rtt ? b : a), null)
+  // Zeitgrenze je Abgleich: eine hängende Verbindung hält sonst den alten Versatz minutenlang fest
+  const frist = t => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? { signal: AbortSignal.timeout(t) } : {}
   async function serie() {
     const s = []
     for (let i = 0; i < 5; i++) {
       const t0 = now()
-      const j = await (await fetch(`${base}/p/${encodeURIComponent(cfg.urlId)}/messung/zeit`, { cache: 'no-store' })).json()
+      const j = await (await fetch(`${base}/p/${encodeURIComponent(cfg.urlId)}/messung/zeit`, { cache: 'no-store', ...frist(3000) })).json()
       const t1 = now()
       s.push({ rtt: t1 - t0, off: j.t - (t0 + t1) / 2 })
     }
@@ -68,11 +72,11 @@
     const b = bestSync()
     if (!b) return
     pressed.add(q.id)
-    $('buzz-info').textContent = 'Gedrückt.'
+    $('buzz-info').textContent = tx('gedrueckt')
     renderBuzz()
     post('/buzzer', { dev, team: myTeam, field: q.id, t, off: b.off, rtt: b.rtt })
-      .then(r => { if (!r.neu) $('buzz-info').textContent = 'Schon gedrückt.' })
-      .catch(e => { $('buzz-info').textContent = `Nicht angekommen: ${e.message}` })
+      .then(r => { if (!r.neu) $('buzz-info').textContent = tx('schon') })
+      .catch(e => { $('buzz-info').textContent = tx('nicht_angekommen', { grund: e.message }) })
   }
   // pointerdown statt click: der Druck zählt beim Antippen, nicht beim Loslassen; click bleibt für die Tastatur
   $('buzz-btn').addEventListener('pointerdown', e => { e.preventDefault(); press() })
@@ -85,7 +89,7 @@
     if (myTeam && !data.teams.some(t => t.id === myTeam)) { myTeam = 0; store.set(teamKey, '') }
     w.hidden = false; w.innerHTML = ''
     const l = document.createElement('p'); l.className = 'quiz-buzz-label'
-    l.textContent = myTeam ? 'Buzzer für' : 'Für den Buzzer dein Team wählen:'
+    l.textContent = myTeam ? tx('buzzer_fuer') : tx('team_waehlen')
     w.append(l)
     data.teams.forEach(t => {
       if (myTeam && t.id !== myTeam) return
@@ -98,11 +102,11 @@
       // wechseln nur vor dem Spiel; läuft es (Frage offen oder schon gespielt), bleibt das Team
       const laeuft = data.phase !== 'vorbereitung'
       if (!laeuft) {
-        const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = 'Team wechseln'
+        const c = document.createElement('button'); c.type = 'button'; c.className = 'btn-link'; c.textContent = tx('team_wechseln')
         c.addEventListener('click', () => chooseTeam(0)); w.append(c)
       }
       // ohne offene Frage kein Buzzer: sagen, worauf das Handy wartet
-      if (!data.current) w.append(Object.assign(document.createElement('p'), { className: 'hint quiz-buzz-warten', textContent: data.phase === 'vorbereitung' ? 'Bereit. Das Spiel beginnt gleich.' : 'Bereit. Der Buzzer erscheint, sobald die Leitung eine Frage öffnet.' }))
+      if (!data.current) w.append(Object.assign(document.createElement('p'), { className: 'hint quiz-buzz-warten', textContent: data.phase === 'vorbereitung' ? tx('bereit_gleich') : tx('bereit_frage') }))
     }
   }
 
@@ -124,9 +128,9 @@
       f.connect(g); g.connect(audio.destination)
     } catch {}
   }
-  function zeigeTon() { $('q-ton').textContent = tonAn ? 'Buzzer-Ton an' : 'Buzzer-Ton aus'; $('q-ton').setAttribute('aria-pressed', tonAn ? 'true' : 'false') }
+  function zeigeTon() { $('q-ton').textContent = tonAn ? tx('ton_an') : tx('ton_aus'); $('q-ton').setAttribute('aria-pressed', tonAn ? 'true' : 'false') }
 
-  const sek = ms => `${(ms / 1000).toFixed(2).replace('.', ',')} s`
+  const sek = ms => { const z = (ms / 1000).toFixed(2); return `${cfg.lang === 'en' ? z : z.replace('.', ',')} s` }
   // Countdown: Restzeit kommt vom Server, gezählt wird hier; nach Ablauf schließt der Buzzer
   let fristBis = null, tickTimer = 0
   const zeitUm = () => fristBis != null && performance.now() >= fristBis
@@ -143,7 +147,7 @@
     const rest = Math.max(0, Math.ceil((fristBis - performance.now()) / 1000))
     // ist schon gedrückt, zeigt der Beamer das Team statt der Uhr
     el.hidden = !!data.buzz?.reihe?.length
-    el.textContent = rest > 0 ? String(rest) : 'Zeit um'
+    el.textContent = rest > 0 ? String(rest) : tx('zeit_um')
     el.classList.toggle('is-knapp', rest > 0 && rest <= 3)
     el.classList.toggle('is-um', rest === 0)
     if (rest === 0) { clearInterval(tickTimer); renderBuzz() }
@@ -155,12 +159,12 @@
     const btnB = $('buzz-btn')
     const can = !data.lead && myTeam && q && !q.revealed && !pressed.has(q.id) && !zeitUm()
     btnB.hidden = !can
-    if (!data.lead && myTeam && q && !q.revealed && !pressed.has(q.id) && zeitUm()) $('buzz-info').textContent = 'Die Zeit ist um.'
+    if (!data.lead && myTeam && q && !q.revealed && !pressed.has(q.id) && zeitUm()) $('buzz-info').textContent = tx('zeit_ist_um')
     if (can) {
       const ready = !!bestSync()
       btnB.disabled = !ready
-      btnB.textContent = ready ? 'Buzzer' : 'Verbinde …'
-      btnB.setAttribute('aria-label', `Buzzer für ${data.teams.find(t => t.id === myTeam)?.name || ''}`)
+      btnB.textContent = ready ? tx('buzzer') : tx('verbinde')
+      btnB.setAttribute('aria-label', tx('buzzer_team', { team: data.teams.find(t => t.id === myTeam)?.name || '' }))
     }
     const z = data.buzz
     // Wer zuerst gedrückt hat, groß; erst wenn die Reihenfolge feststeht (Sammelfenster vorbei)
@@ -169,8 +173,8 @@
     const zeigen = !!(q && !q.revealed && z && z.fertig && dran && (nachFalsch || !dran.spaet))
     if (zeigen) {
       const gleich = nachFalsch ? [] : z.reihe.filter((r, i) => i > 0 && r.gleichauf && !r.spaet).map(r => r.name)
-      const text = gleich.length ? `${[dran.name, ...gleich].join(' und ')} gleichauf` : dran.name
-      const label = nachFalsch ? 'Jetzt dran' : gleich.length ? 'Gleichzeitig gedrückt' : `Zuerst gedrückt${dran.reaktion != null ? ` · ${sek(dran.reaktion)}` : ''}`
+      const text = gleich.length ? tx('gleichauf_namen', { namen: [dran.name, ...gleich].join(tx('und')) }) : dran.name
+      const label = nachFalsch ? tx('jetzt_dran') : gleich.length ? tx('gleichzeitig') : `${tx('zuerst')}${dran.reaktion != null ? ` · ${sek(dran.reaktion)}` : ''}`
       if (erster.dataset.text !== label + text) {
         erster.dataset.text = label + text
         erster.innerHTML = ''
@@ -185,11 +189,11 @@
     list.hidden = !(q && z && z.reihe.length)
     $('buzz-kopf').hidden = list.hidden
     if (list.hidden) return
-    $('buzz-kopf').textContent = z.fertig ? 'Buzzer' : 'Buzzer: Reihenfolge wird ermittelt …'
+    $('buzz-kopf').textContent = z.fertig ? tx('buzzer') : tx('reihenfolge')
     z.reihe.forEach((r, i) => {
       const li = document.createElement('li')
       if (r === dran && z.fertig && (nachFalsch || !r.spaet)) li.className = 'is-first'
-      const zus = [r.abstand ? `+${Math.round(r.abstand)} ms` : '', r.gleichauf ? 'gleichauf' : '', r.spaet ? 'zu spät' : '', r.unsicher ? 'Zeit unsicher' : '', r.falsch ? 'falsch geantwortet' : ''].filter(Boolean).join(', ')
+      const zus = [r.abstand ? `+${Math.round(r.abstand)} ms` : '', r.gleichauf ? tx('gleichauf') : '', r.spaet ? tx('zu_spaet') : '', r.unsicher ? tx('unsicher') : '', r.falsch ? tx('falsch') : ''].filter(Boolean).join(', ')
       li.append(Object.assign(document.createElement('strong'), { textContent: r.name }))
       if (zus) li.append(Object.assign(document.createElement('span'), { textContent: ` ${zus}` }))
       list.append(li)
@@ -204,7 +208,7 @@
 
   async function post(path, body) {
     const r = await fetch(api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
-    if (!r.ok) throw new Error((await r.text()) || `Fehler ${r.status}`)
+    if (!r.ok) throw new Error((await r.text()) || tx('fehler', { status: r.status }))
     return r.json()
   }
   // Schaltflächen sperren, bis der Server geantwortet hat: kein doppeltes Werten
@@ -233,7 +237,7 @@
       cols.forEach(col => {
         const f = col[r]
         if (!f) { b.append(document.createElement('div')); return }
-        const label = `${f.cat}, ${f.points} Punkte${f.played ? ', gespielt' : ''}`
+        const label = tx(f.played ? 'feld_gespielt' : 'feld', { kategorie: f.cat, punkte: f.points })
         if (data.lead) {
           // gespielte Felder gesperrt: ein Fehlklick öffnet keine alte Frage, zurück geht es mit „Rückgängig“
           const cell = btn(String(f.points), 'quiz-cell' + (f.played ? ' is-played' : ''), () => post('/feld', { field: f.id }))
@@ -251,7 +255,7 @@
     const q = data.current
     $('question').hidden = !q
     if (!q) return
-    $('q-meta').textContent = `${q.cat} · ${q.points} Punkte`
+    $('q-meta').textContent = tx('meta', { kategorie: q.cat, punkte: q.points })
     $('q-text').textContent = q.question
     const a = $('q-answer')
     // Auch bei der Leitung erst nach dem Aufdecken: ihre Ansicht läuft am Beamer
@@ -259,23 +263,23 @@
     a.textContent = q.revealed ? (q.answer || '') : ''
     const box = $('q-actions'); box.innerHTML = ''
     if (!data.lead) return
-    if (!q.revealed) box.append(btn('Antwort aufdecken', 'btn btn-primary', () => post('/feld', { field: q.id, revealed: true })))
+    if (!q.revealed) box.append(btn(tx('aufdecken'), 'btn btn-primary', () => post('/feld', { field: q.id, revealed: true })))
     const grid = document.createElement('div'); grid.className = 'quiz-teams'
     data.teams.forEach(t => {
       const g = document.createElement('div'); g.className = 'quiz-team'
       const n = document.createElement('span'); n.className = 'quiz-team-name'; n.textContent = t.name
       // markiert, wer gerade dran ist: zuerst gedrückt oder nach einer falschen Antwort das nächste Team
       const z = data.buzz, dran = z?.reihe?.find(r => !r.falsch), nachFalsch = !!z?.reihe?.some(r => r.falsch)
-      if (z?.fertig && dran && (nachFalsch || !dran.spaet) && dran.team === t.id) { g.classList.add('is-first'); n.textContent = nachFalsch ? `Dran: ${t.name}` : `1. ${t.name}` }
+      if (z?.fertig && dran && (nachFalsch || !dran.spaet) && dran.team === t.id) { g.classList.add('is-first'); n.textContent = nachFalsch ? tx('dran', { team: t.name }) : `1. ${t.name}` }
       g.append(n, btn(`+${q.points}`, 'btn btn-secondary plus', () => post('/wertung', { field: q.id, team: t.id, plus: true })),
         btn(`−${q.points}`, 'btn btn-secondary minus', () => post('/wertung', { field: q.id, team: t.id, plus: false })))
-      g.querySelector('.plus').setAttribute('aria-label', `${t.name} plus ${q.points}`)
-      g.querySelector('.minus').setAttribute('aria-label', `${t.name} minus ${q.points}`)
+      g.querySelector('.plus').setAttribute('aria-label', tx('plus', { team: t.name, n: q.points }))
+      g.querySelector('.minus').setAttribute('aria-label', tx('minus', { team: t.name, n: q.points }))
       grid.append(g)
     })
     box.append(grid,
-      btn('Niemand, Feld schließen', 'btn btn-secondary', () => post('/wertung', { field: q.id })),
-      btn('Zurück zum Raster', 'btn-link', () => post('/feld', { field: null })))
+      btn(tx('niemand'), 'btn btn-secondary', () => post('/wertung', { field: q.id })),
+      btn(tx('zum_raster'), 'btn-link', () => post('/feld', { field: null })))
   }
 
   function renderScores() {
@@ -294,7 +298,7 @@
     })
     lastScores = Object.fromEntries(data.teams.map(t => [t.id, t.score]))
     const open = data.board.filter(f => !f.played).length
-    if (data.board.length) { const o = document.createElement('p'); o.className = 'hint'; o.textContent = `${open} von ${data.board.length} Fragen offen`; s.append(o) }
+    if (data.board.length) { const o = document.createElement('p'); o.className = 'hint'; o.textContent = tx('offen', { offen: open, alle: data.board.length }); s.append(o) }
   }
 
   // Abschluss nach der letzten Frage: Platzierung und die Fragen, über die es sich zu sprechen lohnt
@@ -303,39 +307,39 @@
     e.hidden = !finished()
     if (e.hidden) return
     const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text !== undefined) x.textContent = text; return x }
-    const h = el('h2', '', 'Ergebnis'); h.id = 'ende-h'
+    const h = el('h2', '', tx('ergebnis')); h.id = 'ende-h'
     const ranked = [...data.teams].sort((a, b) => b.score - a.score)
     const top = ranked.filter(t => t.score === ranked[0]?.score)
-    const sieg = el('p', 'quiz-sieg', !ranked.length ? '' : top.length > 1 ? `Gleichstand: ${top.map(t => t.name).join(' und ')}` : `${top[0].name} gewinnt`)
+    const sieg = el('p', 'quiz-sieg', !ranked.length ? '' : top.length > 1 ? tx('gleichstand', { namen: top.map(t => t.name).join(tx('und')) }) : tx('gewinnt', { team: top[0].name }))
     const ol = el('ol', 'quiz-rang')
     ranked.forEach(t => { const li = el('li'); li.append(el('span', '', t.name), el('strong', '', String(t.score))); ol.append(li) })
     const schwer = data.board.filter(f => f.schwer)
-    const h3 = el('h3', '', 'Zum Nachbesprechen')
-    const hint = el('p', 'hint', schwer.length ? 'Diese Fragen hat niemand oder erst nach einem Fehlversuch gelöst:' : 'Alle Fragen wurden auf Anhieb gelöst.')
+    const h3 = el('h3', '', tx('nachbesprechen'))
+    const hint = el('p', 'hint', schwer.length ? tx('schwer') : tx('alle_geloest'))
     const ul = el('ul', 'quiz-nach')
     schwer.forEach(f => { const li = el('li'); li.append(el('span', 'quiz-meta-klein', `${f.cat} · ${f.points}`), el('span', '', f.question || '')); ul.append(li) })
     e.append(h, sieg, ol)
     const st = data.statistik
     if (st) {
       const sl = el('ul', 'quiz-stat')
-      st.teams.forEach(t => sl.append(el('li', '', `${t.name}: im Mittel ${sek(t.mittel)} bis zum Buzzer (${t.anzahl}× gedrückt)`)))
-      e.append(el('h3', '', 'Buzzer'), el('p', '', `Am schnellsten: ${st.schnellste.name} mit ${sek(st.schnellste.ms)}`), sl)
+      st.teams.forEach(t => sl.append(el('li', '', tx('stat_team', { team: t.name, zeit: sek(t.mittel), n: t.anzahl }))))
+      e.append(el('h3', '', tx('buzzer')), el('p', '', tx('schnellste', { team: st.schnellste.name, zeit: sek(st.schnellste.ms) })), sl)
     }
     e.append(h3, hint, ul)
-    if (data.lead) e.append(el('p', 'hint', '„Neues Spiel“ setzt Punkte und Felder zurück, Fragen und Teams bleiben. „Rückgängig“ holt die letzte Wertung zurück und setzt das Spiel fort.'))
+    if (data.lead) e.append(el('p', 'hint', tx('neu_hinweis')))
   }
 
   let messungTimer = 0
   function render() {
-    document.title = `${data.title || 'Quiz-Raster'} · NextPad`
-    $('quiz-title').textContent = data.title || 'Quiz-Raster'
-    $('quiz-kicker').textContent = data.lead ? 'Quiz-Raster · Leitung' : 'Quiz-Raster · Mitsehen'
+    document.title = `${data.title || tx('name')} · NextPad`
+    $('quiz-title').textContent = data.title || tx('name')
+    $('quiz-kicker').textContent = data.lead ? tx('leitung') : tx('mitsehen')
     $('lead-tools').hidden = !data.lead
     // Spielablauf: Vorbereitung (Teams wählen) → läuft → Ergebnis
     const ph = $('q-phase')
     // nur für die Leitung; die Handys sagen es bei der Teamwahl
     ph.hidden = !data.lead || data.phase !== 'vorbereitung' || !data.board.length
-    ph.textContent = 'Vorbereitung: Auf den Handys wählen jetzt alle ihr Team. „Spiel starten“ gibt das Raster frei, danach sind die Teams fest.'
+    ph.textContent = tx('vorbereitung')
     // Mitmessen nur, solange die Leitung die Messseite offen hat und keine Frage läuft
     $('viewer-tools').hidden = !data.messung || !!data.current
     clearTimeout(messungTimer)
@@ -360,7 +364,7 @@
     }
     const empty = $('empty')
     empty.hidden = data.board.length > 0 || data.lead
-    empty.textContent = 'Die Leitung richtet das Quiz gerade ein.'
+    empty.textContent = tx('richtet_ein')
     // Team schon gewählt (Seite neu geladen, zurück von der Messung, neu aus Moodle gestartet): Abgleich hier starten,
     // sonst wird der Buzzer nie bereit
     if (!data.lead && myTeam && !syncing) { syncLoop(); wachHalten() }
@@ -385,10 +389,10 @@
   $('q-save').addEventListener('click', () => {
     const err = $('setup-error')
     err.hidden = true
-    if (data.canUndo && !confirm('Neu beginnen? Alle Punkte gehen verloren.')) return
+    if (data.canUndo && !confirm(tx('neu_beginnen'))) return
     act(async () => {
       try { await post('/fragen', { title: $('in-title').value, teams: $('in-teams').value, table: $('in-table').value, sekunden: Number($('in-sek').value || 0) }); toggleSetup(false) }
-      catch (e) { err.textContent = e.message; err.hidden = false; throw new Error('Nicht gespeichert: ' + e.message) }
+      catch (e) { err.textContent = e.message; err.hidden = false; throw new Error(tx('nicht_gespeichert', { grund: e.message })) }
     })
   })
   $('q-undo').addEventListener('click', () => act(() => post('/rueckgaengig')))
@@ -398,8 +402,8 @@
   $('q-menu').addEventListener('click', e => { if (e.target.closest('.quiz-menu-list button, .quiz-menu-list a')) $('q-menu').open = false })
   document.addEventListener('click', e => { if (!e.target.closest('#q-menu')) $('q-menu').open = false })
   $('q-start').addEventListener('click', () => act(() => post('/spiel', { aktion: 'start' })))
-  $('q-stop').addEventListener('click', () => { if (confirm('Spiel beenden und das Ergebnis zeigen? Nicht gespielte Felder zählen nicht.')) act(() => post('/spiel', { aktion: 'ende' })) })
-  $('q-neu').addEventListener('click', () => { if (confirm('Neues Spiel beginnen? Punkte und gespielte Felder werden zurückgesetzt, Fragen und Teams bleiben.')) act(() => post('/spiel', { aktion: 'neu' })) })
+  $('q-stop').addEventListener('click', () => { if (confirm(tx('beenden_frage'))) act(() => post('/spiel', { aktion: 'ende' })) })
+  $('q-neu').addEventListener('click', () => { if (confirm(tx('neues_frage'))) act(() => post('/spiel', { aktion: 'neu' })) })
   $('q-qr').addEventListener('click', () => { const b = $('qr-box'); b.hidden = !b.hidden; $('q-qr').setAttribute('aria-expanded', b.hidden ? 'false' : 'true') })
   $('q-full').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() })
 

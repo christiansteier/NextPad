@@ -1,6 +1,8 @@
 //! Buzzer-Messung im Quiz-Raster: misst im Raum, ob ein Buzzer mit Uhrabgleich fair genug wäre. Keine Wertung, keine Namen.
 //! Handys gleichen alle 3 s ihre Uhr mit dem Server ab (beste von fünf Anfragen); auf ein Signal der Leitung zeigen sie
 //! „Jetzt drücken“. Gespeichert werden je Gerät eine Nummer, die grobe Geräteart und Zeitpunkte, ausgewertet auf dem Server.
+use crate::texte::{self, Sprache};
+use crate::sperre::Sperre;
 use super::daten::{MessMarke, MessProbe};
 use crate::{addons::quiz, web, AppState};
 use axum::{
@@ -18,8 +20,8 @@ const MAX_PROBEN: i64 = 20_000;
 const MAX_RUNDEN: i64 = 500;
 /// So lange nach dem Signal zeigen die Handys „Jetzt drücken“.
 const OFFEN_MS: f64 = 10_000.0;
-/// Unter diesem Abstand gelten zwei Drücke als gleichzeitig; zugleich die Grenze für das Urteil.
-const KNAPP_MS: f64 = 50.0;
+/// Unter diesem Abstand gelten zwei Drücke als gleichzeitig; zugleich die Grenze für das Urteil. Dieselbe wie im Spiel.
+const KNAPP_MS: f64 = super::BUZZ_GLEICH_MS;
 
 pub const MESSUNG_JS: &str = include_str!("static/messung.js");
 pub const MESSUNG_CSS: &str = include_str!("static/messung.css");
@@ -78,7 +80,7 @@ fn geraet(state: &AppState, headers: &HeaderMap, pad: &str, body: &serde_json::V
     if !(8..=32).contains(&dev.len()) || !dev.chars().all(|c| c.is_ascii_alphanumeric()) { return Err(StatusCode::BAD_REQUEST.into_response()); }
     match state.store.mess_geraet(pad, dev, art(headers), MAX_GERAETE) {
         Ok(Some(nr)) => Ok(nr),
-        Ok(None) => Err((StatusCode::TOO_MANY_REQUESTS, format!("Es messen schon {MAX_GERAETE} Geräte mit.")).into_response()),
+        Ok(None) => Err((StatusCode::TOO_MANY_REQUESTS, texte::tf(Sprache::aus_anfrage(headers), "messung.zu_viele_geraete", &[("n", &MAX_GERAETE.to_string())])).into_response()),
         Err(e) => { tracing::warn!("Messung Gerät: {e}"); Err(StatusCode::INTERNAL_SERVER_ERROR.into_response()) }
     }
 }
@@ -106,7 +108,7 @@ pub async fn probe(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
     let nr = match geraet(&state, &headers, &v.pad, &body) { Ok(n) => n, Err(r) => return r };
     match state.store.mess_probe(&v.pad, &MessProbe { nr, ts: jetzt(), rtt, rtt_med, off }, MAX_PROBEN) {
         Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (StatusCode::TOO_MANY_REQUESTS, "Die Messung ist voll. Bitte die Messdaten sichern und löschen.").into_response(),
+        Ok(false) => web::abgelehnt(&headers, StatusCode::TOO_MANY_REQUESTS, "messung.voll"),
         Err(e) => { tracing::warn!("Messung Abgleich: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -137,7 +139,7 @@ pub async fn signal(State(state): State<Arc<AppState>>, Path(id): Path<String>, 
     let v = match quiz::lead(&state, &headers, &id) { Ok(v) => v, Err(r) => return r };
     match state.store.mess_signal(&v.pad, jetzt(), MAX_RUNDEN) {
         Ok(Some(runde)) => { state.live.notify(&v.pad); Json(json!({ "ok": true, "runde": runde })).into_response() }
-        Ok(None) => (StatusCode::TOO_MANY_REQUESTS, format!("Höchstens {MAX_RUNDEN} Runden.")).into_response(),
+        Ok(None) => (StatusCode::TOO_MANY_REQUESTS, texte::tf(Sprache::aus_anfrage(&headers), "messung.max_runden", &[("n", &MAX_RUNDEN.to_string())])).into_response(),
         Err(e) => { tracing::warn!("Messung Signal: {e}"); StatusCode::INTERNAL_SERVER_ERROR.into_response() }
     }
 }
@@ -162,7 +164,7 @@ pub async fn daten(State(state): State<Arc<AppState>>, Path(id): Path<String>, h
     if leitung_da(&pad) { state.live.notify(&pad); }
     let (Ok(g), Ok(p), Ok(r), Ok(m)) = (state.store.mess_geraete(&pad), state.store.mess_proben(&pad), state.store.mess_runden(&pad), state.store.mess_marken(&pad))
         else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
-    no_store(Json(auswerten(&g, &p, &r, &m, jetzt())).into_response())
+    no_store(Json(auswerten(&g, &p, &r, &m, jetzt(), Sprache::aus_anfrage(&headers))).into_response())
 }
 
 /// Wie lange der Knopf zum Mitmessen nach der letzten Abfrage der Leitung bleibt (die Messseite fragt alle 2 s).
@@ -178,16 +180,16 @@ fn offen() -> &'static std::sync::Mutex<std::collections::HashMap<String, f64>> 
 /// Merkt, dass die Leitung die Messseite offen hat; true, wenn sie eben erst dazukam (dann sollen die Handys neu laden).
 fn leitung_da(pad: &str) -> bool {
     let now = jetzt();
-    let mut m = offen().lock().unwrap_or_else(|e| e.into_inner());
+    let mut m = offen().sperren();
     m.retain(|_, t| now - *t < 3_600_000.0);
-    let neu = m.get(pad).map_or(true, |t| now - *t >= LEITUNG_DA_MS);
+    let neu = m.get(pad).is_none_or(|t| now - *t >= LEITUNG_DA_MS);
     m.insert(pad.to_string(), now);
     neu
 }
 
 /// Ob die Leitung die Messseite gerade offen hat.
 pub fn leitung_misst(pad: &str) -> bool {
-    let m = offen().lock().unwrap_or_else(|e| e.into_inner());
+    let m = offen().sperren();
     m.get(pad).is_some_and(|t| jetzt() - *t < LEITUNG_DA_MS)
 }
 
@@ -266,15 +268,18 @@ fn pct(v: &[f64], p: f64) -> Option<f64> {
     Some((s[i] * 10.0).round() / 10.0)
 }
 
+/// Abstand zwischen größtem und kleinstem Wert, erst ab zwei Werten.
 fn spanne(v: &[f64]) -> Option<f64> {
-    (v.len() >= 2).then(|| v.iter().copied().fold(f64::MIN, f64::max) - v.iter().copied().fold(f64::MAX, f64::min))
+    let max = v.iter().copied().reduce(f64::max)?;
+    let min = v.iter().copied().reduce(f64::min)?;
+    (v.len() >= 2).then_some(max - min)
 }
 
 fn erster(v: &[(i64, f64)]) -> Option<i64> { v.iter().min_by(|a, b| a.1.total_cmp(&b.1)).map(|x| x.0) }
 
 /// Kern der Messung. Uhr-Unsicherheit: Sprung des Versatzes zwischen zwei Abgleichen desselben Geräts im Abstand unter 15 s
 /// (die Drift der Geräteuhr ist dort vernachlässigbar). Das ist der Fehler, mit dem ein Buzzer Klickzeiten vergleichen müsste.
-pub fn auswerten(geraete: &[(i64, String)], proben: &[MessProbe], runden: &[(i64, f64)], marken: &[MessMarke], jetzt: f64) -> serde_json::Value {
+pub fn auswerten(geraete: &[(i64, String)], proben: &[MessProbe], runden: &[(i64, f64)], marken: &[MessMarke], jetzt: f64, sp: Sprache) -> serde_json::Value {
     let rtts: Vec<f64> = proben.iter().map(|p| p.rtt).collect();
     let mut je_geraet: BTreeMap<i64, Vec<&MessProbe>> = BTreeMap::new();
     for p in proben { je_geraet.entry(p.nr).or_default().push(p); }
@@ -325,9 +330,8 @@ pub fn auswerten(geraete: &[(i64, String)], proben: &[MessProbe], runden: &[(i64
 
     let uhr95 = pct(&spruenge, 95.0);
     let urteil = match uhr95 {
-        _ if spruenge.len() < 20 || geraete.len() < 3 => "Noch zu wenige Daten: mindestens drei Geräte, die einige Minuten mitmessen.".to_string(),
-        Some(u) if u < KNAPP_MS => format!("Der Uhrabgleich trägt: In 95 % der Fälle weicht die Geräteuhr um höchstens {u:.0} ms ab, unter der Grenze von {KNAPP_MS:.0} ms."),
-        Some(u) => format!("Der Uhrabgleich reicht nicht: In 5 % der Fälle weicht die Geräteuhr um mehr als {u:.0} ms ab, über der Grenze von {KNAPP_MS:.0} ms."),
+        _ if spruenge.len() < 20 || geraete.len() < 3 => texte::t(sp, "messung.u.wenig").to_string(),
+        Some(u) => texte::tf(sp, if u < KNAPP_MS { "messung.u.traegt" } else { "messung.u.reicht_nicht" }, &[("u", &format!("{u:.0}")), ("grenze", &format!("{KNAPP_MS:.0}"))]),
         None => String::new(),
     };
     json!({
@@ -345,41 +349,50 @@ pub fn auswerten(geraete: &[(i64, String)], proben: &[MessProbe], runden: &[(i64
 
 /// Eine Seite für Leitung und Handys; das Skript zeigt je nach Rolle.
 pub async fn page(State(state): State<Arc<AppState>>, Path(id): Path<String>, headers: HeaderMap) -> Response {
-    let access = match web::check_access(&state, &headers, &id) { Ok(a) => a, Err((s, m)) => return (s, m).into_response() };
-    if state.store.kind(&access.pad.id).as_deref() != Some(quiz::ADDON.art) { return (StatusCode::NOT_FOUND, "Das ist kein Quiz-Raster.").into_response(); }
+    let access = match web::check_access(&state, &headers, &id) { Ok(a) => a, Err((s, m)) => return web::abgelehnt(&headers, s, m) };
+    if state.store.kind(&access.pad.id).as_deref() != Some(quiz::ADDON.art) { return web::abgelehnt(&headers, StatusCode::NOT_FOUND, "quiz.kein_quiz"); }
     let base = &state.config.base_path;
     let join = quiz::join_svg(&state, &headers, access.free, &id, &access.pad.id, "/messung");
-    let cfg = json!({ "urlId": id, "basePath": base });
+    let sp = Sprache::aus_anfrage(&headers);
+    let t = |k| texte::t(sp, k);
+    let cfg = json!({ "urlId": id, "basePath": base, "lang": sp.kuerzel(), "texte": texte::texte_mit(sp, "messungjs.") });
     let content = format!(r#"<main id="inhalt" class="messung" tabindex="-1">
-<p class="kicker">Quiz-Raster · Buzzer-Messung</p>
-<h1>Buzzer-Messung</h1>
+<p class="kicker">{kicker}</p>
+<h1>{titel}</h1>
 <section id="m-handy" hidden>
-<p>Diese Seite misst, wie schnell das WLAN im Raum Signale zustellt. Es gibt keine Punkte und es wird kein Name gespeichert, nur Zeiten und die Art des Geräts (iOS, Android, andere).</p>
-<p><button type="button" class="btn btn-primary" id="m-start">Mitmessen</button></p>
-<p class="hint" id="m-status" aria-live="polite">Bitte die Seite offen und den Bildschirm an lassen.</p>
-<p class="notice" id="m-wach" role="status" hidden>Der Bildschirm bleibt nicht von selbst an. Bitte die automatische Sperre kurz ausschalten (iPhone: Einstellungen › Anzeige &amp; Helligkeit › Automatische Sperre; Android: Einstellungen › Display › Bildschirm-Timeout).</p>
-<button type="button" class="messung-buzzer" id="m-buzzer" disabled>Warten auf das Signal</button>
+<p>{handy}</p>
+<p><button type="button" class="btn btn-primary" id="m-start">{mitmessen}</button></p>
+<p class="hint" id="m-status" aria-live="polite">{offen_lassen}</p>
+<p class="notice" id="m-wach" role="status" hidden>{wach}</p>
+<button type="button" class="messung-buzzer" id="m-buzzer" disabled>{warten}</button>
 <p class="messung-reaktion" id="m-reaktion" aria-live="polite"></p>
 </section>
 <section id="m-lead" hidden>
 <div class="messung-kopf">
 <aside class="panel quiz-qr" id="qr-box">{join}</aside>
 <div class="messung-steuerung">
-<p class="messung-zahl"><strong id="m-aktiv">0</strong> Geräte messen gerade mit</p>
-<p><button type="button" class="btn btn-primary" id="m-signal">Signal senden</button> <span class="hint">oder Leertaste</span></p>
-<p class="hint">Ablauf: alle öffnen den QR-Code und tippen „Mitmessen“. Einige Minuten warten, dann 10 bis 20 Signale im Abstand von ein paar Sekunden senden; alle drücken, sobald „Jetzt“ erscheint.</p>
+<p class="messung-zahl">{aktiv}</p>
+<p><button type="button" class="btn btn-primary" id="m-signal">{signal}</button> <span class="hint">{leertaste}</span></p>
+<p class="hint">{ablauf}</p>
 </div></div>
 <p class="messung-urteil" id="m-urteil" aria-live="polite"></p>
 <dl class="messung-werte" id="m-werte"></dl>
-<details><summary>Geräte</summary><table class="messung-liste"><thead><tr><th scope="col">Gerät</th><th scope="col">Art</th><th scope="col">Abgleiche</th><th scope="col">Laufzeit (Median)</th><th scope="col">Uhr (95 %)</th><th scope="col">Drücke</th><th scope="col">zuletzt</th></tr></thead><tbody id="m-liste"></tbody></table></details>
-<p class="messung-aktionen"><a class="btn btn-secondary" href="{base}/p/{u}/messung/export.csv">Rohdaten als CSV</a> <button type="button" class="btn btn-secondary" id="m-loeschen">Messdaten löschen</button> <a class="btn-link" href="{base}/p/{u}">Zurück zum Quiz</a></p>
+<p class="hint">{hinweis}</p>
+<details><summary>{geraete}</summary><table class="messung-liste"><thead><tr><th scope="col">{geraet}</th><th scope="col">{art}</th><th scope="col">{abgleiche}</th><th scope="col">{laufzeit}</th><th scope="col">{uhr}</th><th scope="col">{druecke}</th><th scope="col">{zuletzt}</th></tr></thead><tbody id="m-liste"></tbody></table></details>
+<p class="messung-aktionen"><a class="btn btn-secondary" href="{base}/p/{u}/messung/export.csv">{csv}</a> <button type="button" class="btn btn-secondary" id="m-loeschen">{loeschen}</button> <a class="btn-link" href="{base}/p/{u}">{zum_quiz}</a></p>
 </section>
-<noscript><p class="notice">Die Messung braucht JavaScript.</p></noscript>
+<noscript><p class="notice">{braucht_js}</p></noscript>
 </main>
-<script type="application/json" id="nextpad-config">{cfg}</script>"#, u = web::urlencoding(&id), cfg = cfg.to_string().replace("</", "<\\/"));
+<script type="application/json" id="nextpad-config">{cfg}</script>"#, u = web::urlencoding(&id), cfg = cfg.to_string().replace("</", "<\\/"),
+        kicker = t("messung.s.kicker"), titel = t("messung.s.titel"), handy = t("messung.s.handy"), mitmessen = t("messung.s.mitmessen"), offen_lassen = t("messung.s.offen_lassen"),
+        wach = t("quiz.s.wach_html"), warten = t("messung.s.warten"), signal = t("messung.s.signal"), leertaste = t("messung.s.leertaste"), ablauf = t("messung.s.ablauf"),
+        aktiv = texte::tf(sp, "messung.s.aktiv_html", &[("zahl", r#"<strong id="m-aktiv">0</strong>"#)]),
+        hinweis = t("messung.s.hinweis"), geraete = t("messung.s.geraete"), geraet = t("messung.s.geraet"), art = t("messung.s.art"), abgleiche = t("messung.s.abgleiche"),
+        laufzeit = t("messung.s.laufzeit"), uhr = t("messung.s.uhr"), druecke = t("messung.s.druecke"), zuletzt = t("messung.s.zuletzt"), csv = t("messung.s.csv"),
+        loeschen = t("messung.s.loeschen"), zum_quiz = t("messung.s.zum_quiz"), braucht_js = t("messung.s.braucht_js"));
     let head = format!(r#"<link rel="stylesheet" href="{base}/static/quiz.css?v={q}"><link rel="stylesheet" href="{base}/static/messung.css?v={v}">"#, q = quiz::version(), v = version());
     let scripts = format!(r#"<script src="{base}/static/messung.js?v={v}"></script>"#, v = version());
-    let mut resp = Html(web::page_frame(&state, "NextPad · Buzzer-Messung", &head, &content, &scripts)).into_response();
+    let mut resp = Html(web::page_frame(&state, sp, Some(&format!("/p/{}/messung", web::urlencoding(&id))), t("messung.s.seitentitel"), &head, &content, &scripts)).into_response();
     let csp = format!("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; form-action 'self'; frame-ancestors {}; base-uri 'none'", state.config.frame_ancestors);
     let h = resp.headers_mut();
     if let Ok(v) = HeaderValue::from_str(&csp) { h.insert(header::CONTENT_SECURITY_POLICY, v); }
@@ -402,9 +415,10 @@ mod tests {
         let g: Vec<(i64, String)> = (1..=3).map(|n| (n, "iOS".to_string())).collect();
         // je Gerät 10 Abgleiche im Abstand 3 s, Versatz springt abwechselnd um 0 und 8 ms
         let p: Vec<MessProbe> = (1..=3).flat_map(|n| (0..10).map(move |i| probe(n, i as f64 * 3000.0, 1000.0 * n as f64 + if i % 2 == 0 { 0.0 } else { 8.0 }))).collect();
-        let a = auswerten(&g, &p, &[], &[], 30_000.0);
+        let a = auswerten(&g, &p, &[], &[], 30_000.0, Sprache::De);
         assert_eq!(a["uhr"]["p95"], json!(8.0));
         assert!(a["urteil"].as_str().unwrap().starts_with("Der Uhrabgleich trägt"));
+        assert!(auswerten(&g, &p, &[], &[], 30_000.0, Sprache::En)["urteil"].as_str().unwrap().starts_with("The clock sync holds"));
         assert_eq!(a["aktiv"], json!(3));
     }
 
@@ -412,8 +426,15 @@ mod tests {
     fn grosse_pause_zaehlt_nicht_als_sprung() {
         let g = vec![(1, "Android".to_string())];
         let p = vec![probe(1, 0.0, 0.0), probe(1, 60_000.0, 500.0)];
-        let a = auswerten(&g, &p, &[], &[], 61_000.0);
+        let a = auswerten(&g, &p, &[], &[], 61_000.0, Sprache::De);
         assert_eq!(a["uhr"]["p95"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn spanne_erst_ab_zwei_werten() {
+        assert_eq!(spanne(&[]), None);
+        assert_eq!(spanne(&[5.0]), None);
+        assert_eq!(spanne(&[-20.0, 3.0, -4.5]), Some(23.0));
     }
 
     #[test]
@@ -423,7 +444,7 @@ mod tests {
             MessMarke { nr: 1, runde: 1, t_empfang: Some(1050.0), t_druck: Some(1100.0), ts_ein: Some(1400.0), off: 0.0, rtt: 300.0 },
             MessMarke { nr: 2, runde: 1, t_empfang: Some(5020.0), t_druck: Some(5150.0), ts_ein: Some(1170.0), off: -4000.0, rtt: 30.0 },
         ];
-        let a = auswerten(&[], &[], &[(1, 1000.0)], &m, 2000.0);
+        let a = auswerten(&[], &[], &[(1, 1000.0)], &m, 2000.0, Sprache::De);
         assert_eq!(a["vergleich"]["runden"], json!(1));
         assert_eq!(a["vergleich"]["wechselEingang"], json!(1));
         // Reaktion: Gerät 1 50 ms, Gerät 2 130 ms → gleicher Erster wie nach Druckzeit

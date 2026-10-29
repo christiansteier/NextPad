@@ -23,12 +23,25 @@ liegt auf einem `noexec`-Mount, daher kopiert das Bauskript die Quellen nach
 bash web/build.sh          # Editor- und Zeichenbrett-Bündel, vor dem ersten Rust-Bau nötig
 cd server
 cargo test                 # Unit-Tests (Aufbewahrung, Migration, IDs)
-cargo build --release      # Freigabe-Binary mit LTO, stripped
+cargo build                # Programm für die Browsertests
+cd ..
+bash web/test/browsertests.sh     # Browser- und API-Tests gegen frisch gestartete Server
+cd server && cargo build --release  # Freigabe-Binary mit LTO, stripped
 ```
 
-Die Browsertests in `web/test/` laufen mit Playwright (Chromium) und prüfen Sync, API,
-Zeitleiste, LTI, Last und Barrierefreiheit. Die CI (`.github/workflows/ci.yml`) baut den
-Server und führt `cargo test` und clippy aus; die Browsertests laufen bisher von Hand.
+`web/test/browsertests.sh` startet drei Server mit leerem Datenbestand (Hauptserver,
+LTI mit nachgespielter Plattform, Addons ein und aus) und führt die Tests in `web/test/`
+mit Playwright (Chromium) aus: API, Sync, Zeitleiste, Wiederherstellen, Editor, Gäste,
+Startseite, Ideensammlung, Quiz, Buzzer, Zeichenbrett, LTI, Addons. Erstes Argument:
+Pfad zum Programm (Vorgabe `server/target/debug/nextpad`), weitere Argumente wählen
+einzelne Tests. Einmalig vorher: `pnpm exec playwright install chromium` im
+Bau-Verzeichnis von `web/build.sh`. Jeder Test endet mit Code 1, wenn eine Prüfung
+fehlschlägt. Last-, Barrierefreiheits- und Pilottests (`belastung*`, `a11y-*`, `ltipilot`,
+`remotetest`) laufen weiter von Hand.
+
+Die CI (`.github/workflows/ci.yml`) baut den Server, führt `cargo test`, clippy mit
+`-D warnings`, `cargo audit` und dasselbe Testskript aus. Schlägt ein Browsertest fehl,
+hängen Serverprotokolle und Testausgaben als Artefakt `browsertests` am Lauf.
 
 ## Konventionen
 
