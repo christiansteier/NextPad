@@ -218,10 +218,14 @@ const editor = new Editor({
 const tb = document.getElementById('toolbar')
 const sb = document.getElementById('statusbar')
 const edBox = document.getElementById('editorcontainerbox')
-const I = { tasks: '\ue832', table: '\uf0ce', toc: '\ue82e', bold: '', italic: '', underline: '', strike: '', ol: '', ul: '', indent: '', outdent: '', undo: '', redo: '', eye: '', alignL: '', alignC: '', alignR: '', alignJ: '', md: '', history: '', share: '', users: '', cog: '', pdf: '', file: '', code: '', times: '' }
+const I = { table: '\uf0ce', toc: '\ue82e', bold: '', italic: '', underline: '', strike: '', ol: '', ul: '', indent: '', outdent: '', undo: '', redo: '', eye: '', alignL: '', alignC: '', alignR: '', alignJ: '', md: '', history: '', share: '', users: '', cog: '', pdf: '', file: '', code: '', times: '' }
+const listBars = '<path d="M100 32h170v30H100zM100 106h170v30H100zM100 180h170v30H100z" fill="currentColor"/>'
+const numberedListIcon = `<svg width="23" height="19" viewBox="0 0 280 240" aria-hidden="true"><g fill="currentColor" font-family="Arial, sans-serif" font-size="80" font-weight="bold"><text transform="matrix(1.168 0 0 1.168 12 61.958)">1</text><text transform="matrix(1.168 0 0 1.168 12 148.425)">2</text><text transform="matrix(1.168 0 0 1.168 12 234.891)">3</text></g>${listBars}</svg>`
+const bulletListIcon = `<svg width="23" height="19" viewBox="0 0 280 240" aria-hidden="true"><g fill="currentColor"><circle cx="40" cy="47" r="18"/><circle cx="40" cy="121" r="18"/><circle cx="40" cy="195" r="18"/></g>${listBars}</svg>`
+const taskListIcon = '<svg width="23" height="19" viewBox="0 0 28 24" fill="none" aria-hidden="true"><path d="M12.5 5.7h15v3h-15zM12.5 15.2h15v3h-15z" fill="currentColor"/><path d="m2 6.5 2.2 2.2 3.6-4M2 16l2.2 2.2 3.6-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 function ibtn(parent, icon, title, fn, isActive) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'ib'; b.title = title; b.setAttribute('aria-label', title)
-  const i = document.createElement('span'); i.className = 'buttonicon'; i.textContent = icon; i.setAttribute('aria-hidden', 'true'); b.appendChild(i)
+  const i = document.createElement('span'); i.className = 'buttonicon'; if (icon.startsWith('<svg')) i.innerHTML = icon; else i.textContent = icon; i.setAttribute('aria-hidden', 'true'); b.appendChild(i)
   b.addEventListener('click', () => { fn(); editor.commands.focus() }); b._isActive = isActive; parent.appendChild(b); return b
 }
 const sep = parent => { const s = document.createElement('span'); s.className = 'separator'; parent.appendChild(s) }
@@ -250,9 +254,9 @@ if (!cfg.readonly) {
   ibtn(menuLeft, I.underline, tx('unterstrichen'), () => editor.chain().toggleUnderline().run(), () => editor.isActive('underline'))
   ibtn(menuLeft, I.strike, tx('durchgestrichen'), () => editor.chain().toggleStrike().run(), () => editor.isActive('strike'))
   sep(menuLeft)
-  ibtn(menuLeft, I.ol, tx('nummeriert'), () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
-  ibtn(menuLeft, I.ul, tx('aufzaehlung'), () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
-  ibtn(menuLeft, I.tasks, tx('aufgaben'), () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
+  ibtn(menuLeft, numberedListIcon, tx('nummeriert'), () => editor.chain().toggleOrderedList().run(), () => editor.isActive('orderedList'))
+  ibtn(menuLeft, bulletListIcon, tx('aufzaehlung'), () => editor.chain().toggleBulletList().run(), () => editor.isActive('bulletList'))
+  ibtn(menuLeft, taskListIcon, tx('aufgaben'), () => editor.chain().focus().toggleTaskList().run(), () => editor.isActive('taskList'))
   ibtn(menuLeft, I.indent, tx('einruecken'), () => { editor.commands.focus(); inList(editor) ? editor.commands.sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.indent() })
   ibtn(menuLeft, I.outdent, tx('ausruecken'), () => { editor.commands.focus(); inList(editor) ? editor.commands.liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem') : editor.commands.outdent() })
   sep(menuLeft)
